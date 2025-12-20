@@ -3,6 +3,9 @@ Icarus Worker Harness
 
 Headless Claude Agent execution with bus-based permission routing.
 
+Uses PreToolUse hooks to intercept tool calls and route permission
+decisions through the Icarus Bus for Daedalus approval.
+
 Usage:
     # As a module
     from daedalus.worker import IcarusWorker, run_worker
@@ -41,18 +44,20 @@ try:
     from claude_agent_sdk import query
     from claude_agent_sdk.types import (
         ClaudeAgentOptions,
-        PermissionResultAllow,
-        PermissionResultDeny,
-        ToolPermissionContext,
+        HookContext,
+        HookMatcher,
+        PreToolUseHookInput,
+        SyncHookJSONOutput,
     )
     HAS_AGENT_SDK = True
 except ImportError:
     HAS_AGENT_SDK = False
     # Define stubs for type hints
     ClaudeAgentOptions = None
-    PermissionResultAllow = None
-    PermissionResultDeny = None
-    ToolPermissionContext = None
+    HookContext = None
+    HookMatcher = None
+    PreToolUseHookInput = None
+    SyncHookJSONOutput = None
 
 
 class IcarusWorker:
@@ -123,26 +128,31 @@ class IcarusWorker:
             self.bus.stream_output(self.instance_id, message)
         print(f"[Icarus] {message}", file=sys.stderr)
 
-    async def _handle_permission(
+    async def _handle_pre_tool_use(
         self,
-        tool_name: str,
-        input_params: Dict[str, Any],
-        context: "ToolPermissionContext",
-    ):
+        hook_input: "PreToolUseHookInput",
+        tool_use_id: Optional[str],
+        context: "HookContext",
+    ) -> "SyncHookJSONOutput":
         """
-        Handle a permission request.
+        PreToolUse hook callback for permission routing.
 
-        This is the can_use_tool callback for Claude Agent SDK.
+        This hook intercepts all tool calls and routes permission decisions
+        through the Icarus Bus. Using hooks (vs can_use_tool) keeps stdin
+        open for bidirectional communication.
 
         Args:
-            tool_name: Name of the tool being used
-            input_params: Input parameters for the tool
-            context: SDK permission context
+            hook_input: Tool call details (tool_name, tool_input, etc.)
+            tool_use_id: Optional tool use identifier
+            context: Hook context
 
         Returns:
-            PermissionResultAllow or PermissionResultDeny
+            SyncHookJSONOutput with permission decision
         """
-        self._log(f">>> PERMISSION CALLBACK INVOKED: {tool_name}")
+        tool_name = hook_input["tool_name"]
+        input_params = hook_input["tool_input"]
+
+        self._log(f">>> PreToolUse hook: {tool_name}")
 
         # Create permission request
         perm_req = create_permission_request(
@@ -160,12 +170,23 @@ class IcarusWorker:
         if approved:
             self.permissions_granted += 1
             self._log(f"  -> Auto-approved")
-            return PermissionResultAllow(updated_input=input_params)
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                }
+            }
 
         if deny_reason:
             self.permissions_denied += 1
             self._log(f"  -> Auto-denied: {deny_reason}")
-            return PermissionResultDeny(message=deny_reason)
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": deny_reason,
+                }
+            }
 
         # Not auto-approved or denied - escalate to Daedalus via bus
         self.permissions_escalated += 1
@@ -197,16 +218,36 @@ class IcarusWorker:
 
         if response is None:
             self._log(f"  -> Timeout waiting for response")
-            return PermissionResultDeny(message="Timeout waiting for permission approval")
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": "Timeout waiting for permission approval",
+                }
+            }
 
         if response.decision == "approved":
             self._log(f"  -> Approved by Daedalus")
             # Check if Daedalus modified the input
-            updated_input = response.data.get("updated_input", input_params)
-            return PermissionResultAllow(updated_input=updated_input)
+            updated_input = response.data.get("updated_input")
+            result: SyncHookJSONOutput = {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                }
+            }
+            if updated_input:
+                result["hookSpecificOutput"]["updatedInput"] = updated_input
+            return result
         else:
             self._log(f"  -> Denied by Daedalus: {response.message}")
-            return PermissionResultDeny(message=response.message)
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": response.message or "Denied by Daedalus",
+                }
+            }
 
     def _format_permission_message(self, req: PermissionRequest) -> str:
         """Format a human-readable permission message."""
@@ -255,15 +296,24 @@ class IcarusWorker:
         self._log(f"Executing prompt ({len(prompt)} chars)")
 
         try:
+            # Build PreToolUse hook for permission routing
+            # Using hooks (vs can_use_tool) keeps stdin open for bidirectional comms
+            pre_tool_hook = HookMatcher(
+                matcher=None,  # Match all tools
+                hooks=[self._handle_pre_tool_use],
+            )
+
             # Build options using SDK types
             options = ClaudeAgentOptions(
                 permission_mode=permission_mode,
-                can_use_tool=self._handle_permission,
                 cwd=self.project_root,
                 system_prompt=system_prompt,
+                hooks={
+                    "PreToolUse": [pre_tool_hook],
+                },
             )
 
-            # can_use_tool requires streaming mode - wrap prompt in async generator
+            # Hooks require streaming mode - wrap prompt in async generator
             async def prompt_stream():
                 yield {
                     "type": "user",
