@@ -62,16 +62,33 @@ def tmux_session_exists(session_name: str) -> bool:
         return False
 
 
+def load_daedalus_identity() -> Optional[str]:
+    """Load Daedalus identity from config directory."""
+    from pathlib import Path
+    identity_file = Path.home() / ".config" / "daedalus" / "identity.md"
+    if identity_file.exists():
+        return identity_file.read_text()
+    return None
+
+
 def create_tmux_session(
     session_name: str,
     command: str = "claude",
     cols: int = 120,
     rows: int = 40,
-    working_dir: Optional[str] = None
+    working_dir: Optional[str] = None,
+    system_prompt: Optional[str] = None,
 ) -> bool:
-    """Create a new tmux session."""
+    """Create a new tmux session with optional system prompt injection."""
     if tmux_session_exists(session_name):
         return True
+
+    # Build claude command with optional system prompt
+    if system_prompt and command == "claude":
+        # Escape for shell
+        import shlex
+        escaped_prompt = shlex.quote(system_prompt)
+        command = f"claude --append-system-prompt {escaped_prompt}"
 
     shell_command = f"bash -l -c '{command}'"
 
@@ -283,7 +300,7 @@ class DaedalusTerminal(Widget, can_focus=True):
             pass
 
     async def spawn_session(self, session_name: Optional[str] = None) -> bool:
-        """Spawn a new Claude Code session."""
+        """Spawn a new Claude Code session with Daedalus identity."""
         if not check_tmux_available():
             return False
 
@@ -297,13 +314,17 @@ class DaedalusTerminal(Widget, can_focus=True):
         cols = max(80, self.size.width)
         rows = max(24, self.size.height)
 
-        # Create the tmux session
+        # Load Daedalus identity for system prompt injection
+        identity = load_daedalus_identity()
+
+        # Create the tmux session with identity
         if not create_tmux_session(
             session_name,
             command=self.command,
             cols=cols,
             rows=rows,
-            working_dir=self.working_dir
+            working_dir=self.working_dir,
+            system_prompt=identity,
         ):
             return False
 

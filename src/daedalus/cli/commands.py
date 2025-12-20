@@ -350,7 +350,7 @@ class Daedalus:
         """Spawn Icarus workers as separate tmux sessions."""
         cfg = self.config
 
-        # Load Icarus identity
+        # Load Icarus identity for system prompt injection
         icarus_identity = self._load_icarus_identity()
 
         # Build allowed tools for auto-approval
@@ -368,27 +368,30 @@ class Daedalus:
             # Try to claim work from the queue
             work = self.bus.claim_work(f"icarus-{worker_num}")
 
-            if work:
-                # Build prompt with identity + work package
-                prompt = f"{icarus_identity}\n\n---\n\n# Work Package: {work.id}\n\n{work.description}"
-            else:
-                # No work available - just start claude with identity
-                prompt = icarus_identity
-                print(f"  Worker {worker_num}: No work in queue, starting with identity only")
-
-            # Write prompt to temp file for later injection
+            # Write identity to temp file for --append-system-prompt
+            # (Claude Code reads from file if path is provided)
             import tempfile
-            prompt_file = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False)
-            prompt_file.write(prompt)
-            prompt_file.close()
+            identity_file = tempfile.NamedTemporaryFile(
+                mode='w', suffix='.md', delete=False, prefix='icarus-identity-'
+            )
+            identity_file.write(icarus_identity)
+            identity_file.close()
 
-            # Build claude command with permissions
+            # Build claude command with identity injected as system prompt
             claude_cmd = (
                 f"claude "
+                f"--append-system-prompt \"$(cat {identity_file.name})\" "
                 f"--permission-mode acceptEdits "
                 f"--allowedTools '{allowed_tools}' "
-                f"--add-dir ~/cass/cass-vessel"
             )
+
+            # Add work package as initial prompt if available
+            if work:
+                work_prompt = f"Execute work package {work.id}:\\n\\n{work.description}"
+                claude_cmd += f" -p \"{work_prompt}\""
+                print(f"  Worker {worker_num}: Claimed {work.id}")
+            else:
+                print(f"  Worker {worker_num}: No work in queue, starting idle")
 
             # Create new tmux session for this worker
             tmux_run([
@@ -400,17 +403,7 @@ class Daedalus:
             # Start claude in the session
             tmux_send_keys(session_name, claude_cmd)
 
-            # Wait for Claude to start, then send the prompt
-            time.sleep(3)
-            tmux_send_keys(session_name, f"Read {prompt_file.name} for your identity and work package, then execute the work.")
-            time.sleep(0.5)
-            tmux_send_keys(session_name, "", enter=True)
-
             spawned += 1
-            if work:
-                print(f"  Worker {worker_num}: Claimed {work.id} (session: {session_name})")
-            else:
-                print(f"  Worker {worker_num}: Started (session: {session_name})")
 
         print(f"  Spawned {spawned} worker(s) as separate sessions")
 
