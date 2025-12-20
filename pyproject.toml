@@ -26,10 +26,12 @@ classifiers = [
 
 [project.optional-dependencies]
 sdk = ["claude-agent-sdk>=0.1.0"]
+tui = ["textual>=0.47.0", "pyte>=0.8.0"]
 
 [project.scripts]
 daedalus = "daedalus.cli.main:main"
 icarus-worker = "daedalus.worker.harness:main"
+context-estimator = "daedalus.tools.context_estimator:main"
 
 [project.urls]
 Homepage = "https://github.com/KohlJary/daedalus"
@@ -44,6 +46,8 @@ where = ["src"]
 [tool.setuptools.package-data]
 daedalus = [
     "identity/data/*.md",
+    "identity/data/*.json",
     "identity/data/agents/*.md",
-    "templates/data/*.md"
+    "templates/data/*.md",
+    "tui/*.css"
 ]

@@ -18,12 +18,33 @@ Usage:
 """
 
 import asyncio
+import importlib.resources
 import json
 import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+
+def load_icarus_identity() -> str:
+    """Load the Icarus identity from package resources."""
+    try:
+        # Load from package
+        files = importlib.resources.files("daedalus.identity.data.agents")
+        identity_file = files.joinpath("icarus.md")
+        return identity_file.read_text()
+    except Exception as e:
+        # Fallback to minimal identity
+        return """# Icarus
+
+You are Icarus - a worker executing a specific work package.
+
+Execute the work directly without asking questions or entering plan mode.
+You have the context you need in the work package description.
+
+Focus on completing the task efficiently and correctly.
+"""
 
 from ..bus.icarus_bus import (
     IcarusBus,
@@ -127,6 +148,59 @@ class IcarusWorker:
         if self.stream_output and self.instance_id:
             self.bus.stream_output(self.instance_id, message)
         print(f"[Icarus] {message}", file=sys.stderr)
+
+    def _stream_message(self, message) -> None:
+        """Stream a SDK message to output in readable format."""
+        # Get class name to determine message type
+        class_name = type(message).__name__
+
+        if class_name == 'AssistantMessage':
+            content = getattr(message, 'content', None)
+            if content:
+                for block in content:
+                    block_class = type(block).__name__
+                    if block_class == 'TextBlock':
+                        text = getattr(block, 'text', str(block))
+                        print(f"\n{text}", file=sys.stderr)
+                    elif block_class == 'ToolUseBlock':
+                        tool_name = getattr(block, 'name', 'unknown')
+                        tool_input = getattr(block, 'input', {})
+                        print(f"\n>>> Tool: {tool_name}", file=sys.stderr)
+                        if isinstance(tool_input, dict):
+                            for k, v in list(tool_input.items())[:3]:
+                                v_str = str(v)[:200]
+                                print(f"    {k}: {v_str}", file=sys.stderr)
+
+        elif class_name == 'UserMessage':
+            # Tool results come back as user messages
+            content = getattr(message, 'content', None)
+            if content and isinstance(content, list):
+                for block in content:
+                    block_class = type(block).__name__
+                    if block_class == 'ToolResultBlock':
+                        result = getattr(block, 'content', '')
+                        if isinstance(result, str):
+                            # Show first 300 chars of result
+                            if len(result) > 300:
+                                result = result[:300] + "... [truncated]"
+                            print(f"<<< {result}", file=sys.stderr)
+
+        elif class_name == 'ResultMessage':
+            result_text = getattr(message, 'result', None)
+            if result_text:
+                print(f"\n{'='*60}", file=sys.stderr)
+                print("FINAL RESULT:", file=sys.stderr)
+                print(f"{'='*60}", file=sys.stderr)
+                print(result_text, file=sys.stderr)
+                print(f"{'='*60}\n", file=sys.stderr)
+
+        elif class_name == 'SystemMessage':
+            # Skip system init messages
+            pass
+
+        else:
+            # Unknown message type - log it for debugging
+            print(f"[MSG:{class_name}] {str(message)[:100]}", file=sys.stderr)
 
     async def _handle_pre_tool_use(
         self,
@@ -277,7 +351,7 @@ class IcarusWorker:
 
         Args:
             prompt: The prompt to execute
-            system_prompt: Optional system prompt
+            system_prompt: Optional system prompt (defaults to Icarus identity)
             permission_mode: SDK permission mode (default, acceptEdits, bypassPermissions)
 
         Returns:
@@ -288,6 +362,10 @@ class IcarusWorker:
                 "success": False,
                 "error": "claude-agent-sdk not installed. Run: pip install claude-agent-sdk",
             }
+
+        # Load Icarus identity as default system prompt
+        if system_prompt is None:
+            system_prompt = load_icarus_identity()
 
         if not self.instance_id:
             await self.register()
@@ -324,12 +402,8 @@ class IcarusWorker:
             messages = []
             async for message in query(prompt=prompt_stream(), options=options):
                 messages.append(message)
-                # Log assistant messages
-                if hasattr(message, 'type'):
-                    if message.type == 'assistant':
-                        self._log(f"Assistant: {str(message)[:100]}...")
-                    elif message.type == 'result':
-                        self._log(f"Result received")
+                # Stream full output for visibility
+                self._stream_message(message)
 
             self.bus.update_status(self.instance_id, InstanceStatus.COMPLETE, self.work_id)
 

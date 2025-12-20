@@ -5,7 +5,14 @@ Contains the main Daedalus orchestrator class with all command implementations.
 """
 
 import os
+import sys
 import time
+from pathlib import Path
+
+if sys.version_info >= (3, 9):
+    from importlib.resources import files, as_file
+else:
+    from importlib_resources import files, as_file
 
 from .config import (
     DaedalusConfig,
@@ -18,6 +25,39 @@ from .config import (
 from ..bus import IcarusBus, WorkPackage, Response
 
 
+# Config directory for Daedalus identity
+CONFIG_DIR = Path.home() / ".config" / "daedalus"
+
+# Log directory for Icarus workers
+LOG_DIR = Path("/tmp/icarus-logs")
+
+# Package containing identity seed files
+IDENTITY_PACKAGE = "daedalus.identity.data"
+
+# Files to copy during init
+SEED_FILES = [
+    "identity.md",
+    "identity.json",
+    "icarus-seed.md",
+    "GUESTBOOK.md",
+]
+
+# Package containing agent definitions
+AGENTS_PACKAGE = "daedalus.identity.data.agents"
+
+# Agents to hydrate to projects
+AGENT_FILES = [
+    "icarus.md",
+    "memory.md",
+    "cass-chat.md",
+    "design-analyst.md",
+    "docs.md",
+    "roadmap.md",
+    "scout.md",
+    "test-runner.md",
+]
+
+
 class Daedalus:
     """Main orchestrator class."""
 
@@ -26,23 +66,162 @@ class Daedalus:
         self.bus = IcarusBus()
 
     # -------------------------------------------------------------------------
+    # Identity Initialization
+    # -------------------------------------------------------------------------
+
+    def init(self, force: bool = False) -> bool:
+        """
+        Initialize Daedalus identity by copying seed files to config directory.
+
+        The seed files contain:
+        - identity.md: Global Daedalus identity
+        - identity.json: Structured identity data
+        - icarus-seed.md: Icarus worker identity seed
+        - GUESTBOOK.md: Lineage of past instances
+
+        Args:
+            force: Overwrite existing files if True
+
+        Returns:
+            True if initialization succeeded
+        """
+        # Create config directory
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        print(f"Config directory: {CONFIG_DIR}")
+
+        copied = 0
+        skipped = 0
+
+        for filename in SEED_FILES:
+            dst = CONFIG_DIR / filename
+
+            if dst.exists() and not force:
+                print(f"  Skip (exists): {filename}")
+                skipped += 1
+                continue
+
+            try:
+                # Read from package resources
+                resource = files(IDENTITY_PACKAGE).joinpath(filename)
+                content = resource.read_text(encoding="utf-8")
+
+                # Write to config directory
+                dst.write_text(content, encoding="utf-8")
+                dst.chmod(0o600)
+                print(f"  Copied: {filename}")
+                copied += 1
+            except Exception as e:
+                print(f"  Error copying {filename}: {e}")
+
+        print()
+        print(f"Initialized: {copied} file(s) copied, {skipped} skipped")
+
+        if skipped > 0 and not force:
+            print("Use --force to overwrite existing files")
+
+        return True
+
+    def hydrate(self, force: bool = False) -> bool:
+        """
+        Hydrate project with Daedalus agents.
+
+        Copies agent definitions from package to project's .claude/agents/ directory.
+        This makes agents like memory, scout, test-runner, etc. available in the project.
+
+        Args:
+            force: Overwrite existing files if True
+
+        Returns:
+            True if hydration succeeded
+        """
+        cfg = self.config
+        agents_dir = Path(cfg.project_dir) / ".claude" / "agents"
+
+        # Create agents directory
+        agents_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Agents directory: {agents_dir}")
+
+        copied = 0
+        skipped = 0
+
+        for filename in AGENT_FILES:
+            dst = agents_dir / filename
+
+            if dst.exists() and not force:
+                print(f"  Skip (exists): {filename}")
+                skipped += 1
+                continue
+
+            try:
+                # Read from package resources
+                resource = files(AGENTS_PACKAGE).joinpath(filename)
+                content = resource.read_text(encoding="utf-8")
+
+                # Write to project agents directory
+                dst.write_text(content, encoding="utf-8")
+                print(f"  Copied: {filename}")
+                copied += 1
+            except Exception as e:
+                print(f"  Error copying {filename}: {e}")
+
+        print()
+        print(f"Hydrated: {copied} agent(s) copied, {skipped} skipped")
+
+        if skipped > 0 and not force:
+            print("Use --force to overwrite existing files")
+
+        return True
+
+    # -------------------------------------------------------------------------
     # Session Management
     # -------------------------------------------------------------------------
 
-    def create_workspace(self) -> bool:
-        """Create new Daedalus workspace with full layout."""
+    def tui(self) -> None:
+        """Launch the Daedalus TUI application."""
+        from ..tui.app import run_tui
+
         cfg = self.config
 
+        # Initialize the bus before launching TUI
+        self.bus.initialize()
+
+        print(f"Launching Daedalus TUI...")
+        print(f"  Project: {cfg.project_dir}")
+        print(f"  Bus: {self.bus.root}")
+
+        run_tui(working_dir=cfg.project_dir)
+
+    def create_workspace(self, use_tmux: bool = False) -> bool:
+        """
+        Create new Daedalus workspace.
+
+        By default, launches the Textual TUI. With use_tmux=True, falls back
+        to the legacy tmux-based layout.
+
+        Args:
+            use_tmux: If True, use tmux layout instead of TUI
+
+        Returns:
+            True if workspace was created successfully
+        """
+        cfg = self.config
+
+        # Initialize the bus
+        self.bus.initialize()
+        print(f"Bus initialized at {self.bus.root}")
+
+        if not use_tmux:
+            # Default: Launch the TUI
+            self.tui()
+            return True
+
+        # Legacy tmux-based workspace
         if tmux_session_exists(cfg.session_name):
             print(f"Session '{cfg.session_name}' already exists.")
             print(f"Use: daedalus attach")
             return False
 
-        print(f"Creating Daedalus workspace...")
-
-        # Initialize the bus
-        self.bus.initialize()
-        print(f"  Bus initialized at {self.bus.root}")
+        print(f"Creating Daedalus workspace (tmux mode)...")
 
         # Create swarm session first
         self._create_swarm_session()
@@ -168,45 +347,174 @@ class Daedalus:
     # -------------------------------------------------------------------------
 
     def spawn_workers(self, count: int = 1) -> None:
-        """Spawn Icarus workers in the swarm."""
+        """Spawn Icarus workers as separate tmux sessions."""
         cfg = self.config
 
-        if not tmux_session_exists(cfg.swarm_session):
-            print("Swarm session not found. Creating...")
-            self._create_swarm_session()
+        # Load Icarus identity
+        icarus_identity = self._load_icarus_identity()
+
+        # Build allowed tools for auto-approval
+        allowed_tools = self._build_allowed_tools()
 
         print(f"Spawning {count} Icarus worker(s)...")
 
-        current_panes = tmux_pane_count(cfg.swarm_session)
+        spawned = 0
 
         for i in range(count):
-            if i == 0 and current_panes == 1:
-                # First worker uses existing pane if it's the only one
-                # Check if it's just the welcome message
-                tmux_send_keys(f"{cfg.swarm_session}:0.0", "claude")
+            # Find next available worker number
+            worker_num = self._next_worker_number()
+            session_name = f"icarus-{worker_num}"
+
+            # Try to claim work from the queue
+            work = self.bus.claim_work(f"icarus-{worker_num}")
+
+            if work:
+                # Build prompt with identity + work package
+                prompt = f"{icarus_identity}\n\n---\n\n# Work Package: {work.id}\n\n{work.description}"
             else:
-                # Create new pane
-                tmux_run(["split-window", "-t", cfg.swarm_session, "-c", cfg.project_dir])
-                tmux_send_keys(cfg.swarm_session, "claude")
-                # Re-tile
-                tmux_run(["select-layout", "-t", cfg.swarm_session, "tiled"])
+                # No work available - just start claude with identity
+                prompt = icarus_identity
+                print(f"  Worker {worker_num}: No work in queue, starting with identity only")
 
-        # Final tiling
-        tmux_run(["select-layout", "-t", cfg.swarm_session, "tiled"])
+            # Write prompt to temp file for later injection
+            import tempfile
+            prompt_file = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False)
+            prompt_file.write(prompt)
+            prompt_file.close()
 
-        final_panes = tmux_pane_count(cfg.swarm_session)
-        print(f"  Spawned {count} worker(s). Total panes: {final_panes}")
+            # Build claude command with permissions
+            claude_cmd = (
+                f"claude "
+                f"--permission-mode acceptEdits "
+                f"--allowedTools '{allowed_tools}' "
+                f"--add-dir ~/cass/cass-vessel"
+            )
+
+            # Create new tmux session for this worker
+            tmux_run([
+                "new-session", "-d",
+                "-s", session_name,
+                "-c", cfg.project_dir,
+            ])
+
+            # Start claude in the session
+            tmux_send_keys(session_name, claude_cmd)
+
+            # Wait for Claude to start, then send the prompt
+            time.sleep(3)
+            tmux_send_keys(session_name, f"Read {prompt_file.name} for your identity and work package, then execute the work.")
+            time.sleep(0.5)
+            tmux_send_keys(session_name, "", enter=True)
+
+            spawned += 1
+            if work:
+                print(f"  Worker {worker_num}: Claimed {work.id} (session: {session_name})")
+            else:
+                print(f"  Worker {worker_num}: Started (session: {session_name})")
+
+        print(f"  Spawned {spawned} worker(s) as separate sessions")
+
+    def _next_worker_number(self) -> int:
+        """Find the next available worker number."""
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["tmux", "list-sessions", "-F", "#{session_name}"],
+                capture_output=True,
+                text=True,
+            )
+            sessions = result.stdout.strip().split('\n') if result.stdout.strip() else []
+
+            # Find existing icarus-N sessions
+            existing = set()
+            for s in sessions:
+                if s.startswith("icarus-"):
+                    try:
+                        num = int(s.split("-")[1])
+                        existing.add(num)
+                    except (ValueError, IndexError):
+                        pass
+
+            # Find first available number
+            num = 0
+            while num in existing:
+                num += 1
+            return num
+        except Exception:
+            return 0
+
+    def _build_allowed_tools(self) -> str:
+        """Build allowed tools string for Claude Code auto-approval."""
+        # Match patterns from our ApprovalScope defaults
+        allowed = [
+            # Read tools - allow broad reading
+            "Read",
+            "Glob",
+            "Grep",
+            # Safe bash commands
+            "Bash(mkdir:*)",
+            "Bash(ls:*)",
+            "Bash(cat:*)",
+            "Bash(head:*)",
+            "Bash(tail:*)",
+            "Bash(find:*)",
+            "Bash(tree:*)",
+            "Bash(pwd)",
+            "Bash(which:*)",
+            "Bash(python -c:*)",
+            "Bash(python3:*)",
+            "Bash(pip:*)",
+            # Git read operations
+            "Bash(git status)",
+            "Bash(git log:*)",
+            "Bash(git diff:*)",
+            "Bash(git branch:*)",
+            "Bash(git show:*)",
+        ]
+        return ",".join(allowed)
+
+    def _load_icarus_identity(self) -> str:
+        """Load Icarus identity from package resources."""
+        try:
+            agent_files = files("daedalus.identity.data.agents")
+            identity_file = agent_files.joinpath("icarus.md")
+            return identity_file.read_text()
+        except Exception:
+            return """# Icarus
+
+You are Icarus - a worker executing a specific work package.
+
+Execute directly. Do not enter plan mode. Do not ask clarifying questions.
+Your work package contains everything you need.
+"""
 
     def kill_swarm(self) -> None:
-        """Kill all Icarus workers."""
-        cfg = self.config
+        """Kill all Icarus worker sessions."""
+        import subprocess
 
-        if not tmux_session_exists(cfg.swarm_session):
-            print("Swarm session not found.")
-            return
+        # Find all icarus-* sessions
+        try:
+            result = subprocess.run(
+                ["tmux", "list-sessions", "-F", "#{session_name}"],
+                capture_output=True,
+                text=True,
+            )
+            sessions = result.stdout.strip().split('\n') if result.stdout.strip() else []
 
-        tmux_run(["kill-session", "-t", cfg.swarm_session], check=False)
-        print("Swarm session terminated.")
+            icarus_sessions = [s for s in sessions if s.startswith("icarus-")]
+
+            if not icarus_sessions:
+                print("No Icarus worker sessions found.")
+                return
+
+            for session in icarus_sessions:
+                tmux_run(["kill-session", "-t", session], check=False)
+                print(f"  Killed: {session}")
+
+            print(f"Terminated {len(icarus_sessions)} Icarus session(s).")
+
+        except Exception as e:
+            print(f"Error killing swarm: {e}")
 
     def detach(self) -> None:
         """Detach from the Daedalus session (leaves it running)."""
@@ -310,39 +618,102 @@ class Daedalus:
 
     def spawn_headless(self, count: int = 1, claim: bool = True) -> None:
         """
-        Spawn headless Icarus workers (no interactive tmux).
+        Spawn headless Icarus workers with visual output in swarm grid.
 
-        Workers run as background processes with permissions routed through bus.
+        Workers run as background processes with output routed to log files.
+        The icarus-swarm tmux session displays tail -f of each log in a grid.
         """
         import subprocess
         import sys
+        from datetime import datetime
+
+        cfg = self.config
 
         if not self.bus.is_initialized():
             self.bus.initialize()
 
+        # Create log directory
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Ensure swarm session exists
+        if not tmux_session_exists(cfg.swarm_session):
+            self._create_swarm_session()
+
         print(f"Spawning {count} headless Icarus worker(s)...")
 
-        pids = []
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        workers = []
+
         for i in range(count):
-            # Spawn worker as background process
+            worker_id = f"icarus-{timestamp}-{i+1}"
+            log_file = LOG_DIR / f"{worker_id}.log"
+
+            # Create log file with header
+            with open(log_file, "w") as f:
+                f.write(f"=== Icarus Worker {worker_id} ===\n")
+                f.write(f"Started: {datetime.now().isoformat()}\n")
+                f.write(f"Project: {cfg.project_dir}\n")
+                f.write("=" * 40 + "\n\n")
+
+            # Spawn worker with output redirected to log file
             cmd = [
                 sys.executable, "-m", "daedalus.worker",
-                "--project", self.config.project_dir,
+                "--project", cfg.project_dir,
             ]
             if claim:
                 cmd.append("--claim")
 
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                start_new_session=True,  # Detach from terminal
-            )
-            pids.append(proc.pid)
-            print(f"  Worker {i+1}: PID {proc.pid}")
+            with open(log_file, "a") as log_f:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=log_f,
+                    stderr=log_f,
+                    start_new_session=True,
+                )
+
+            workers.append({
+                "id": worker_id,
+                "pid": proc.pid,
+                "log": str(log_file),
+            })
+
+            print(f"  Worker {i+1}: {worker_id} (PID {proc.pid})")
+
+        # Create tmux panes for each worker in swarm session
+        self._create_swarm_panes(workers)
 
         print(f"\nSpawned {count} headless workers.")
-        print("Use 'daedalus monitor' to watch their progress and handle permission requests.")
+        print(f"Logs: {LOG_DIR}/")
+        print(f"View: tmux attach -t {cfg.swarm_session}")
+
+    def _create_swarm_panes(self, workers: list) -> None:
+        """Create tmux panes in swarm session to tail worker logs."""
+        cfg = self.config
+
+        for i, worker in enumerate(workers):
+            log_file = worker["log"]
+            tail_cmd = f"tail -f {log_file}"
+
+            if i == 0:
+                # First worker: use existing pane or first pane
+                pane_count = tmux_pane_count(cfg.swarm_session)
+                if pane_count <= 1:
+                    # Send to existing pane
+                    tmux_send_keys(f"{cfg.swarm_session}:0.0", tail_cmd)
+                else:
+                    # Create new pane
+                    tmux_run(["split-window", "-t", cfg.swarm_session, "-h"])
+                    tmux_send_keys(cfg.swarm_session, tail_cmd)
+            else:
+                # Create new pane for additional workers
+                tmux_run(["split-window", "-t", cfg.swarm_session, "-h"])
+                tmux_send_keys(cfg.swarm_session, tail_cmd)
+
+            # Re-tile after each pane for even distribution
+            tmux_run(["select-layout", "-t", cfg.swarm_session, "tiled"])
+
+        # Final tiling
+        tmux_run(["select-layout", "-t", cfg.swarm_session, "tiled"])
 
     # -------------------------------------------------------------------------
     # Monitoring with Permission Handling

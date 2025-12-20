@@ -41,8 +41,20 @@ Examples:
 
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
+    # init
+    init_parser = subparsers.add_parser("init", help="Initialize Daedalus identity (copies seed files)")
+    init_parser.add_argument("--force", "-f", action="store_true", help="Overwrite existing files")
+
+    # hydrate
+    hydrate_parser = subparsers.add_parser("hydrate", help="Hydrate project with Daedalus agents")
+    hydrate_parser.add_argument("--force", "-f", action="store_true", help="Overwrite existing files")
+
     # new
-    subparsers.add_parser("new", help="Create new Daedalus workspace")
+    new_parser = subparsers.add_parser("new", help="Create new Daedalus workspace")
+    new_parser.add_argument("--tmux", action="store_true", help="Use legacy tmux layout instead of TUI")
+
+    # tui
+    subparsers.add_parser("tui", help="Launch Daedalus TUI (Textual interface)")
 
     # attach
     subparsers.add_parser("attach", help="Attach to existing workspace")
@@ -95,9 +107,20 @@ Examples:
     args = parser.parse_args()
     daedalus = Daedalus()
 
-    if args.command == "new":
-        if daedalus.create_workspace():
-            daedalus.attach()
+    if args.command == "init":
+        daedalus.init(force=args.force)
+
+    elif args.command == "hydrate":
+        daedalus.hydrate(force=args.force)
+
+    elif args.command == "new":
+        if daedalus.create_workspace(use_tmux=args.tmux):
+            if args.tmux:
+                daedalus.attach()
+            # TUI mode runs inline, no attach needed
+
+    elif args.command == "tui":
+        daedalus.tui()
 
     elif args.command == "attach":
         daedalus.attach()
