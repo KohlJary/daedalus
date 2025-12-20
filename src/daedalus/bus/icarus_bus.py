@@ -438,7 +438,7 @@ class IcarusBus:
         timeout: float = 300,
         poll_interval: float = 1.0
     ) -> Optional[Response]:
-        """Wait for Daedalus response to a request."""
+        """Wait for Daedalus response to a request (synchronous)."""
         response_file = self.dirs["responses"] / f"{request_id}.json"
         start = time.time()
 
@@ -447,6 +447,25 @@ class IcarusBus:
                 data = json.loads(response_file.read_text())
                 return Response(**data)
             time.sleep(poll_interval)
+
+        return None
+
+    async def wait_for_response_async(
+        self,
+        request_id: str,
+        timeout: float = 300,
+        poll_interval: float = 1.0
+    ) -> Optional[Response]:
+        """Wait for Daedalus response to a request (async-compatible)."""
+        import asyncio
+        response_file = self.dirs["responses"] / f"{request_id}.json"
+        start = time.time()
+
+        while time.time() - start < timeout:
+            if response_file.exists():
+                data = json.loads(response_file.read_text())
+                return Response(**data)
+            await asyncio.sleep(poll_interval)
 
         return None
 

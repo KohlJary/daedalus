@@ -39,9 +39,20 @@ from ..bus.permissions import (
 # Try to import Claude Agent SDK
 try:
     from claude_agent_sdk import query
+    from claude_agent_sdk.types import (
+        ClaudeAgentOptions,
+        PermissionResultAllow,
+        PermissionResultDeny,
+        ToolPermissionContext,
+    )
     HAS_AGENT_SDK = True
 except ImportError:
     HAS_AGENT_SDK = False
+    # Define stubs for type hints
+    ClaudeAgentOptions = None
+    PermissionResultAllow = None
+    PermissionResultDeny = None
+    ToolPermissionContext = None
 
 
 class IcarusWorker:
@@ -115,17 +126,24 @@ class IcarusWorker:
     async def _handle_permission(
         self,
         tool_name: str,
-        input_params: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        input_params: Dict[str, Any],
+        context: "ToolPermissionContext",
+    ):
         """
         Handle a permission request.
 
         This is the can_use_tool callback for Claude Agent SDK.
 
+        Args:
+            tool_name: Name of the tool being used
+            input_params: Input parameters for the tool
+            context: SDK permission context
+
         Returns:
-            {"behavior": "allow", "updatedInput": input_params} or
-            {"behavior": "deny", "message": reason}
+            PermissionResultAllow or PermissionResultDeny
         """
+        self._log(f">>> PERMISSION CALLBACK INVOKED: {tool_name}")
+
         # Create permission request
         perm_req = create_permission_request(
             tool_name=tool_name,
@@ -142,12 +160,12 @@ class IcarusWorker:
         if approved:
             self.permissions_granted += 1
             self._log(f"  -> Auto-approved")
-            return {"behavior": "allow", "updatedInput": input_params}
+            return PermissionResultAllow(updated_input=input_params)
 
         if deny_reason:
             self.permissions_denied += 1
             self._log(f"  -> Auto-denied: {deny_reason}")
-            return {"behavior": "deny", "message": deny_reason}
+            return PermissionResultDeny(message=deny_reason)
 
         # Not auto-approved or denied - escalate to Daedalus via bus
         self.permissions_escalated += 1
@@ -171,27 +189,24 @@ class IcarusWorker:
 
         self._log(f"  -> Request ID: {request_id}")
 
-        # Wait for Daedalus response
-        response = self.bus.wait_for_response(
+        # Wait for Daedalus response (async to not block event loop)
+        response = await self.bus.wait_for_response_async(
             request_id,
             timeout=self.permission_timeout,
         )
 
         if response is None:
             self._log(f"  -> Timeout waiting for response")
-            return {
-                "behavior": "deny",
-                "message": "Timeout waiting for permission approval",
-            }
+            return PermissionResultDeny(message="Timeout waiting for permission approval")
 
         if response.decision == "approved":
             self._log(f"  -> Approved by Daedalus")
             # Check if Daedalus modified the input
             updated_input = response.data.get("updated_input", input_params)
-            return {"behavior": "allow", "updatedInput": updated_input}
+            return PermissionResultAllow(updated_input=updated_input)
         else:
             self._log(f"  -> Denied by Daedalus: {response.message}")
-            return {"behavior": "deny", "message": response.message}
+            return PermissionResultDeny(message=response.message)
 
     def _format_permission_message(self, req: PermissionRequest) -> str:
         """Format a human-readable permission message."""
@@ -240,27 +255,45 @@ class IcarusWorker:
         self._log(f"Executing prompt ({len(prompt)} chars)")
 
         try:
-            # Build options
-            options = {
-                "permission_mode": permission_mode,
-                "can_use_tool": self._handle_permission,
-                "cwd": self.project_root,
-            }
-
-            if system_prompt:
-                options["system_prompt"] = system_prompt
-
-            # Execute query
-            result = await query(
-                prompt=prompt,
-                options=options,
+            # Build options using SDK types
+            options = ClaudeAgentOptions(
+                permission_mode=permission_mode,
+                can_use_tool=self._handle_permission,
+                cwd=self.project_root,
+                system_prompt=system_prompt,
             )
+
+            # can_use_tool requires streaming mode - wrap prompt in async generator
+            async def prompt_stream():
+                yield {
+                    "type": "user",
+                    "message": {"role": "user", "content": prompt}
+                }
+
+            # Execute query - returns async generator for streaming
+            messages = []
+            async for message in query(prompt=prompt_stream(), options=options):
+                messages.append(message)
+                # Log assistant messages
+                if hasattr(message, 'type'):
+                    if message.type == 'assistant':
+                        self._log(f"Assistant: {str(message)[:100]}...")
+                    elif message.type == 'result':
+                        self._log(f"Result received")
 
             self.bus.update_status(self.instance_id, InstanceStatus.COMPLETE, self.work_id)
 
+            # Extract final result from messages
+            result_text = ""
+            for msg in messages:
+                if hasattr(msg, 'type') and msg.type == 'result':
+                    result_text = str(msg)
+                    break
+
             return {
                 "success": True,
-                "output": result,
+                "output": result_text or str(messages[-1]) if messages else "No output",
+                "messages": [str(m) for m in messages],
                 "permissions": {
                     "granted": self.permissions_granted,
                     "denied": self.permissions_denied,
