@@ -305,30 +305,183 @@ class Daedalus:
         print(f"Responded to {request_id}: {decision}")
 
     # -------------------------------------------------------------------------
-    # Monitoring (placeholder for future TUI)
+    # Headless Worker Management
     # -------------------------------------------------------------------------
 
-    def monitor(self) -> None:
+    def spawn_headless(self, count: int = 1, claim: bool = True) -> None:
         """
-        Live monitoring view.
+        Spawn headless Icarus workers (no interactive tmux).
 
-        TODO: Expand this into a full Textual TUI with:
-        - Real-time instance status
-        - Work queue visualization
-        - Stream output from workers
-        - Interactive request handling
+        Workers run as background processes with permissions routed through bus.
         """
-        print("Monitor mode - press Ctrl+C to exit")
-        print("(Future: full TUI with Textual)")
+        import subprocess
+        import sys
+
+        if not self.bus.is_initialized():
+            self.bus.initialize()
+
+        print(f"Spawning {count} headless Icarus worker(s)...")
+
+        pids = []
+        for i in range(count):
+            # Spawn worker as background process
+            cmd = [
+                sys.executable, "-m", "daedalus.worker",
+                "--project", self.config.project_dir,
+            ]
+            if claim:
+                cmd.append("--claim")
+
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,  # Detach from terminal
+            )
+            pids.append(proc.pid)
+            print(f"  Worker {i+1}: PID {proc.pid}")
+
+        print(f"\nSpawned {count} headless workers.")
+        print("Use 'daedalus monitor' to watch their progress and handle permission requests.")
+
+    # -------------------------------------------------------------------------
+    # Monitoring with Permission Handling
+    # -------------------------------------------------------------------------
+
+    def monitor(self, auto_approve: bool = False, interactive: bool = True) -> None:
+        """
+        Live monitoring view with permission request handling.
+
+        Args:
+            auto_approve: Auto-approve requests matching scope patterns
+            interactive: Prompt for permission decisions interactively
+        """
+        from ..bus.permissions import (
+            ApprovalScope,
+            check_auto_approve,
+            PermissionRequest,
+            PermissionType,
+        )
+
+        print("Daedalus Monitor - press Ctrl+C to exit")
+        print(f"Mode: {'auto-approve enabled' if auto_approve else 'manual approval'}")
         print()
+
+        scope = ApprovalScope.default(self.config.project_dir)
 
         try:
             while True:
-                # Clear screen
-                print("\033[2J\033[H", end="")
-                self.status()
-                print()
-                print("Refreshing in 2s... (Ctrl+C to exit)")
-                time.sleep(2)
+                # Check for pending permission requests
+                requests = self.bus.list_pending_requests()
+
+                for req in requests:
+                    self._handle_request(req, scope, auto_approve, interactive)
+
+                # Display status
+                self._display_status()
+
+                time.sleep(1)
+
         except KeyboardInterrupt:
             print("\nExiting monitor.")
+
+    def _handle_request(self, req, scope, auto_approve: bool, interactive: bool) -> None:
+        """Handle a single permission request."""
+        from ..bus.permissions import (
+            check_auto_approve,
+            PermissionRequest,
+            PermissionType,
+        )
+
+        context = req.context or {}
+        perm_type = context.get("permission_type")
+        tool_name = context.get("tool_name", "unknown")
+        input_params = context.get("input_params", {})
+
+        print()
+        print("=" * 60)
+        print(f"\033[93mPermission Request: {req.id}\033[0m")
+        print(f"From: {req.instance_id}")
+        print(f"Type: {perm_type}")
+        print(f"Tool: {tool_name}")
+        print(f"Message:\n{req.message}")
+        print("=" * 60)
+
+        # Try auto-approve if enabled
+        if auto_approve and perm_type:
+            perm_req = PermissionRequest(
+                type=PermissionType(perm_type),
+                tool_name=tool_name,
+                input_params=input_params,
+                work_id=req.work_id,
+                instance_id=req.instance_id,
+            )
+            approved, deny_reason = check_auto_approve(perm_req, scope)
+
+            if approved:
+                print("\033[92m→ Auto-approved\033[0m")
+                self._respond_approved(req.id)
+                return
+
+            if deny_reason:
+                print(f"\033[91m→ Auto-denied: {deny_reason}\033[0m")
+                self._respond_denied(req.id, deny_reason)
+                return
+
+        # Interactive handling
+        if interactive:
+            while True:
+                choice = input("\n[A]pprove / [D]eny / [S]kip? ").strip().lower()
+                if choice in ('a', 'approve'):
+                    self._respond_approved(req.id)
+                    print("\033[92m→ Approved\033[0m")
+                    break
+                elif choice in ('d', 'deny'):
+                    reason = input("Reason: ").strip() or "Denied by Daedalus"
+                    self._respond_denied(req.id, reason)
+                    print(f"\033[91m→ Denied: {reason}\033[0m")
+                    break
+                elif choice in ('s', 'skip'):
+                    print("→ Skipped (will ask again)")
+                    break
+                else:
+                    print("Invalid choice. Enter A, D, or S.")
+        else:
+            print("→ Pending (non-interactive mode)")
+
+    def _respond_approved(self, request_id: str) -> None:
+        """Send approval response."""
+        response = Response(
+            request_id=request_id,
+            decision="approved",
+            message="Approved by Daedalus",
+        )
+        self.bus.respond_to_request(request_id, response)
+
+    def _respond_denied(self, request_id: str, reason: str) -> None:
+        """Send denial response."""
+        response = Response(
+            request_id=request_id,
+            decision="denied",
+            message=reason,
+        )
+        self.bus.respond_to_request(request_id, response)
+
+    def _display_status(self) -> None:
+        """Display compact status for monitor mode."""
+        if not self.bus.is_initialized():
+            return
+
+        summary = self.bus.status_summary()
+        inst = summary["instances"]
+        work = summary["work"]
+        reqs = summary["requests"]
+
+        # Single line status
+        status_line = (
+            f"\r\033[K"  # Clear line
+            f"Workers: {inst['total']} | "
+            f"Work: {work['pending']}p/{work['claimed']}a/{work['completed']}d | "
+            f"Requests: {reqs['pending']} pending"
+        )
+        print(status_line, end="", flush=True)

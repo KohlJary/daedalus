@@ -17,7 +17,17 @@ from .icarus_bus import (
     BUS_ROOT,
 )
 
+from .permissions import (
+    PermissionType,
+    PermissionRequest,
+    ApprovalScope,
+    classify_tool,
+    check_auto_approve,
+    create_permission_request,
+)
+
 __all__ = [
+    # Core bus
     "IcarusBus",
     "IcarusInstance",
     "WorkPackage",
@@ -27,4 +37,11 @@ __all__ = [
     "WorkStatus",
     "RequestType",
     "BUS_ROOT",
+    # Permissions
+    "PermissionType",
+    "PermissionRequest",
+    "ApprovalScope",
+    "classify_tool",
+    "check_auto_approve",
+    "create_permission_request",
 ]

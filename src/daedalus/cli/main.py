@@ -50,9 +50,14 @@ Examples:
     # status
     subparsers.add_parser("status", help="Show workspace status")
 
-    # spawn
-    spawn_parser = subparsers.add_parser("spawn", help="Spawn Icarus workers")
+    # spawn (interactive tmux workers)
+    spawn_parser = subparsers.add_parser("spawn", help="Spawn Icarus workers (interactive tmux)")
     spawn_parser.add_argument("count", type=int, nargs="?", default=1, help="Number of workers")
+
+    # spawn-headless (SDK-based workers)
+    headless_parser = subparsers.add_parser("spawn-headless", help="Spawn headless workers (SDK-based)")
+    headless_parser.add_argument("count", type=int, nargs="?", default=1, help="Number of workers")
+    headless_parser.add_argument("--no-claim", action="store_true", help="Don't auto-claim work from queue")
 
     # kill-swarm
     subparsers.add_parser("kill-swarm", help="Kill all Icarus workers")
@@ -79,7 +84,9 @@ Examples:
     respond_parser.add_argument("message", help="Response message")
 
     # monitor
-    subparsers.add_parser("monitor", help="Live monitoring view")
+    monitor_parser = subparsers.add_parser("monitor", help="Live monitoring with permission handling")
+    monitor_parser.add_argument("--auto", action="store_true", help="Auto-approve safe operations")
+    monitor_parser.add_argument("--no-interactive", action="store_true", help="Non-interactive mode")
 
     # bus (pass-through to icarus_bus CLI)
     bus_parser = subparsers.add_parser("bus", help="Direct bus commands")
@@ -101,6 +108,9 @@ Examples:
     elif args.command == "spawn":
         daedalus.spawn_workers(args.count)
 
+    elif args.command == "spawn-headless":
+        daedalus.spawn_headless(args.count, claim=not args.no_claim)
+
     elif args.command == "kill-swarm":
         daedalus.kill_swarm()
 
@@ -120,7 +130,10 @@ Examples:
         daedalus.respond_to_request(args.request_id, args.decision, args.message)
 
     elif args.command == "monitor":
-        daedalus.monitor()
+        daedalus.monitor(
+            auto_approve=args.auto,
+            interactive=not args.no_interactive
+        )
 
     elif args.command == "bus":
         # Pass through to icarus_bus CLI

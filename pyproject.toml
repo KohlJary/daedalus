@@ -24,12 +24,16 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 
+[project.optional-dependencies]
+sdk = ["claude-agent-sdk>=0.1.0"]
+
 [project.scripts]
 daedalus = "daedalus.cli.main:main"
+icarus-worker = "daedalus.worker.harness:main"
 
 [project.urls]
-Homepage = "https://github.com/KohlJary/project-cass"
-Repository = "https://github.com/KohlJary/project-cass"
+Homepage = "https://github.com/KohlJary/daedalus"
+Repository = "https://github.com/KohlJary/daedalus"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
