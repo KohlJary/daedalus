@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "daedalus"
 version = "0.1.0"
-description = "Claude Code plugin with Mind Palace (Labyrinth) navigation and Icarus parallel workers"
+description = "Claude Code plugin with Mind Palace navigation, Icarus parallel workers, and Ariadne orchestration"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Hippocratic License 3.0"}
@@ -13,7 +13,7 @@ authors = [
     {name = "Kohl Jary", email = "kohlbern@gmail.com"},
     {name = "Daedalus"},
 ]
-keywords = ["claude", "labyrinth", "mind-palace", "icarus", "parallelization"]
+keywords = ["claude", "labyrinth", "mind-palace", "icarus", "ariadne", "parallelization", "orchestration"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -38,6 +38,8 @@ dev = ["pytest>=7.0", "pytest-cov>=4.0"]
 [project.scripts]
 daedalus = "daedalus.cli:main"
 icarus-worker = "daedalus.worker.harness:main"
+ariadne = "daedalus.ariadne.orchestrator:main"
+ariadne-bus = "daedalus.ariadne.diff_bus:main"
 context-estimator = "daedalus.tools.context_estimator:main"
 
 [project.urls]

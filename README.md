@@ -104,6 +104,31 @@ SAFE PATHS:
 Would you like me to create a refactoring plan for the Hydra first?
 ```
 
+### Ariadne Orchestration (Experimental)
+
+Ariadne is the orchestration layer for parallel Icarus workers. When multiple workers make changes simultaneously, Ariadne:
+
+1. **Collects diffs** instead of commits - workers submit their changes to Ariadne's bus
+2. **Detects conflicts** - file-level and line-level overlap detection
+3. **Verifies changes** - causal slice verification (type check, lint, tests on affected code only)
+4. **Merges atomically** - combines verified diffs into single commits
+
+```bash
+# Initialize the Ariadne bus
+ariadne init
+
+# Check status
+ariadne status
+
+# Process pending diffs (one-shot)
+ariadne process --auto-commit
+
+# Run as daemon
+ariadne daemon --interval 5 --auto-commit
+```
+
+The mythology: Ariadne gave Theseus the thread that guided him through the Labyrinth. Here, she holds the thread that coordinates parallel workers so their changes don't collide.
+
 ## CLI Commands
 
 ### Project Setup
@@ -168,6 +193,7 @@ Config is stored in platform-appropriate location:
 | `user.communication_style` | How you prefer to communicate | "Not specified" |
 | `user.email` | Email for git commits | git config user.email |
 | `icarus.enabled` | Enable parallel workers | false |
+| `ariadne.enabled` | Enable Ariadne orchestration | false |
 
 ## Template Variables
 

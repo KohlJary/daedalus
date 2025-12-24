@@ -46,6 +46,8 @@ You have the context you need in the work package description.
 Focus on completing the task efficiently and correctly.
 """
 
+import subprocess
+
 from ..bus.icarus_bus import (
     IcarusBus,
     InstanceStatus,
@@ -59,6 +61,15 @@ from ..bus.permissions import (
     check_auto_approve,
     create_permission_request,
 )
+
+# Try to import Ariadne for diff submission
+try:
+    from ..ariadne import AriadneBus, Diff, extract_causal_chain
+    HAS_ARIADNE = True
+except ImportError:
+    HAS_ARIADNE = False
+    AriadneBus = None
+    Diff = None
 
 # Try to import Claude Agent SDK
 try:
@@ -97,6 +108,7 @@ class IcarusWorker:
         bus: Optional[IcarusBus] = None,
         permission_timeout: float = 300,
         stream_output: bool = True,
+        use_ariadne: bool = False,
     ):
         """
         Initialize worker.
@@ -108,6 +120,7 @@ class IcarusWorker:
             bus: Icarus bus instance (creates new if None)
             permission_timeout: Seconds to wait for permission responses
             stream_output: Whether to stream output to bus
+            use_ariadne: Submit diffs to Ariadne instead of committing
         """
         self.work_id = work_id
         self.project_root = project_root or os.getcwd()
@@ -115,6 +128,12 @@ class IcarusWorker:
         self.bus = bus or IcarusBus()
         self.permission_timeout = permission_timeout
         self.stream_output = stream_output
+        self.use_ariadne = use_ariadne
+
+        # Ariadne bus for diff submission
+        self.ariadne_bus: Optional["AriadneBus"] = None
+        if use_ariadne and HAS_ARIADNE:
+            self.ariadne_bus = AriadneBus()
 
         # Instance ID set on registration
         self.instance_id: Optional[str] = None
@@ -142,6 +161,78 @@ class IcarusWorker:
         if self.instance_id:
             self.bus.unregister_instance(self.instance_id)
             self._log("Unregistered")
+
+    def submit_diff_to_ariadne(self, description: str) -> Optional[str]:
+        """
+        Generate a diff of current changes and submit to Ariadne.
+
+        Instead of committing, this captures the current git diff and submits
+        it to Ariadne's bus for verification and eventual atomic commit.
+
+        Args:
+            description: Description of what this diff does
+
+        Returns:
+            Diff ID if submitted, None if no changes or Ariadne unavailable
+        """
+        if not self.use_ariadne or not self.ariadne_bus:
+            self._log("Ariadne not enabled, skipping diff submission")
+            return None
+
+        if not HAS_ARIADNE:
+            self._log("Ariadne module not available")
+            return None
+
+        try:
+            # Generate diff
+            result = subprocess.run(
+                ["git", "diff", "HEAD"],
+                cwd=self.project_root,
+                capture_output=True,
+                text=True,
+            )
+
+            diff_content = result.stdout
+            if not diff_content.strip():
+                self._log("No changes to submit")
+                return None
+
+            # Create Diff object
+            diff = Diff.from_git_diff(
+                work_id=self.work_id or "unknown",
+                instance_id=self.instance_id or "unknown",
+                diff_content=diff_content,
+                description=description,
+            )
+
+            # Extract causal chain for verification
+            causal_chain = extract_causal_chain(diff, Path(self.project_root))
+            diff.causal_chain = {
+                "diff_id": causal_chain.diff_id,
+                "affected_files": causal_chain.affected_files,
+                "affected_functions": causal_chain.affected_functions,
+                "affected_modules": causal_chain.affected_modules,
+                "test_files": causal_chain.test_files,
+            }
+
+            # Submit to Ariadne
+            diff_id = self.ariadne_bus.submit_diff(diff)
+            self._log(f"Submitted diff to Ariadne: {diff_id}")
+            self._log(f"  Files: {len(diff.all_affected_files())}")
+            self._log(f"  Causal chain: {len(causal_chain.affected_functions)} functions")
+
+            # Reset working directory (Ariadne will apply the diff later)
+            subprocess.run(
+                ["git", "checkout", "."],
+                cwd=self.project_root,
+                capture_output=True,
+            )
+
+            return diff_id
+
+        except Exception as e:
+            self._log(f"Failed to submit diff to Ariadne: {e}")
+            return None
 
     def _log(self, message: str):
         """Log message to bus stream."""
@@ -494,6 +585,7 @@ async def run_worker(
     project_root: Optional[str] = None,
     prompt: Optional[str] = None,
     claim_from_queue: bool = False,
+    use_ariadne: bool = False,
 ):
     """
     Run an Icarus worker.
@@ -503,6 +595,7 @@ async def run_worker(
         project_root: Project root directory
         prompt: Direct prompt to execute (if not using work package)
         claim_from_queue: Whether to claim work from the queue
+        use_ariadne: Submit diffs to Ariadne instead of committing
     """
     bus = IcarusBus()
 
@@ -514,6 +607,7 @@ async def run_worker(
         work_id=work_id,
         project_root=project_root,
         bus=bus,
+        use_ariadne=use_ariadne,
     )
 
     await worker.register()
@@ -559,6 +653,8 @@ def main():
     parser.add_argument("--project", default=os.getcwd(), help="Project root directory")
     parser.add_argument("--prompt", help="Direct prompt to execute")
     parser.add_argument("--claim", action="store_true", help="Claim work from queue")
+    parser.add_argument("--ariadne", action="store_true",
+                       help="Submit diffs to Ariadne instead of committing")
 
     args = parser.parse_args()
 
@@ -567,6 +663,7 @@ def main():
         project_root=args.project,
         prompt=args.prompt,
         claim_from_queue=args.claim,
+        use_ariadne=args.ariadne,
     ))
 
 

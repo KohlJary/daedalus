@@ -32,10 +32,24 @@ class IcarusConfig:
 
 
 @dataclass
+class AriadneConfig:
+    """Ariadne orchestration configuration."""
+    enabled: bool = False
+    autonomy: str = "hybrid"  # supervised, hybrid, full
+    auto_dispatch_threshold: int = 3  # Complexity threshold for auto-dispatch in hybrid mode
+    require_approval_for: list = field(default_factory=lambda: [
+        "breaking_change", "security", "architecture", "database"
+    ])
+    max_parallel_workers: int = 4
+    theseus_analysis: bool = True  # Run Theseus before planning
+
+
+@dataclass
 class DaedalusConfig:
     """Full Daedalus configuration."""
     user: UserConfig = field(default_factory=UserConfig)
     icarus: IcarusConfig = field(default_factory=IcarusConfig)
+    ariadne: AriadneConfig = field(default_factory=AriadneConfig)
 
 
 def get_config_dir() -> Path:
@@ -100,6 +114,7 @@ def load_config() -> DaedalusConfig:
         return DaedalusConfig(
             user=UserConfig(**data.get("user", {})),
             icarus=IcarusConfig(**data.get("icarus", {})),
+            ariadne=AriadneConfig(**data.get("ariadne", {})),
         )
     except (json.JSONDecodeError, TypeError, KeyError):
         # Return defaults on any parse error
@@ -114,6 +129,7 @@ def save_config(config: DaedalusConfig) -> None:
     data = {
         "user": asdict(config.user),
         "icarus": asdict(config.icarus),
+        "ariadne": asdict(config.ariadne),
     }
 
     get_config_file().write_text(json.dumps(data, indent=2))
