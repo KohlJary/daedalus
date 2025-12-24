@@ -1,16 +1,39 @@
 """
-Daedalus - Software engineering paradigm with Icarus parallelization.
+Daedalus - Claude Code plugin with Mind Palace navigation and Icarus parallel workers.
 
-A CLI and coordination system for Claude Code workflows, including:
-- Template injection for project CLAUDE.md files
-- Icarus Bus for parallel work coordination
-- Identity framework for worker instances
+A plugin ecosystem for Claude Code workflows, including:
+- Labyrinth: MUD-based codebase navigation (Mind Palace)
+- Icarus Bus: Parallel work coordination
+- Identity framework: Worker instances with soul
 """
 
 __version__ = "0.1.0"
 
-# Re-export key functions for convenience
-from .templates import inject_claude_template, substitute_template_vars
+# Re-export key labyrinth components
+from .labyrinth import (
+    # Core
+    Palace,
+    Region,
+    Building,
+    Room,
+    Entity,
+    # Navigation
+    Navigator,
+    NavigationResult,
+    # Storage
+    PalaceStorage,
+    # Cartography
+    Cartographer,
+    # Pathfinding
+    CallGraph,
+    ImpactAnalysis,
+    # Work packages
+    WorkPackageManager,
+    # Causal slicing
+    CausalSlicer,
+    # Icarus dispatch
+    IcarusDispatcher,
+)
 
 # Re-export bus components
 from .bus import (
@@ -21,22 +44,32 @@ from .bus import (
     RequestType,
 )
 
-# Re-export CLI components
-from .cli import Daedalus, DaedalusConfig, get_config
-
 __all__ = [
     "__version__",
-    # Templates
-    "inject_claude_template",
-    "substitute_template_vars",
+    # Labyrinth - Core
+    "Palace",
+    "Region",
+    "Building",
+    "Room",
+    "Entity",
+    # Labyrinth - Navigation
+    "Navigator",
+    "NavigationResult",
+    # Labyrinth - Storage
+    "PalaceStorage",
+    # Labyrinth - Cartography
+    "Cartographer",
+    # Labyrinth - Pathfinding
+    "CallGraph",
+    "ImpactAnalysis",
+    # Labyrinth - Work
+    "WorkPackageManager",
+    "CausalSlicer",
+    "IcarusDispatcher",
     # Bus
     "IcarusBus",
     "WorkPackage",
     "InstanceStatus",
     "WorkStatus",
     "RequestType",
-    # CLI
-    "Daedalus",
-    "DaedalusConfig",
-    "get_config",
 ]

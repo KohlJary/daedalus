@@ -34,16 +34,26 @@ def _debug_log(msg: str, level: str = "info") -> None:
 
 def get_template_content() -> Optional[str]:
     """
-    Load the CLAUDE_TEMPLATE.md from package data.
+    Load the CLAUDE_TEMPLATE.md from .claude-plugin.
+
+    Searches for the template in:
+    1. Package's .claude-plugin/templates/ (relative to package root)
+    2. Fallback to embedded template if available
 
     Returns:
         Template content string, or None if not found.
     """
     try:
-        template_files = files("daedalus.templates") / "data" / "CLAUDE_TEMPLATE.md"
-        return template_files.read_text()
+        # Try to find .claude-plugin relative to the daedalus package
+        package_root = Path(__file__).parent.parent.parent.parent  # daedalus/
+        plugin_template = package_root / ".claude-plugin" / "templates" / "CLAUDE_TEMPLATE.md"
+        if plugin_template.exists():
+            return plugin_template.read_text()
+
+        _debug_log(f"Template not found at {plugin_template}", "warning")
+        return None
     except Exception as e:
-        _debug_log(f"Failed to load template from package: {e}", "warning")
+        _debug_log(f"Failed to load template: {e}", "warning")
         return None
 
 
