@@ -10,7 +10,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "Daedalus", email = "daedalus@cass-vessel.local"}
+    {name = "Kohl Jary", email = "kohlbern@gmail.com"},
+    {name = "Daedalus"},
 ]
 keywords = ["claude", "labyrinth", "mind-palace", "icarus", "parallelization"]
 classifiers = [
@@ -26,12 +27,16 @@ classifiers = [
 
 dependencies = [
     "pyyaml>=6.0",
+    "platformdirs>=4.0",
+    "click>=8.0",
 ]
 
 [project.optional-dependencies]
 sdk = ["claude-agent-sdk>=0.1.0"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0"]
 
 [project.scripts]
+daedalus = "daedalus.cli:main"
 icarus-worker = "daedalus.worker.harness:main"
 context-estimator = "daedalus.tools.context_estimator:main"
 
@@ -49,5 +54,5 @@ where = ["src"]
 daedalus = [
     "identity/data/*.md",
     "identity/data/*.json",
-    "labyrinth/*.py",
+    "plugin/**/*",
 ]

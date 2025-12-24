@@ -14,16 +14,15 @@ from typing import Optional
 
 # Python 3.9+ has importlib.resources.files, 3.7-3.8 need importlib_resources
 if sys.version_info >= (3, 9):
-    from importlib.resources import files
+    from importlib.resources import files, as_file
 else:
-    from importlib_resources import files
+    from importlib_resources import files, as_file
+
+from ..config import get_config_file, get_daedalus_email, load_config
 
 # Markers for the managed section
 DAEDALUS_BEGIN = "<!-- DAEDALUS_BEGIN -->"
 DAEDALUS_END = "<!-- DAEDALUS_END -->"
-
-# Default config location (can be overridden)
-DEFAULT_CONFIG_PATH = Path.home() / ".config" / "daedalus" / "config.json"
 
 
 def _debug_log(msg: str, level: str = "info") -> None:
@@ -34,27 +33,43 @@ def _debug_log(msg: str, level: str = "info") -> None:
 
 def get_template_content() -> Optional[str]:
     """
-    Load the CLAUDE_TEMPLATE.md from .claude-plugin.
+    Load the CLAUDE_TEMPLATE.md from package data.
 
     Searches for the template in:
-    1. Package's .claude-plugin/templates/ (relative to package root)
-    2. Fallback to embedded template if available
+    1. Package's plugin/templates/ via importlib.resources (installed package)
+    2. Fallback to relative path (development mode)
 
     Returns:
         Template content string, or None if not found.
     """
+    # Try importlib.resources first (works for installed packages)
     try:
-        # Try to find .claude-plugin relative to the daedalus package
-        package_root = Path(__file__).parent.parent.parent.parent  # daedalus/
+        template_files = files("daedalus.plugin.templates")
+        template_ref = template_files.joinpath("CLAUDE_TEMPLATE.md")
+        return template_ref.read_text(encoding="utf-8")
+    except Exception:
+        pass
+
+    # Fallback: Try relative to package (development mode)
+    try:
+        pkg_root = Path(__file__).parent.parent
+        template_path = pkg_root / "plugin" / "templates" / "CLAUDE_TEMPLATE.md"
+        if template_path.exists():
+            return template_path.read_text()
+    except Exception:
+        pass
+
+    # Final fallback: old .claude-plugin location (transitional)
+    try:
+        package_root = Path(__file__).parent.parent.parent.parent
         plugin_template = package_root / ".claude-plugin" / "templates" / "CLAUDE_TEMPLATE.md"
         if plugin_template.exists():
             return plugin_template.read_text()
+    except Exception:
+        pass
 
-        _debug_log(f"Template not found at {plugin_template}", "warning")
-        return None
-    except Exception as e:
-        _debug_log(f"Failed to load template: {e}", "warning")
-        return None
+    _debug_log("Template not found in any location", "warning")
+    return None
 
 
 def load_daedalus_config(config_path: Optional[Path] = None) -> dict:
@@ -62,7 +77,7 @@ def load_daedalus_config(config_path: Optional[Path] = None) -> dict:
     Load Daedalus configuration from config file.
 
     Args:
-        config_path: Path to config file. Defaults to ~/.config/daedalus/config.json
+        config_path: Path to config file. Uses platformdirs location by default,
                      or falls back to project config/daedalus.json
 
     Returns:
@@ -73,9 +88,9 @@ def load_daedalus_config(config_path: Optional[Path] = None) -> dict:
     if config_path:
         paths_to_try.append(config_path)
 
-    # Try default config locations
+    # Try default config locations (using platformdirs)
     paths_to_try.extend([
-        DEFAULT_CONFIG_PATH,
+        get_config_file(),
         Path.cwd() / "config" / "daedalus.json",  # Project-local config
     ])
 
@@ -102,9 +117,14 @@ def substitute_template_vars(content: str, config: dict) -> str:
     """
     user_config = config.get("user", {})
 
+    # Get Daedalus email (uses git user.email as default)
+    daedalus_config = load_config()
+    email = get_daedalus_email(daedalus_config)
+
     replacements = {
         "{{USER_NAME}}": user_config.get("name", "the user"),
         "{{USER_COMMUNICATION_STYLE}}": user_config.get("communication_style", "Not specified"),
+        "{{DAEDALUS_EMAIL}}": email,
     }
 
     for placeholder, value in replacements.items():

@@ -1,0 +1,45 @@
+name: daedalus-claude-plugin
+version: 0.1.0
+description: >
+  Daedalus - Claude Code extensions for AI-assisted development.
+  Includes Mind Palace (Labyrinth) navigation, Icarus parallel workers,
+  Theseus complexity analysis, and project memory management.
+author: Daedalus
+license: MIT
+
+manifest:
+  agents: agents/
+  commands: commands/
+  skills: skills/
+  hooks: hooks/
+  templates: templates/
+
+agents:
+  - name: design-analyst
+    description: UX/UI analysis with Playwright
+  - name: docs
+    description: Documentation and codebase exploration
+  - name: icarus
+    description: Parallel worker identity for distributed execution
+  - name: labyrinth
+    description: Mind Palace MUD navigation - spatial codebase understanding
+  - name: memory
+    description: Project memory management across sessions
+  - name: roadmap
+    description: Project planning and work item tracking
+  - name: test-runner
+    description: Test generation and execution
+  - name: theseus
+    description: Code complexity analysis and refactoring guidance
+
+commands:
+  - name: memory
+    description: View and update project memory
+  - name: palace
+    description: Navigate Mind Palace entities
+  - name: theseus
+    description: Analyze code health and complexity
+
+skills:
+  - name: mind-palace
+    description: Spatial-semantic codebase navigation system
