@@ -154,6 +154,21 @@ Save reports to `.daedalus/theseus/`:
 └── victories.json       # Slain monsters (completed extractions)
 ```
 
+**For complex analyses**, create subdirectories to organize multiple documents:
+
+```
+.daedalus/theseus/
+├── reports/
+│   └── 2025-12-24-auth-refactor/
+│       ├── overview.md           # Executive summary
+│       ├── hydra-oauth.md        # Deep dive on the HYDRA
+│       ├── spider-permissions.md # Deep dive on the SPIDER
+│       ├── dependency-graph.md   # Visual dependency analysis
+│       └── battle-plan.md        # Ordered extraction strategy
+```
+
+Create the directory structure as needed. Complex refactors deserve thorough documentation.
+
 ## Analysis Commands
 
 When asked to analyze, use these patterns:
