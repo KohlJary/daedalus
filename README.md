@@ -71,6 +71,7 @@ CLAUDE.md                # Injected Daedalus workflow section
 | `roadmap` | Query and manage project tasks |
 | `docs` | Documentation and implementation exploration |
 | `test-runner` | Generate and maintain tests |
+| `ariadne` | Parallel worker orchestration (planning, dispatch, verification) |
 
 ### Theseus in Action
 

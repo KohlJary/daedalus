@@ -39,6 +39,56 @@ from .languages import CodeElement, get_language_registry, LanguageSupport
 
 logger = logging.getLogger(__name__)
 
+# Methods that are boilerplate - not worth creating rooms for
+NOISE_METHODS = frozenset({
+    # Dunders (most are boilerplate)
+    "__init__", "__new__", "__del__",
+    "__str__", "__repr__", "__format__",
+    "__hash__", "__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__",
+    "__bool__", "__len__", "__iter__", "__next__", "__contains__",
+    "__getitem__", "__setitem__", "__delitem__",
+    "__getattr__", "__setattr__", "__delattr__",
+    "__call__", "__enter__", "__exit__",
+    "__aenter__", "__aexit__", "__aiter__", "__anext__",
+    "__add__", "__sub__", "__mul__", "__truediv__", "__floordiv__",
+    "__mod__", "__pow__", "__and__", "__or__", "__xor__",
+    "__radd__", "__rsub__", "__rmul__", "__rtruediv__",
+    "__iadd__", "__isub__", "__imul__", "__itruediv__",
+    "__neg__", "__pos__", "__abs__", "__invert__",
+    "__int__", "__float__", "__complex__", "__index__",
+    "__post_init__",  # dataclass
+    # Serialization boilerplate
+    "to_dict", "from_dict", "to_json", "from_json",
+    "as_dict", "from_dict", "asdict",
+    "serialize", "deserialize",
+    "to_yaml", "from_yaml",
+    "to_model", "from_model",
+    "model_dump", "model_validate",  # pydantic v2
+    "dict", "json", "parse_obj", "parse_raw",  # pydantic v1
+    # Common property-like methods
+    "get", "set", "items", "keys", "values",
+    "copy", "update", "clear",
+})
+
+
+def _is_noise_element(element) -> bool:
+    """Check if an element is boilerplate that shouldn't become a room."""
+    simple_name = element.simple_name or element.name.split(".")[-1]
+
+    # Skip dunders entirely (they're infrastructure, not architecture)
+    if simple_name.startswith("__") and simple_name.endswith("__"):
+        return True
+
+    # Skip known noise methods
+    if simple_name in NOISE_METHODS:
+        return True
+
+    # Skip private methods (single underscore)
+    if simple_name.startswith("_"):
+        return True
+
+    return False
+
 
 @dataclass
 class DriftReport:
@@ -401,8 +451,8 @@ class Cartographer:
                 # Map functions/classes as rooms using language-aware analysis
                 elements, language = self.analyze_file(source_file)
                 for element in elements:
-                    if element.name.startswith("_") and not element.name.startswith("__"):
-                        continue  # Skip private, keep dunder
+                    if _is_noise_element(element):
+                        continue  # Skip boilerplate
 
                     room_name = element.name
                     if room_name not in self.palace.rooms:
@@ -587,6 +637,9 @@ class Cartographer:
                     modules[module_name] = []
 
                 for element in elements:
+                    if _is_noise_element(element):
+                        continue  # Skip boilerplate
+
                     node_id = f"{module_name}.{element.name}"
                     nodes[node_id] = {
                         "id": node_id,

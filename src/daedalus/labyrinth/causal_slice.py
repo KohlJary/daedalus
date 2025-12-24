@@ -393,9 +393,10 @@ class CausalSlicer:
         self.impact: Optional[ImpactAnalysis] = None
 
     def _ensure_loaded(self):
-        """Load call graph if not already loaded."""
+        """Load or build call graph if not already loaded."""
         if self.graph is None:
-            self.graph = load_graph(self.project_root)
+            # Try to load cached, build if not available
+            self.graph = CallGraph.from_project(self.project_root, use_cache=True)
             self.impact = ImpactAnalysis(self.graph)
 
     def extract(

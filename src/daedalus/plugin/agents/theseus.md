@@ -96,6 +96,22 @@ Part lion, part goat, part serpent. Code mixing multiple levels of abstraction.
 - HTTP request parsing mixed with domain logic
 - UI concerns in backend code
 
+### GHOST - Orphan Code
+The wandering spirits of dead code. Functions that are never called, lurking in the codebase.
+
+```
+👻 GHOST - src/utils/legacy.py:old_parser()
+   - No internal callers
+   - Last modified: 2023-06-15
+   - Severity: LOW (but adds maintenance burden)
+   - Slay by: Delete after confirming no dynamic calls
+```
+
+**Detection:**
+- No references in call graph
+- Not a framework entry point (routes, handlers, tests)
+- Not a common interface method (process, execute, run)
+
 ## Health Thresholds
 
 | Metric | Healthy | Warning | Critical |
@@ -186,6 +202,31 @@ grep -n "def " src/*.py  # Then read surrounding context
 # Find high import counts
 head -50 src/*.py | grep "^import\|^from"
 ```
+
+### Orphan Detection (Ghost Hunting)
+
+Use the labyrinth's orphan detector to find dead code:
+
+```python
+from pathlib import Path
+from daedalus.labyrinth import detect_orphans, format_orphan_report
+
+project = Path("/path/to/project")
+summary = detect_orphans(project, include_medium_confidence=True)
+print(format_orphan_report(summary))
+```
+
+The detector automatically filters:
+- Framework entry points (FastAPI routes, GraphQL resolvers)
+- AST visitor methods (`visit_*`)
+- Test functions and fixtures
+- Event handlers (`on_*`, `handle_*`)
+- Common interface methods (`process`, `execute`, `run`)
+
+Confidence levels:
+- **High**: Standalone functions with zero callers - likely dead code
+- **Medium**: Public methods that might be called polymorphically or via getattr
+- **Low**: Framework entry points (filtered by default)
 
 Use LSP tools when available:
 - `find_references` to measure coupling

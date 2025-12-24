@@ -72,6 +72,7 @@ Bundled agents:
 - `roadmap` - Query and manage roadmap items
 - `docs` - Documentation and implementation exploration
 - `test-runner` - Generate and maintain tests
+- `ariadne` - Parallel worker orchestration (planning, dispatch, verification)
 
 When you find yourself repeatedly exploring the same domain, consider defining a custom subagent.
 

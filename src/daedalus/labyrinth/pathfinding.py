@@ -128,6 +128,50 @@ class CallGraph:
 
         return graph
 
+    @classmethod
+    def from_project(cls, project_root: Path, use_cache: bool = True) -> "CallGraph":
+        """
+        Build or load a call graph for a project.
+
+        Args:
+            project_root: Root directory of the project
+            use_cache: If True, load from .mind-palace/codebase-graph.json if exists
+
+        Returns:
+            CallGraph for the project
+        """
+        graph_path = project_root / ".mind-palace" / "codebase-graph.json"
+
+        # Try to load cached graph
+        if use_cache and graph_path.exists():
+            return cls.load(graph_path)
+
+        # Build fresh graph using Cartographer
+        # Import here to avoid circular dependency
+        from .cartographer import Cartographer
+        from .storage import PalaceStorage
+
+        storage = PalaceStorage(project_root)
+        palace = storage.load() if (project_root / ".mind-palace").exists() else storage.initialize(project_root.name)
+        cartographer = Cartographer(palace, storage)
+
+        graph_data = cartographer.build_call_graph(project_root)
+
+        # Convert to CallGraph
+        graph = cls()
+        for node_id, node_data in graph_data.get("nodes", {}).items():
+            graph.nodes[node_id] = GraphNode.from_dict(node_data)
+
+        for node_id, node in graph.nodes.items():
+            if node.module not in graph.modules:
+                graph.modules[node.module] = []
+            graph.modules[node.module].append(node_id)
+
+        graph.stats = graph_data.get("stats", {})
+        graph.project = graph_data.get("project", "")
+
+        return graph
+
     def get_node(self, node_id: str) -> Optional[GraphNode]:
         """Get a node by ID."""
         return self.nodes.get(node_id)

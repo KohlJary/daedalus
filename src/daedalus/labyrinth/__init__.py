@@ -102,6 +102,12 @@ from .link_generator import (
     find_api_mapping_reports,
     get_palaces_with_references,
 )
+from .orphan_detector import (
+    OrphanReport,
+    OrphanSummary,
+    detect_orphans,
+    format_orphan_report,
+)
 
 __all__ = [
     # Core models
@@ -179,4 +185,9 @@ __all__ = [
     "rebuild_links_index",
     "find_api_mapping_reports",
     "get_palaces_with_references",
+    # Orphan Detection (Code Health)
+    "OrphanReport",
+    "OrphanSummary",
+    "detect_orphans",
+    "format_orphan_report",
 ]
