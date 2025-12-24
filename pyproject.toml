@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Claude Code plugin with Mind Palace (Labyrinth) navigation and Icarus parallel workers"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = {text = "Hippocratic License 3.0"}
 authors = [
     {name = "Kohl Jary", email = "kohlbern@gmail.com"},
     {name = "Daedalus"},

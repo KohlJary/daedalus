@@ -72,6 +72,38 @@ CLAUDE.md                # Injected Daedalus workflow section
 | `docs` | Documentation and implementation exploration |
 | `test-runner` | Generate and maintain tests |
 
+### Theseus in Action
+
+Theseus navigates your codebase like the mythological hero navigating the Labyrinth, hunting complexity monsters before they become problems:
+
+```
+> Have theseus analyze the auth module before we refactor it
+
+Theseus analyzing src/auth/...
+
+COMPLEXITY MONSTERS FOUND:
+
+🐉 HYDRA (High Coupling) - src/auth/oauth.py:authenticate()
+   - 12 external dependencies
+   - Touches 3 database tables directly
+   - Recommendation: Extract OAuthProvider interface
+
+🕷️ SPIDER (Deep Nesting) - src/auth/permissions.py:check_access()
+   - 6 levels of nested conditionals
+   - Cyclomatic complexity: 23
+   - Recommendation: Extract to permission strategies
+
+⚡ MINOTAUR (God Function) - src/auth/session.py:handle_request()
+   - 340 lines, does authentication + authorization + logging
+   - Recommendation: Split into AuthMiddleware, SessionManager, AuditLogger
+
+SAFE PATHS:
+✓ src/auth/tokens.py - Clean, single responsibility
+✓ src/auth/crypto.py - Well-isolated utilities
+
+Would you like me to create a refactoring plan for the Hydra first?
+```
+
 ## CLI Commands
 
 ### Project Setup
@@ -158,4 +190,4 @@ Daedalus is named after the mythological master craftsman who built the Labyrint
 
 ## License
 
-MIT
+[Hippocratic License 3.0](https://firstdonoharm.dev/) - Software that can't be used to harm people.
