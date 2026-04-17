@@ -3,12 +3,12 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "daedalus"
+name = "daedalus-cli"
 version = "0.1.0"
 description = "Claude Code plugin with Mind Palace navigation, Icarus parallel workers, and Ariadne orchestration"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
 license-files = ["LICENSE"]
 authors = [
     {name = "Kohl Jary", email = "kohlbern@gmail.com"},
@@ -19,7 +19,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
