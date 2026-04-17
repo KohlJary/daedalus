@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "daedalus-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "Claude Code plugin with Mind Palace navigation, Icarus parallel workers, and Ariadne orchestration"
 readme = "README.md"
 requires-python = ">=3.10"

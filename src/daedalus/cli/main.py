@@ -21,7 +21,7 @@ from ..config import (
 
 
 @click.group()
-@click.version_option(package_name="daedalus")
+@click.version_option(package_name="daedalus-cli")
 def main():
     """Daedalus - Claude Code plugin for structured development."""
     pass
