@@ -27,6 +27,8 @@ agents:
     description: Project memory management across sessions
   - name: roadmap
     description: Project planning and work item tracking
+  - name: gameplan
+    description: Multi-phase gameplan tracking — survives conversation compactions
   - name: test-runner
     description: Test generation and execution
   - name: theseus

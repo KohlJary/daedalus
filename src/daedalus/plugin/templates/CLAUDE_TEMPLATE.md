@@ -70,6 +70,7 @@ Bundled agents:
 - `labyrinth` - Mind Palace navigation (spatial-semantic codebase mapping)
 - `theseus` - Code health analysis and complexity hunting
 - `roadmap` - Query and manage roadmap items
+- `gameplan` - Read/maintain the multi-phase gameplan (compaction-survival planning)
 - `docs` - Documentation and implementation exploration
 - `test-runner` - Generate and maintain tests
 - `ariadne` - Parallel worker orchestration (planning, dispatch, verification)
@@ -126,6 +127,22 @@ daedalus roadmap add "Brief description" --priority P1 --type feature
 - **in_progress**: Being actively worked on
 - **review**: Awaiting {{USER_NAME}}'s review
 - **done**: Completed
+
+## Gameplan
+
+The gameplan at `.daedalus/roadmap/gameplan.json` is the compaction-survival planning layer above the roadmap. It groups roadmap items into phases and breaks the currently active phase into concrete tasks with a sequencing narrative.
+
+**Always check the gameplan at session start** — it tells you what phase is in flight and the next pending task, so a fresh context can pick up where the previous session left off.
+
+```bash
+daedalus gameplan show                          # current phase + tasks
+daedalus gameplan phase list                    # all phases
+daedalus gameplan phase activate <id> --goal "..." --sequencing "..."
+daedalus gameplan task add <task_id> "Title" --details "..."
+daedalus gameplan task status <task_id> done --resolution "..."
+```
+
+Use the `gameplan` subagent for detailed queries. When a task ships, record the resolution — future sessions read it instead of re-deriving from git.
 
 <!-- DAEDALUS_END -->
 

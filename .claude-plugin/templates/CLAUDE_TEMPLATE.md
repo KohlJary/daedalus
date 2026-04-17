@@ -70,6 +70,7 @@ Example agents in cass-vessel:
 - `cass-backend` - Explore backend architecture, memory, API endpoints
 - `tui-frontend` - Explore Textual TUI widgets, screens, styling
 - `roadmap` - Query roadmap items, work items, project priorities
+- `gameplan` - Read/maintain the multi-phase gameplan (compaction-survival planning)
 - `docs` - Query wiki documentation and find implementations
 - `design-analyst` - UX/UI auditing with Playwright for admin-frontend
 - `test-runner` - Generate and maintain pytest unit tests
@@ -204,6 +205,22 @@ curl "http://localhost:8000/projects" | jq '.projects[] | select(.name == "Proje
 - **in_progress**: Being actively worked on
 - **review**: Awaiting {{USER_NAME}}'s review
 - **done**: Completed
+
+## Gameplan
+
+The gameplan at `.daedalus/roadmap/gameplan.json` is the compaction-survival planning layer above the roadmap. It groups roadmap items into phases and breaks the currently active phase into concrete tasks with a sequencing narrative.
+
+**Always check the gameplan at session start** — it tells you what phase is in flight and the next pending task, so a fresh context can pick up where the previous session left off.
+
+```bash
+daedalus gameplan show                          # current phase + tasks
+daedalus gameplan phase list                    # all phases
+daedalus gameplan phase activate <id> --goal "..." --sequencing "..."
+daedalus gameplan task add <task_id> "Title" --details "..."
+daedalus gameplan task status <task_id> done --resolution "..."
+```
+
+Use the `gameplan` subagent for detailed queries. When a task ships, record the resolution — future sessions read it instead of re-deriving from git.
 
 <!-- DAEDALUS_END -->
 

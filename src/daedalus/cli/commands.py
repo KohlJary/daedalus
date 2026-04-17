@@ -97,6 +97,11 @@ def init_project(project_dir: Path, force: bool = False):
         index_file.write_text('{"items": [], "version": 1}')
         click.echo("  Created roadmap/index.json")
 
+    from . import gameplan as gp
+
+    if gp.ensure_gameplan(project_dir, force=force):
+        click.echo("  Created roadmap/gameplan.json")
+
     # Copy agents
     agents_dir = project_dir / ".claude" / "agents"
     agents_dir.mkdir(parents=True, exist_ok=True)
@@ -281,3 +286,171 @@ def add_roadmap_item(
     roadmap_file.write_text(json.dumps(data, indent=2))
 
     click.echo(f"Added: {title} ({new_item['id'][:8]})")
+
+
+# ---------- gameplan commands ----------
+
+
+def _gameplan_run(project_dir: Path, fn, *args, **kwargs):
+    """Load, mutate, save — with uniform error handling."""
+    from . import gameplan as gp
+
+    try:
+        data = gp.load_gameplan(project_dir)
+    except gp.GameplanError as e:
+        click.echo(str(e), err=True)
+        return None
+    try:
+        result = fn(data, *args, **kwargs)
+    except gp.GameplanError as e:
+        click.echo(str(e), err=True)
+        return None
+    gp.save_gameplan(project_dir, data)
+    return result
+
+
+def _phase_status_icon(status: str) -> str:
+    return {"planned": "[ ]", "in_progress": "[>]", "done": "[x]"}.get(status, "[?]")
+
+
+def _task_status_icon(status: str) -> str:
+    return {"pending": "[ ]", "in_progress": "[>]", "done": "[x]"}.get(status, "[?]")
+
+
+def show_gameplan(project_dir: Path, as_json: bool = False):
+    """Display the full gameplan."""
+    from . import gameplan as gp
+
+    try:
+        data = gp.load_gameplan(project_dir)
+    except gp.GameplanError as e:
+        click.echo(str(e), err=True)
+        return
+
+    if as_json:
+        click.echo(json.dumps(data, indent=2))
+        return
+
+    phases = data.get("phases", [])
+    click.echo(f"Phases ({len(phases)}):")
+    for phase in phases:
+        icon = _phase_status_icon(phase.get("status", "planned"))
+        item_count = len(phase.get("roadmapItems", []))
+        click.echo(f"  {icon} {phase.get('id')}: {phase.get('title')} ({item_count} items)")
+
+    active = data.get("activePhase")
+    if not active:
+        click.echo("\nNo active phase.")
+        return
+
+    click.echo(f"\nActive: {active.get('id')} — {active.get('title')}")
+    if active.get("started"):
+        click.echo(f"Started: {active['started']}")
+    if active.get("goal"):
+        click.echo(f"Goal: {active['goal']}")
+    if active.get("sequencing"):
+        click.echo(f"Sequencing: {active['sequencing']}")
+
+    tasks = active.get("tasks", [])
+    click.echo(f"\nTasks ({len(tasks)}):")
+    for task in tasks:
+        icon = _task_status_icon(task.get("status", "pending"))
+        click.echo(f"  {icon} {task.get('id')}: {task.get('title')}")
+
+    deferred = active.get("deferred", [])
+    if deferred:
+        click.echo(f"\nDeferred ({len(deferred)}):")
+        for entry in deferred:
+            click.echo(f"  - {entry.get('id')}: {entry.get('title')}")
+
+
+def list_gameplan_phases(project_dir: Path):
+    from . import gameplan as gp
+
+    try:
+        data = gp.load_gameplan(project_dir)
+    except gp.GameplanError as e:
+        click.echo(str(e), err=True)
+        return
+
+    phases = data.get("phases", [])
+    if not phases:
+        click.echo("No phases.")
+        return
+
+    active_id = (data.get("activePhase") or {}).get("id")
+    for phase in phases:
+        icon = _phase_status_icon(phase.get("status", "planned"))
+        marker = " *" if phase.get("id") == active_id else ""
+        click.echo(f"{icon} {phase.get('id')}: {phase.get('title')}{marker}")
+
+
+def add_gameplan_phase(
+    project_dir: Path,
+    phase_id: str,
+    title: str,
+    roadmap_items: list,
+    notes: str,
+    status: str,
+):
+    from . import gameplan as gp
+
+    def _add(data):
+        return gp.add_phase(
+            data,
+            phase_id=phase_id,
+            title=title,
+            roadmap_items=roadmap_items,
+            notes=notes,
+            status=status,
+        )
+
+    if _gameplan_run(project_dir, _add):
+        click.echo(f"Added phase: {phase_id}")
+
+
+def set_gameplan_phase_status(project_dir: Path, phase_id: str, status: str):
+    from . import gameplan as gp
+
+    if _gameplan_run(project_dir, lambda d: gp.set_phase_status(d, phase_id, status)):
+        click.echo(f"Phase '{phase_id}' -> {status}")
+
+
+def activate_gameplan_phase(
+    project_dir: Path, phase_id: str, goal: str, sequencing: str
+):
+    from . import gameplan as gp
+
+    if _gameplan_run(
+        project_dir,
+        lambda d: gp.activate_phase(d, phase_id, goal=goal, sequencing=sequencing),
+    ):
+        click.echo(f"Active phase: {phase_id}")
+
+
+def add_gameplan_task(project_dir: Path, task_id: str, title: str, details: str):
+    from . import gameplan as gp
+
+    if _gameplan_run(
+        project_dir, lambda d: gp.add_task(d, task_id, title, details=details)
+    ):
+        click.echo(f"Added task: {task_id}")
+
+
+def set_gameplan_task_status(
+    project_dir: Path, task_id: str, status: str, resolution: str
+):
+    from . import gameplan as gp
+
+    if _gameplan_run(
+        project_dir,
+        lambda d: gp.set_task_status(d, task_id, status, resolution=resolution),
+    ):
+        click.echo(f"Task '{task_id}' -> {status}")
+
+
+def defer_gameplan_task(project_dir: Path, task_id: str, reason: str):
+    from . import gameplan as gp
+
+    if _gameplan_run(project_dir, lambda d: gp.defer_task(d, task_id, reason=reason)):
+        click.echo(f"Deferred task: {task_id}")
