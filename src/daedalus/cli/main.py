@@ -88,6 +88,49 @@ def config_cmd(key: str, value: str):
             click.echo(f"Unknown config key: {key}", err=True)
 
 
+@main.command("digest")
+@click.option(
+    "--run", "run_id",
+    default=None,
+    help="Run ID (default: latest run in .wonderland/telemetry/).",
+)
+@click.option(
+    "--print", "print_only",
+    is_flag=True,
+    help="Print digest to stdout instead of writing to .wonderland/digests/.",
+)
+def digest(run_id: str | None, print_only: bool):
+    """Build a digest for a Wonderland run.
+
+    Reads .wonderland/telemetry, feature-states, phase-events, and
+    artifacts to produce a markdown summary covering cost, lifecycle
+    deltas, M8 verdicts, and artifact counts. Default destination
+    is .wonderland/digests/run-<id>.md; pass --print to dump to
+    stdout instead.
+
+    Run from the wonderland project root (the directory containing
+    the .wonderland/ folder).
+    """
+    from ..digest import build_digest, latest_run_id, write_digest
+
+    project_dir = Path.cwd()
+    if run_id is None:
+        run_id = latest_run_id(project_dir)
+        if run_id is None:
+            click.echo(
+                f"No telemetry found in {project_dir / '.wonderland' / 'telemetry'}",
+                err=True,
+            )
+            raise click.Abort()
+        click.echo(f"(latest run: {run_id})")
+
+    if print_only:
+        click.echo(build_digest(project_dir, run_id))
+    else:
+        path = write_digest(project_dir, run_id)
+        click.echo(f"Wrote digest: {path.relative_to(project_dir)}")
+
+
 @main.group()
 def palace():
     """Mind Palace operations."""
