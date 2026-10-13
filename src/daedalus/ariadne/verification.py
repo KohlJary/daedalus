@@ -207,9 +207,15 @@ class CausalSliceVerifier:
                 ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc", ".venv", "venv"),
             )
 
-            # Apply diff
+            # Make the copy its own repository. Without this, git looks upward for one: if the temp
+            # directory sits inside another repository (a dotfiles repo in the home directory, say),
+            # 'git apply' resolves the patch against that repository's root, skips every file outside
+            # the current directory, and still exits 0, so verification would test the original code.
+            subprocess.run(["git", "init", "-q"], cwd=workspace / "repo", capture_output=True, check=True)
+
+            # Apply diff (newline="" keeps the patch byte-for-byte; text mode on Windows adds \r)
             diff_file = workspace / "changes.diff"
-            diff_file.write_text(diff.content, encoding="utf-8")
+            diff_file.write_text(diff.content, encoding="utf-8", newline="")
 
             result = subprocess.run(
                 ["git", "apply", "--check", str(diff_file)],
@@ -222,13 +228,16 @@ class CausalSliceVerifier:
                 # Diff doesn't apply cleanly
                 return False
 
-            # Actually apply the diff
-            subprocess.run(
-                ["git", "apply", str(diff_file)],
+            # Actually apply the diff. Fail closed if git skipped any part of it.
+            applied = subprocess.run(
+                ["git", "apply", "-v", str(diff_file)],
                 cwd=workspace / "repo",
                 capture_output=True,
+                text=True,
                 check=True,
             )
+            if "Skipped patch" in applied.stdout + applied.stderr:
+                return False
 
             return True
 
