@@ -7,8 +7,12 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob
 # Exhale
 
 The work is already done; exhaling makes sure it is findable. What the next
-context needs must live in commits, the work tracker, memory files and the
-gameplan, not in this conversation. See "Context as Breath" in CLAUDE.md.
+context needs must live in commits, the work tracker, the gameplan and memory
+files, not in this conversation. See "Context as Breath" in CLAUDE.md.
+
+**The gameplan is the record of state.** What is built, in progress and next
+goes there first; the session summary is the narrative around it and refers
+to gameplan tasks by ID instead of restating them.
 
 **The project comes first.** Read the paragraph in CLAUDE.md that begins
 "In this repo, exhaling cleanly means" (usually in the `breath` local slot)
@@ -38,20 +42,27 @@ session. List everything else as pending in the report.
    descriptions, an issue list), bring what this session changed up to date,
    within what the user approved. Otherwise list the updates as pending.
 
-4. **Session summary.** Append an entry to `.daedalus/session-summaries.md`,
-   even when there was nothing to commit:
-   - **Done:** what changed, with commit hashes, files, PR or task links
+4. **Gameplan.** For each shipped task:
+   `daedalus gameplan task status <id> done --resolution "..."` (what shipped,
+   with commit hashes). Mark work you started `in_progress`. Add tasks for work
+   discovered this session: `daedalus gameplan task add <id> "Title"
+   --details "..."` (with `--edict NNNN` when it implements one). If
+   `daedalus gameplan pending` lists proposals, apply the ones this session
+   confirms and drop the wrong ones. Finish with `daedalus doctor`; anything it
+   reports about the gameplan is unfinished exhaling.
+
+5. **Session summary.** Append an entry to `.daedalus/session-summaries.md`,
+   even when there was nothing to commit. Refer to gameplan tasks by ID rather
+   than restating them:
+   - **Done:** the tasks closed (by ID), plus anything outside the gameplan,
+     with commit hashes, PR or task links
    - **Decisions:** what was decided and why (also add lasting ones to
      `.daedalus/decisions.md`)
    - **In flight:** branches, worktrees, uncommitted work, anything waiting on
      someone
-   - **Next step:** the exact next action, and whether the user approved it
+   - **Next step:** the exact next action (a task ID where there is one), and
+     whether the user approved it
    - **Open questions** for the user
-
-5. **Gameplan.** For each shipped task:
-   `daedalus gameplan task status <id> done --resolution "..."`. Add tasks for
-   work discovered this session: `daedalus gameplan task add <id> "Title"
-   --details "..."`.
 
 6. **Route what was learned.**
    - A lesson learned the hard way -> the skill or CLAUDE.md lessons section

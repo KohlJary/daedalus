@@ -91,14 +91,16 @@ A craftsman works with his tools, not around them. These are the moments to reac
 
 | When you're about to... | Reach for |
 |---|---|
-| Start a session, or pick back up after compaction | `daedalus gameplan show`, then `docs/status.md` if the project has one |
+| Start a session, or pick back up after compaction | `/inhale` (the session-start hook has already printed a short brief; inhale is the full pickup) |
+| Wonder whether the plan or memory has fallen behind the code | `daedalus doctor` |
 | Ask "what did we decide?" or "what happened last time?" | The `memory` agent, before guessing or re-deriving |
 | Say something works, is fixed, or is done | `momus`, to check the claim against evidence first |
 | Refactor, or change code you didn't write | `theseus` on that area first, to see the complexity you're walking into |
 | Explore an unfamiliar part of the codebase | `labyrinth` (Mind Palace), before grepping blind |
 | Figure out how a feature or library is supposed to work | The `docs` agent |
 | Write or fix tests | `test-runner` |
-| Finish a task | Record the resolution in the gameplan and update the roadmap |
+| Finish a task | Record the resolution in the gameplan (with commit hashes) and update the roadmap |
+| Reach a breakpoint, or run low on context | `/exhale` |
 
 If you catch yourself re-deriving something a tool already knows, stop and use the tool.
 
@@ -125,12 +127,16 @@ You have persistent memory across sessions in `.daedalus/`. This helps maintain 
 
 ### Memory Files
 
+The gameplan is the record of state; the other files are narrative and reference around it.
+Optional files appear when there is something to put in them, so a missing file is normal.
+
 | File | Purpose |
 |------|---------|
+| `roadmap/gameplan.json` | Record of state: phases, the active phase, its tasks and resolutions (committed) |
 | `project-map.md` | Architecture understanding - modules, patterns, data flow |
 | `decisions.md` | Key decisions with rationale |
-| `session-summaries.md` | What was done in previous sessions |
-| `observations.json` | Self-observations and growth edges |
+| `session-summaries.md` | Narrative of previous sessions; refers to gameplan tasks by ID |
+| `observations.json` | Optional: self-observations and growth edges |
 
 ### Commands
 
@@ -172,19 +178,21 @@ daedalus roadmap add "Brief description" --priority P1 --type feature
 
 ## Gameplan
 
-The gameplan at `.daedalus/roadmap/gameplan.json` is the compaction-survival planning layer above the roadmap. It groups roadmap items into phases and breaks the currently active phase into concrete tasks with a sequencing narrative.
+The gameplan at `.daedalus/roadmap/gameplan.json` is the record of state: what is built, in progress, and next. It groups roadmap items into phases and breaks the currently active phase into concrete tasks with a sequencing narrative. It is committed, so {{USER_NAME}}, other sessions, and Claude working from chat all read the same plan.
 
-**Always check the gameplan at session start** - it tells you what phase is in flight and the next pending task, so a fresh context can pick up where the previous session left off.
+**Always check the gameplan at session start** - it tells you what phase is in flight and the next pending task, so a fresh context can pick up where the previous session left off. The session-start hook prints it for you.
 
 ```bash
 daedalus gameplan show                          # current phase + tasks
 daedalus gameplan phase list                    # all phases
 daedalus gameplan phase activate <id> --goal "..." --sequencing "..."
-daedalus gameplan task add <task_id> "Title" --details "..."
+daedalus gameplan task add <task_id> "Title" --details "..." [--edict NNNN]
 daedalus gameplan task status <task_id> done --resolution "..."
+daedalus gameplan pending                       # proposed updates; apply or drop each
+daedalus doctor                                 # has the plan fallen behind the code?
 ```
 
-Use the `gameplan` subagent for detailed queries. When a task ships, record the resolution - future sessions read it instead of re-deriving from git.
+Use the `gameplan` subagent for detailed queries. When a task ships, record the resolution - future sessions read it instead of re-deriving from git. Hooks and reconstructions never write the gameplan; they leave proposals in `daedalus gameplan pending` for you to apply or drop.
 
 ## Edicts
 
@@ -192,12 +200,13 @@ Design decisions from {{USER_NAME}} arrive as edicts in `docs/edicts/NNNN-slug.m
 
 - **Only build edicts on `main` with `Status: accepted`.** Edicts arrive as PRs; merging one is {{USER_NAME}}'s sign-off. Anything only on a branch, or marked `proposed`, is not approved.
 - **Never write, accept, or change an edict yourself.** Edicts are where {{USER_NAME}}'s judgment enters the system. The one edit you may make is moving an accepted edict's status to `done` once all its work has merged.
+- **Track it in the gameplan.** When an accepted edict lands, turn it into gameplan work that cites it (`--edict NNNN` on the phase or tasks). Whether an edict is built is recorded there and nowhere else; `daedalus doctor` flags accepted edicts nothing references.
 - **Reference the edict in your PRs.** Open a PR per piece of work with `Implements edict NNNN` in the body, and make sure CI passes.
 - **If an edict seems mistaken, harmful, or underspecified, dissent.** Write `docs/edicts/dissents/NNNN-daedalus.md` stating what you object to, why, and what you'd do instead. Stop work on that edict and tell {{USER_NAME}}. Don't quietly drift from the spec or route around it.
 
 ### Status handoff
 
-At the end of each working session, update and commit `docs/status.md`: the current gameplan phase, edicts in flight, open dissents, and a short summary of the session. Your memory in `.daedalus/` isn't committed, so this file is how {{USER_NAME}}, and Claude working from chat, see where you left off. Read it at session start along with the gameplan.
+Each fact lives in one place: edicts carry designs, the gameplan carries progress, and `docs/status.md` carries the narrative. At the end of each working session, update and commit `docs/status.md` as a short note: what happened, open dissents, and anything the gameplan can't say. Don't restate phases, tasks, or which edicts are built; the committed gameplan already says that. Read it at session start along with the gameplan.
 
 <!-- DAEDALUS_LOCAL end -->
 <!-- /DAEDALUS_LOCAL -->

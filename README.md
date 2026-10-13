@@ -4,15 +4,20 @@
 
 It's a Claude Code plugin plus a small CLI. Everything it keeps is plain files in your repo.
 
+At the center is the **gameplan**: the record of what is built, in progress, and next, committed with the code. Every session starts from it, `daedalus doctor` says when it has fallen behind the commits, and nothing but you or a session you approve ever writes to it.
+
+**How this differs from Claude Code's built-in memory.** Claude Code's own memory is kept per user, on your machine: notes about you and your work. Daedalus keeps the project's memory in the repository, so it is shared by everyone and every session that works there (including Claude in chat reading the repo), and it is structured around tasks rather than free-form notes. The two complement each other.
+
 ## At a glance
 
 The pieces are named after the Labyrinth myth. Here's what each one actually does:
 
 | Name | What it is | Status |
 |------|-----------|--------|
-| **Daedalus** | The collaborator identity Claude adopts, plus the memory files and workflow it follows | Core |
-| **Memory** | Session summaries, decisions, and a project map in `.daedalus/` | Core |
-| **Roadmap & Gameplan** | File-based task tracking, and a phase plan that tells a fresh session what to do next | Core |
+| **Gameplan** | The record of state: phases, tasks, and their resolutions, committed so every session reads the same plan. A session-start hook leads with it and `daedalus doctor` flags drift | Core |
+| **Daedalus** | The collaborator identity Claude adopts, plus the workflow it follows (including the `exhale`/`inhale` session rituals) | Core |
+| **Memory** | Session summaries, decisions, and a project map in `.daedalus/`: the narrative around the gameplan | Core |
+| **Roadmap** | File-based task tracking that gameplan phases group into | Core |
 | **Edicts** | Design decisions handed to Daedalus as reviewed docs in `docs/edicts/` ([how they work](docs/edicts/README.md)) | New |
 | **Mind Palace** (Labyrinth) | Maps your codebase as navigable rooms for spatial-semantic navigation | Available |
 | **Theseus** | Code-health analysis that hunts complexity hot spots | Available |
@@ -59,18 +64,30 @@ When you run Claude Code in a Daedalus-initialized project, Claude adopts the **
 - **Git Workflow** - Branch-based development with signed commits
 - **Persistent Memory** - Session summaries, decisions, and project understanding that survives across sessions
 
+### Memory that stays current
+
+Memory tools usually fail quietly: the notes stop being written during the busiest weeks, and nothing says so. Daedalus is built around that failure.
+
+- **The gameplan is the record of state**, committed with the code. When a task ships, its resolution (with commit hashes) is recorded on the task. Edicts link to it with an `edict` field, so "is this built?" has one answer.
+- **A session-start hook** (registered by `init`/`hydrate` in `.claude/settings.json`) prints the active phase, the next task, any drift, and the latest session note before the session begins. `/inhale` does the full pickup and `/exhale` preserves the session before a breakpoint.
+- **`daedalus doctor`** checks the plan against the repository: commits since the gameplan was last updated, a finished phase left open, tasks stuck in progress, accepted edicts the gameplan doesn't track, packages the project map never mentions, a gitignored gameplan. It exits non-zero when it finds something, so it can run in CI.
+- **An optional capture hook** (`hooks.capture`, off by default) runs when a session ends or compacts and proposes gameplan updates for tasks that new commits name. Proposals wait in `daedalus gameplan pending` until you apply or drop them.
+
 ### Project Structure
 
 After `daedalus init`, your project gets:
 
 ```
 .daedalus/
-  session-summaries.md   # What happened in previous sessions
+  roadmap/
+    gameplan.json        # Record of state (committed; init un-ignores it if needed)
+    index.json           # Project tasks and priorities
+  session-summaries.md   # Narrative of previous sessions
   project-map.md         # Architecture understanding
   decisions.md           # Key decisions with rationale
-  observations.json      # Self-observations and growth edges
-  roadmap/
-    index.json           # Project tasks and priorities
+
+.claude/settings.json    # SessionStart hook: `daedalus hook session-start`
+.claude/skills/          # exhale, inhale, and the other plugin skills
 
 .claude/agents/
   memory.md              # Memory retrieval agent
@@ -177,6 +194,21 @@ including `exhale` and `inhale`, the session rituals behind Context as Breath (e
 preserves the session's work before a breakpoint or `/compact`, inhale picks it back up. Projects add
 their own steps in CLAUDE.md, in a paragraph beginning "In this repo, exhaling cleanly means".
 
+### Gameplan and drift
+
+```bash
+daedalus gameplan show                               # active phase, tasks, edict links
+daedalus gameplan phase add p2 "Memory backbone" --edict 0007
+daedalus gameplan task add T1 "Doctor" --edict 0007
+daedalus gameplan task status T1 done --resolution "Shipped in b1d1733"
+daedalus gameplan pending                            # proposed updates
+daedalus gameplan pending apply P1                   # or: drop P1, apply all
+daedalus doctor                                      # drift report; exit 1 if anything found
+```
+
+`init` and `hydrate` register the session-start hook (`--no-hooks` to skip; `hydrate --dry-run`
+lists it). They merge into existing `.claude/settings.json` and never overwrite a file they can't parse.
+
 ### Configuration
 
 ```bash
@@ -238,10 +270,14 @@ Config is stored in platform-appropriate location:
 | `git.authorship` | `daedalus`: commits authored as Daedalus (`--author`). `user`: authored as your git identity, with a `- Daedalus` sign-off in the body | daedalus |
 | `sections.squash` | Include the Squash for Merge section in CLAUDE.md | true |
 | `sections.versioning` | Include the Versioning section in CLAUDE.md | true |
+| `doctor.stale_commits` | Commits after the gameplan's last update before `doctor` reports it | 10 |
+| `doctor.stale_task_days` | Days a task may stay in progress before `doctor` reports it | 14 |
+| `hooks.session_start` | Register the session-start brief hook | true |
+| `hooks.capture` | Register the capture hook (SessionEnd, PreCompact) | false |
 
-The `git` and `sections` settings can be overridden per project in `.daedalus/config.json`
-(`daedalus config --project KEY VALUE`), deep-merged over the global config. A work repo and a
-personal repo usually want different authorship.
+The `git`, `sections`, `doctor`, and `hooks` settings can be overridden per project in
+`.daedalus/config.json` (`daedalus config --project KEY VALUE`), deep-merged over the global config.
+A work repo and a personal repo usually want different authorship.
 
 ## Template Variables
 

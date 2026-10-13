@@ -35,3 +35,10 @@ Thumbs.db
 
 # Daedalus project memory (local, not shared)
 .daedalus/
+
+# Daedalus: commit the gameplan, keep the rest of .daedalus/ local (edict 0007)
+!.daedalus/
+.daedalus/*
+!.daedalus/roadmap/
+.daedalus/roadmap/*
+!.daedalus/roadmap/gameplan.json

@@ -79,8 +79,14 @@ An accepted or proposed edict can change, but only the way it was made:
 
 ## Status handoff
 
-`docs/status.md` is the committed snapshot of where Daedalus left off: the
-current gameplan phase, edicts in flight, open dissents, and the last session's
-summary. Daedalus updates it at the end of each working session. Its own memory
-in `.daedalus/` is not committed, so this file is how anyone outside the
-session, including Claude in chat, picks up where it stopped.
+Each fact lives in one place:
+
+- **Edicts** carry designs: what to build and why (chat to code).
+- **The gameplan** (`.daedalus/roadmap/gameplan.json`, committed) carries progress: which edicts
+  are built, what is in flight, what is next (code to chat). Phases and tasks cite edicts with an
+  `edict` field; `daedalus doctor` flags accepted edicts nothing in the gameplan references.
+- **`docs/status.md`** carries the narrative: a short note on the last session, open dissents, and
+  anything the gameplan can't say. It does not restate phases, tasks, or which edicts are built.
+
+Daedalus updates the status note at the end of each working session. Claude in chat reads the
+gameplan and the note to pick up where it stopped.
