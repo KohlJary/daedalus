@@ -25,6 +25,8 @@ agents:
     description: Mind Palace MUD navigation - spatial codebase understanding
   - name: memory
     description: Project memory management across sessions
+  - name: mnemosyne
+    description: Memory reconstruction - proposes gameplan entries for an unrecorded period, from git evidence
   - name: momus
     description: Critic - tests claims and results before they are believed or published
   - name: roadmap
@@ -53,3 +55,5 @@ skills:
     description: Preserve the session's work before a breakpoint or compaction
   - name: inhale
     description: Pick up where the last context left off
+  - name: reconstruct
+    description: Rebuild a period the gameplan never recorded, from git (gather, mnemosyne, check, Momus)

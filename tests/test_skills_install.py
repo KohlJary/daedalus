@@ -102,3 +102,15 @@ def test_init_installs_skills(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert (tmp_path / ".claude" / "skills" / "inhale" / "SKILL.md").exists()
+
+
+def test_reconstruct_skill_and_mnemosyne_agent_ship(tmp_path, monkeypatch):
+    from daedalus.plugin import get_agents_dir
+    data = yaml.safe_load((PLUGIN_ROOT / "plugin.yaml").read_text(encoding="utf-8"))
+    assert "mnemosyne" in [a["name"] for a in data["agents"]]
+    assert (get_agents_dir() / "mnemosyne.md").exists()
+    assert "reconstruct" in manifest_skills()
+    monkeypatch.chdir(tmp_path)
+    CliRunner().invoke(main, ["hydrate", "--no-template"])
+    assert (tmp_path / ".claude/skills/reconstruct/SKILL.md").exists()
+    assert (tmp_path / ".claude/agents/mnemosyne.md").exists()
