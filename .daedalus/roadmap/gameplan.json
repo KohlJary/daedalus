@@ -1,0 +1,122 @@
+{
+  "description": "Multi-phase plans currently in flight. Each phase references roadmap item ids; the activePhase section breaks the current phase into concrete tasks with status. Survives conversation compactions \u2014 a fresh session can pick up by reading this file.",
+  "phases": [
+    {
+      "id": "p1-edicts-ariadne",
+      "title": "Accepted edicts + Ariadne verification gaps",
+      "status": "in_progress",
+      "roadmapItems": [],
+      "notes": "Edicts 0001-0003 accepted in c6e510b. Hermetic worker-loop tier merged (#17). Live tier waits on #16."
+    },
+    {
+      "id": "p2-memory-backbone",
+      "title": "Memory backbone: gameplan-first, self-maintaining, drift-visible",
+      "status": "planned",
+      "roadmapItems": [],
+      "notes": "BUILT, in review: PR #21 (branch feat/0007-memory-backbone, worktree ~/cass/daedalus-0007), CI green, Momus-reviewed (4 bugs + 1 overclaim fixed in e12a5d5). Mark done when merged. Edict 0007 (accepted 2026-10-13; renumbered from 0004). Builds on 0004 exhale/inhale (shipped). Evidence (2026-10-13 survey): memory goes stale when work is busiest. cass-vessel: 53-day summary hole (2025-12-19 -> 2026-02-11, 70 commits unsummarized); lessons/notes/observations frozen in Dec; project-map misses 25 backend packages; roadmap empty but still queried by session-start.sh. wonderland-ai: gameplan heavily used (27 phases, 22 done, rich resolutions, 49 commits May 4-18) and roadmap 213 items, but session-summaries.md never written; gameplan stopped 2026-05-18 while work ran to 2026-06-23; p20 still in_progress after T-a7 resolved. This repo: last summary 2025-12-24, no gameplan until now. Lesson: structured, task-shaped memory (gameplan resolutions) gets written because it's part of finishing a task; free-form memory does not. Planned tasks: (M1) daedalus doctor: commits since last gameplan update, phase in_progress with all tasks done, tasks in_progress > N days, status.md vs edict Status lines, project-map vs top-level packages, empty files still queried. Fixtures: snapshots of wonderland-ai and cass-vessel .daedalus. (M2) Wire session-start.sh: init/hydrate register it as a SessionStart hook in .claude/settings.json (merge, never clobber; --no-hooks); rewrite it gameplan-first (active goal, next task, doctor findings, latest session note; point to /inhale); drop the empty-roadmap query. (M3) Capture hook (SessionEnd/PreCompact), off by default (hooks.capture): match commits since last update to active-phase tasks, draft proposed status/resolution changes to a pending file for approval (never silent writes). Consider cass-vessel evaluate_summarization_readiness (backend/memory/summaries.py:53) and <decision>/<lesson> tag capture ('tags over tools'). (M4) Exhale records gameplan before its summary; inhale reads the gameplan first and uses doctor. Lessons/warnings/observations become opt-in; init stops creating empty templates (obs-008). (M5) README repositioning: gameplan + committed status as the backbone; differentiate from Claude Code native per-user auto memory (committed, shared, structured).",
+      "edict": "0007"
+    },
+    {
+      "id": "p2b-reconstruction",
+      "title": "Memory reconstruction from git",
+      "status": "planned",
+      "roadmapItems": [],
+      "notes": "Edict 0006. Depends on p2 (0007: doctor + pending mechanism). Reference run: ~/wonderland-ai/.daedalus/reconstruction/ + .daedalus/momus/reconstruction-review.md.",
+      "edict": "0006"
+    },
+    {
+      "id": "p3-theseus-index",
+      "title": "Theseus reports: index, status, linkage",
+      "status": "planned",
+      "roadmapItems": [],
+      "notes": "Theseus was the most-used agent in cass-vessel (~50 reports, ~1MB, Dec 24 - Feb 23) but reports pile up unindexed. Tasks: report index with open/done per monster; link resolved monsters to decisions/gameplan resolutions; prune or archive stale reports; gitignore editor lock files (a .~lock.battle-plan.md# got committed in cass-vessel)."
+    },
+    {
+      "id": "p4-evidence",
+      "title": "Evidence: resume benchmark vs plain Claude Code",
+      "status": "planned",
+      "roadmapItems": [],
+      "notes": "Wonderland lesson: its $30.58 / 63% claim compared only against its own earlier version, and its own analysis 046 puts overhead at ~10x single-shot ($2-3). Tasks: pre-register falsifier with Momus before running; build handoff scenarios (half-finished task + prior decisions); score fresh session with vs without Daedalus memory on correct next step and decision adherence; port per-run cost telemetry (wonderland-ai src/wonderland/telemetry.py) so every claim carries cost; reuse comparison-baseline harness ideas (paper/artifacts/comparison-baselines/). Put the number, with its caveats, in the README."
+    }
+  ],
+  "activePhase": {
+    "id": "p1-edicts-ariadne",
+    "title": "Accepted edicts + Ariadne verification gaps",
+    "started": "2026-10-13",
+    "goal": "Build the three accepted edicts to their acceptance criteria and close the verifier gaps that let LLM-only review pass broken code.",
+    "sequencing": "T-e1 first: the edict CLI (list/show, Status parsing) is shared infrastructure for T-e2 and T-e7. T-e7 and T-e2 build on it. T-e3 is independent and can run alongside. T-e4 is independent and high value (Wonderland analyses 045/048: reviewers approved code that failed at import). T-e6 is small housekeeping, anytime. T-e5 is blocked on an edict for local backends. Next phase p2 is edict 0007.",
+    "tasks": [
+      {
+        "id": "T-e1",
+        "title": "Edict 0001: intent flows from edicts",
+        "status": "pending",
+        "details": "_diff_intent() stops falling back to diff.description; missing metadata['intent'] -> NEEDS_REVIEW in every autonomy mode; daedalus edict list|show; status -> done when all tagged diffs merge; tests for fail-closed, edict-sourced intent, transitions. NOTE: 0001's header reads 'Status: acccepted' (typo). A strict parser treats it as not accepted; Kohl must fix it (Daedalus may not edit edicts).",
+        "edict": "0001"
+      },
+      {
+        "id": "T-e2",
+        "title": "Edict 0003: dissent",
+        "status": "pending",
+        "details": "daedalus edict dissent <id> / edict dissents; open dissent blocks dispatch; judge may cite open dissent for NEEDS_HUMAN; history never deleted. Depends on T-e1's edict CLI.",
+        "edict": "0003"
+      },
+      {
+        "id": "T-e3",
+        "title": "Edict 0002: model casting",
+        "status": "pending",
+        "details": "worker_model / judge_model config (None = SDK default, behavior unchanged); passed to LLMJudge and ClaudeAgentOptions; recorded on diff; shown in ariadne review show. One model per role, Claude Agent SDK only.",
+        "edict": "0002"
+      },
+      {
+        "id": "T-e4",
+        "title": "#15 verifier fails closed; add import/build check",
+        "status": "pending",
+        "details": "Verifier must not pass a diff when no tests match. Add an execution check (import/compile the touched modules, cf. wonderland verify_imports / verification.py) so LLM review is never the only gate."
+      },
+      {
+        "id": "T-e5",
+        "title": "#16 local worker/judge backends + live tier",
+        "status": "in_progress",
+        "details": "BLOCKED: needs its own edict (0002's amendment narrowed the non-goal but does not authorize the build). Then: local backend with stub-server test, then live tier, local first on the home GPU. Guardrail: never run live model calls on an employer's account or machine."
+      },
+      {
+        "id": "T-e6",
+        "title": "Housekeeping bugs #13, #14",
+        "status": "pending",
+        "details": "#13 permissions project-root check uses string prefix (sibling dirs count as inside) -> use Path.is_relative_to. #14 buses default to machine-wide /tmp paths -> per-project roots."
+      },
+      {
+        "id": "T-e7",
+        "title": "Edict 0005: edicts opt-in",
+        "status": "pending",
+        "details": "edicts.enabled config (default false); init --edicts scaffolds docs/edicts/README.md + dissents/; template Edicts section conditional, with upgrade hint instead of silent drop; with edicts off every Ariadne diff routes to NEEDS_REVIEW; set edicts.enabled=true in this repo.",
+        "edict": "0005"
+      },
+      {
+        "id": "T-e8",
+        "title": "Harness: __pycache__ binaries end up in Ariadne diffs",
+        "status": "pending",
+        "details": "submit_diff_to_ariadne stages with 'git add -A'; a worker that runs pytest leaves __pycache__/*.pyc in the worktree; without a .gitignore covering them the diff carries binary patches, git apply refuses them, and the verifier rejects every diff. Found by the local gate experiment (2026-10-13); hermetic tier never runs pytest in the worker so it missed this. Fix: exclude untracked ignored-by-convention artifacts (or pass PYTHONDONTWRITEBYTECODE / stage with a default exclude list)."
+      },
+      {
+        "id": "T-e9",
+        "title": "Harness: judge sees only the first line of the work package",
+        "status": "pending",
+        "details": "execute_work_package sets the diff description to the first line of work.description and sets no metadata['intent']; the orchestrator's _diff_intent falls back to description, so for dispatcher-built packages the judge's intent is '# Task: Implement <dir> changes'. Seen live: judge approved two packages on that intent. Fix: put the full package description (and the feature's requirements) in diff.metadata['intent']."
+      },
+      {
+        "id": "T-e10",
+        "title": "Planner drops requirements and inter-package dependencies",
+        "status": "pending",
+        "details": "Planner._generate_work_packages makes one package per parent directory with description 'Modify {files} for {title}': the feature description never reaches workers. Only dependency it knows: tests depend on all impl packages; e.g. orders (needs pricing.apply_discount) runs in parallel with pricing. Kohl (2026-10-13): 'we're gonna have to spruce that up'. Evidence pending: gate experiment conditions ariadne vs ariadne+req vs local LLM planner (scratchpad gate_exp/, results to be committed)."
+      },
+      {
+        "id": "T-e11",
+        "title": "Ariadne as a CLI loop: local plan -> main-agent approval -> local dispatch",
+        "status": "pending",
+        "details": "Direction agreed with Kohl 2026-10-13 (pending experiment results). The main Claude Code session calls 'daedalus ariadne plan' (local LLM planner prints the plan into context), approves/edits it in one turn, then 'daedalus ariadne dispatch' runs local workers + gate + local judge with no claude_agent_sdk calls; the main agent reads a summary and handles NEEDS_REVIEW. Why: measured 2026-10-13, any fresh Claude subagent costs ~45-50k tokens of fixed overhead (Claude solo implemented each 7-file test feature correctly for ~47-51k; a subagent plan review cost ~49-55k), so Claude's marginal cost must stay in the main context; also removes SDK billing from the loop. Plan quality: small planners follow required schema fields (tests: file/must_cover/existing_tests_to_update) far better than prose rules. Depends on T-e5 (local backends) and T-e10 (planner). Evidence: scratchpad gate_exp/ results, to be committed with the write-up."
+      }
+    ],
+    "deferred": []
+  }
+}
