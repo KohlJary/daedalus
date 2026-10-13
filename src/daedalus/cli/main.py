@@ -45,28 +45,51 @@ def init(force: bool):
 @main.command()
 @click.option("--agents/--no-agents", default=True, help="Copy agents to .claude/agents/")
 @click.option("--template/--no-template", default=True, help="Inject CLAUDE.md template")
-def hydrate(agents: bool, template: bool):
+@click.option("--dry-run", is_flag=True, help="Show what would change (CLAUDE.md diff, agents replaced); write nothing")
+def hydrate(agents: bool, template: bool, dry_run: bool):
     """Update Daedalus assets in current project.
 
-    Re-injects the CLAUDE.md template and optionally updates agents.
+    Re-injects the CLAUDE.md template and optionally updates agents. Text inside the
+    DAEDALUS_LOCAL slots of CLAUDE.md is kept; the rest of the managed section is replaced.
     """
     from .commands import hydrate_project
 
-    hydrate_project(Path.cwd(), agents=agents, template=template)
+    hydrate_project(Path.cwd(), agents=agents, template=template, dry_run=dry_run)
 
 
 @main.command("config")
 @click.argument("key", required=False)
 @click.argument("value", required=False)
-def config_cmd(key: str, value: str):
-    """View or set global configuration.
+@click.option("--project", is_flag=True, help="Template settings for this project (.daedalus/config.json)")
+def config_cmd(key: str, value: str, project: bool):
+    """View or set configuration.
 
     Examples:
       daedalus config                    # Show all config
       daedalus config user.name          # Show specific key
       daedalus config user.name "Kohl"   # Set value
+      daedalus config --project                          # Template settings in effect here
+      daedalus config --project git.authorship user      # Override for this project
+      daedalus config --project sections.squash false
     """
     import json
+
+    if project:
+        from ..config import get_template_settings, set_project_value
+
+        if key is None or value is None:
+            settings = get_template_settings(Path.cwd())
+            if key is None:
+                click.echo(json.dumps(settings, indent=2))
+            else:
+                group, _, name = key.partition(".")
+                val = settings.get(group, {}).get(name)
+                click.echo("(not a template setting)" if val is None else str(val))
+        elif set_project_value(Path.cwd(), key, value):
+            click.echo(f"Set {key} = {value} for this project (.daedalus/config.json)")
+        else:
+            click.echo(f"Unknown template setting or invalid value: {key} = {value}", err=True)
+        return
 
     config = load_config()
 

@@ -45,11 +45,37 @@ class AriadneConfig:
 
 
 @dataclass
+class GitConfig:
+    """How the CLAUDE.md template tells Daedalus to commit."""
+    # daedalus: commits authored as Daedalus (--author). user: authored as the configured git identity,
+    # with a '- Daedalus' sign-off in the body (for repos where other people read the history).
+    authorship: str = "daedalus"
+
+
+@dataclass
+class SectionsConfig:
+    """Optional sections of the CLAUDE.md template."""
+    squash: bool = True
+    versioning: bool = True
+
+
+# Allowed values for string settings that the template branches on
+SETTING_CHOICES = {
+    "git.authorship": ("daedalus", "user"),
+}
+
+# Top-level config groups that template conditionals can read (and that project config may override)
+TEMPLATE_SETTING_GROUPS = ("git", "sections")
+
+
+@dataclass
 class DaedalusConfig:
     """Full Daedalus configuration."""
     user: UserConfig = field(default_factory=UserConfig)
     icarus: IcarusConfig = field(default_factory=IcarusConfig)
     ariadne: AriadneConfig = field(default_factory=AriadneConfig)
+    git: GitConfig = field(default_factory=GitConfig)
+    sections: SectionsConfig = field(default_factory=SectionsConfig)
 
 
 def get_config_dir() -> Path:
@@ -115,6 +141,8 @@ def load_config() -> DaedalusConfig:
             user=UserConfig(**data.get("user", {})),
             icarus=IcarusConfig(**data.get("icarus", {})),
             ariadne=AriadneConfig(**data.get("ariadne", {})),
+            git=GitConfig(**data.get("git", {})),
+            sections=SectionsConfig(**data.get("sections", {})),
         )
     except (json.JSONDecodeError, TypeError, KeyError):
         # Return defaults on any parse error
@@ -130,6 +158,8 @@ def save_config(config: DaedalusConfig) -> None:
         "user": asdict(config.user),
         "icarus": asdict(config.icarus),
         "ariadne": asdict(config.ariadne),
+        "git": asdict(config.git),
+        "sections": asdict(config.sections),
     }
 
     get_config_file().write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -181,7 +211,77 @@ def set_nested_value(config: DaedalusConfig, key: str, value: str) -> bool:
         current_value = getattr(obj, final_key)
         if isinstance(current_value, bool):
             value = value.lower() in ("true", "1", "yes", "on")
+        elif key in SETTING_CHOICES and value not in SETTING_CHOICES[key]:
+            return False
         setattr(obj, final_key, value)
         return True
 
     return False
+
+
+def get_project_config_file(project_dir: Path) -> Path:
+    """Per-project overrides, deep-merged over the global config for template settings."""
+    return Path(project_dir) / ".daedalus" / "config.json"
+
+
+def load_project_overrides(project_dir: Path) -> dict:
+    """Raw per-project overrides ({} when the file is missing or unreadable)."""
+    path = get_project_config_file(project_dir)
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def set_project_value(project_dir: Path, key: str, value: str) -> bool:
+    """
+    Set a template setting in the project config (.daedalus/config.json).
+
+    Only the groups the template reads (git, sections) can be overridden per project. The value is
+    validated and type-converted against the global config's field. Returns False for an unknown key
+    or a value outside the allowed choices.
+    """
+    if key.split(".")[0] not in TEMPLATE_SETTING_GROUPS:
+        return False
+    probe = DaedalusConfig()
+    if not set_nested_value(probe, key, value):
+        return False
+    converted = getattr(getattr(probe, key.split(".")[0]), key.split(".")[1])
+
+    data = load_project_overrides(project_dir)
+    node = data
+    parts = key.split(".")
+    for part in parts[:-1]:
+        node = node.setdefault(part, {})
+    node[parts[-1]] = converted
+
+    path = get_project_config_file(project_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return True
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def get_template_settings(project_dir: Path, config: Optional[DaedalusConfig] = None) -> dict:
+    """
+    Settings the CLAUDE.md template's conditionals read: the global git and sections groups, with the
+    project's .daedalus/config.json deep-merged over them. Only known keys are kept, so a typo in the
+    project file can't add a setting the template doesn't know.
+    """
+    config = config or load_config()
+    base = {group: asdict(getattr(config, group)) for group in TEMPLATE_SETTING_GROUPS}
+    overrides = {k: v for k, v in load_project_overrides(project_dir).items() if k in TEMPLATE_SETTING_GROUPS}
+    merged = _deep_merge(base, overrides)
+    return {group: {k: v for k, v in merged[group].items() if k in base[group]} for group in base}

@@ -2,6 +2,8 @@
 
 import pytest
 
+from daedalus import config as config_module
+from daedalus.config import DaedalusConfig
 from daedalus.templates import injector
 from daedalus.templates.injector import DAEDALUS_BEGIN, DAEDALUS_END, inject_claude_template
 
@@ -11,11 +13,12 @@ def make_template(body: str) -> str:
 
 
 @pytest.fixture(autouse=True)
-def no_user_config(monkeypatch):
+def no_user_config(monkeypatch, tmp_path_factory):
     # Keep tests independent of the machine's Daedalus config and git identity
     monkeypatch.setattr(injector, "load_daedalus_config", lambda config_path=None: {})
-    monkeypatch.setattr(injector, "load_config", lambda: {})
+    monkeypatch.setattr(injector, "load_config", lambda: DaedalusConfig())
     monkeypatch.setattr(injector, "get_daedalus_email", lambda config: "daedalus@example.com")
+    monkeypatch.setattr(config_module, "get_config_file", lambda: tmp_path_factory.mktemp("cfg") / "config.json")
 
 
 def test_new_file_is_utf8(tmp_path):

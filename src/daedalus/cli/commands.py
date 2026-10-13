@@ -122,18 +122,49 @@ def init_project(project_dir: Path, force: bool = False):
     click.echo("  2. Start Claude Code in this directory")
 
 
-def hydrate_project(project_dir: Path, agents: bool = True, template: bool = True):
-    """Update Daedalus assets in project."""
+def hydrate_project(project_dir: Path, agents: bool = True, template: bool = True, dry_run: bool = False):
+    """Update Daedalus assets in project. With dry_run, report what would change and write nothing."""
     if agents:
         agents_dir = project_dir / ".claude" / "agents"
-        agents_dir.mkdir(parents=True, exist_ok=True)
-        _copy_agents(agents_dir, force=True)
-        click.echo("Updated agents in .claude/agents/")
+        if dry_run:
+            changed = [
+                f.name for f in sorted(get_agents_dir().glob("*.md"))
+                if not (agents_dir / f.name).exists() or (agents_dir / f.name).read_bytes() != f.read_bytes()
+            ]
+            click.echo("Agents that would be replaced: " + (", ".join(changed) if changed else "none"))
+        else:
+            agents_dir.mkdir(parents=True, exist_ok=True)
+            _copy_agents(agents_dir, force=True)
+            click.echo("Updated agents in .claude/agents/")
 
     if template:
-        from ..templates.injector import inject_claude_template
+        from ..templates.injector import build_claude_md, inject_claude_template
+        from ..templates.render import TemplateError
 
-        if inject_claude_template(str(project_dir)):
+        if dry_run:
+            try:
+                current, updated, warnings = build_claude_md(str(project_dir))
+            except TemplateError as e:
+                click.echo(f"Warning: could not render CLAUDE.md template: {e}", err=True)
+                return
+            for w in warnings:
+                click.echo(f"Warning: {w}", err=True)
+            if current == updated:
+                click.echo("CLAUDE.md: no changes")
+            else:
+                import difflib
+                diff = difflib.unified_diff(
+                    (current or "").splitlines(keepends=True), updated.splitlines(keepends=True),
+                    "CLAUDE.md (current)", "CLAUDE.md (after hydrate)",
+                )
+                click.echo("".join(diff).replace("\r", ""), nl=False)
+            return
+
+        warnings: list = []
+        ok = inject_claude_template(str(project_dir), warnings=warnings)
+        for w in warnings:
+            click.echo(f"Warning: {w}", err=True)
+        if ok:
             click.echo("Updated CLAUDE.md template")
         else:
             click.echo("Warning: Could not update CLAUDE.md template", err=True)

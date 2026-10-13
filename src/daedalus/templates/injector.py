@@ -10,7 +10,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 # Python 3.9+ has importlib.resources.files, 3.7-3.8 need importlib_resources
 if sys.version_info >= (3, 9):
@@ -18,7 +18,8 @@ if sys.version_info >= (3, 9):
 else:
     from importlib_resources import files, as_file
 
-from ..config import get_config_file, get_daedalus_email, load_config
+from ..config import get_config_file, get_daedalus_email, get_template_settings, load_config
+from .render import TemplateError, extract_slots, fill_slots, render_conditionals
 
 # Markers for the managed section
 DAEDALUS_BEGIN = "<!-- DAEDALUS_BEGIN -->"
@@ -104,13 +105,14 @@ def load_daedalus_config(config_path: Optional[Path] = None) -> dict:
     return {}
 
 
-def substitute_template_vars(content: str, config: dict) -> str:
+def substitute_template_vars(content: str, config: dict, settings: Optional[dict] = None) -> str:
     """
     Substitute template variables with config values.
 
     Args:
         content: Template content with {{VAR}} placeholders.
         config: Configuration dictionary with user settings.
+        settings: Template settings (get_template_settings); defaults when omitted.
 
     Returns:
         Content with variables substituted.
@@ -121,10 +123,14 @@ def substitute_template_vars(content: str, config: dict) -> str:
     daedalus_config = load_config()
     email = get_daedalus_email(daedalus_config)
 
+    authorship = ((settings or {}).get("git") or {}).get("authorship", "daedalus")
+    commit_command = f'git commit --author="Daedalus <{email}>"' if authorship == "daedalus" else "git commit"
+
     replacements = {
         "{{USER_NAME}}": user_config.get("name", "the user"),
         "{{USER_COMMUNICATION_STYLE}}": user_config.get("communication_style", "Not specified"),
         "{{DAEDALUS_EMAIL}}": email,
+        "{{COMMIT_COMMAND}}": commit_command,
     }
 
     for placeholder, value in replacements.items():
@@ -133,24 +139,84 @@ def substitute_template_vars(content: str, config: dict) -> str:
     return content
 
 
+SECTION_RE = re.compile(rf"{re.escape(DAEDALUS_BEGIN)}.*?{re.escape(DAEDALUS_END)}", re.DOTALL)
+
+
+def build_claude_md(
+    working_dir: str,
+    config_path: Optional[Path] = None,
+    template_content: Optional[str] = None,
+) -> Tuple[Optional[str], str, List[str]]:
+    """
+    Work out what CLAUDE.md should contain after a hydrate, without writing anything.
+
+    Renders the template's DAEDALUS_IF conditionals from the template settings (global config with the
+    project's .daedalus/config.json over it), substitutes variables, and carries the contents of the
+    existing file's DAEDALUS_LOCAL slots into the new managed section. The file's line endings are kept.
+
+    Returns:
+        (current file text or None if there's no CLAUDE.md, new text, warnings)
+
+    Raises:
+        TemplateError: the template is missing, has no Daedalus markers, or uses an unknown setting.
+    """
+    claude_md_path = Path(working_dir) / "CLAUDE.md"
+
+    if template_content is None:
+        template_content = get_template_content()
+    if not template_content:
+        raise TemplateError("could not load the CLAUDE.md template")
+
+    config = load_daedalus_config(config_path)
+    settings = get_template_settings(Path(working_dir), load_config())
+    template_content = substitute_template_vars(template_content.replace("\r\n", "\n"), config, settings)
+    template_content = render_conditionals(template_content, settings)
+
+    match = SECTION_RE.search(template_content)
+    if not match:
+        raise TemplateError("template has no DAEDALUS_BEGIN/DAEDALUS_END markers")
+    section = match.group(0)
+
+    if not claude_md_path.exists():
+        return None, template_content, []
+
+    # open() rather than read_text(): read_text only takes newline= from Python 3.13
+    with open(claude_md_path, encoding="utf-8", newline="") as f:
+        existing = f.read()
+    newline = "\r\n" if "\r\n" in existing else "\n"
+    existing_lf = existing.replace("\r\n", "\n")
+
+    old = SECTION_RE.search(existing_lf)
+    section, warnings = fill_slots(section, extract_slots(old.group(0)) if old else {})
+
+    if old:
+        # Slice rather than re.sub, so backslashes in the template stay literal
+        updated = existing_lf[:old.start()] + section + existing_lf[old.end():]
+    else:
+        updated = section + "\n\n" + existing_lf
+
+    return existing, updated.replace("\n", newline), warnings
+
+
 def inject_claude_template(
     working_dir: str,
     config_path: Optional[Path] = None,
     template_content: Optional[str] = None,
+    warnings: Optional[List[str]] = None,
 ) -> bool:
     """
     Inject or update the Daedalus section in a project's CLAUDE.md.
 
     If CLAUDE.md doesn't exist, creates it from the template.
     If it exists but has no Daedalus section, prepends the section.
-    If it exists with a Daedalus section, updates that section only.
-
-    Template variables (e.g., {{USER_NAME}}) are substituted from config.
+    If it exists with a Daedalus section, updates that section only, keeping the contents of its
+    DAEDALUS_LOCAL slots.
 
     Args:
         working_dir: Path to project working directory.
         config_path: Optional path to config file.
         template_content: Optional template content (for testing or override).
+        warnings: Optional list; warnings and the failure reason, if any, are appended to it.
 
     Returns:
         True if injection succeeded, False otherwise.
@@ -160,64 +226,17 @@ def inject_claude_template(
 
     claude_md_path = Path(working_dir) / "CLAUDE.md"
 
-    # Get template content
-    if template_content is None:
-        template_content = get_template_content()
-
-    if not template_content:
-        _debug_log("Could not load template content", "warning")
-        return False
-
-    # Load config and substitute variables
-    config = load_daedalus_config(config_path)
-    template_content = substitute_template_vars(template_content, config)
-
-    # Extract just the Daedalus section from template
-    match = re.search(
-        rf'{re.escape(DAEDALUS_BEGIN)}.*?{re.escape(DAEDALUS_END)}',
-        template_content,
-        re.DOTALL
-    )
-    if not match:
-        _debug_log("Could not find Daedalus markers in template", "warning")
-        return False
-
-    daedalus_section = match.group(0)
-
-    # Always UTF-8, and newline="" so nothing is translated: the platform default (cp1252 on Windows)
-    # turns em dashes into 0x97, and text-mode writes turn every \n into \r\n.
     try:
-        if not claude_md_path.exists():
-            # Create new file from template
-            claude_md_path.write_text(template_content, encoding="utf-8", newline="")
-            _debug_log(f"Created CLAUDE.md at {claude_md_path}", "info")
-        else:
-            # Update existing file, keeping its line endings
-            # open() rather than read_text(): read_text only takes newline= from Python 3.13
-            with open(claude_md_path, encoding="utf-8", newline="") as f:
-                existing_content = f.read()
-            newline = "\r\n" if "\r\n" in existing_content else "\n"
-            section = daedalus_section.replace("\r\n", "\n").replace("\n", newline)
-
-            if DAEDALUS_BEGIN in existing_content:
-                # Replace existing Daedalus section. A function replacement keeps backslashes in the
-                # template literal (a string replacement would read them as escapes and group refs).
-                updated_content = re.sub(
-                    rf'{re.escape(DAEDALUS_BEGIN)}.*?{re.escape(DAEDALUS_END)}',
-                    lambda _: section,
-                    existing_content,
-                    flags=re.DOTALL
-                )
-                claude_md_path.write_text(updated_content, encoding="utf-8", newline="")
-                _debug_log(f"Updated Daedalus section in {claude_md_path}", "info")
-            else:
-                # Prepend Daedalus section to existing content
-                updated_content = section + newline + newline + existing_content
-                claude_md_path.write_text(updated_content, encoding="utf-8", newline="")
-                _debug_log(f"Prepended Daedalus section to {claude_md_path}", "info")
-
+        _, updated, found = build_claude_md(working_dir, config_path, template_content)
+        if warnings is not None:
+            warnings.extend(found)
+        # newline="" so nothing is translated (text-mode writes on Windows turn every \n into \r\n)
+        claude_md_path.write_text(updated, encoding="utf-8", newline="")
+        _debug_log(f"Wrote {claude_md_path}", "info")
         return True
 
     except Exception as e:
         _debug_log(f"Error injecting template: {e}", "error")
+        if warnings is not None:
+            warnings.append(str(e))
         return False
