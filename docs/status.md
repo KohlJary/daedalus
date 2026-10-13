@@ -19,7 +19,7 @@ Gameplan (`.daedalus/roadmap/gameplan.json`, local) created this session:
 ## Edicts
 | Edict | Status | Built? | Notes |
 |-------|--------|--------|-------|
-| 0001 Intent flows from edicts | accepted | no | Header reads `Status: acccepted` (typo); Kohl to fix. Build first; its edict CLI is shared with 0003 and 0005. |
+| 0001 Intent flows from edicts | accepted | no | Build first; its edict CLI is shared with 0003 and 0005. |
 | 0002 Model casting | accepted | no | Non-goal narrowed by 2026-10-13 amendment; local backends still need their own edict (#16). |
 | 0003 Dissent | accepted | no | Depends on 0001's edict CLI. |
 | 0004 Memory backbone | accepted | no | Amended 2026-10-13: gameplan committed and sole tracker of edict build state; this table goes away when 0004 lands. |
