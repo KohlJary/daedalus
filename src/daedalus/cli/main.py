@@ -134,6 +134,19 @@ def hook_session_start():
         click.echo(f"## Daedalus\n(session brief unavailable: {e}) Run /inhale.")
 
 
+@hook.command("capture")
+def hook_capture():
+    """Propose gameplan updates from commits (SessionEnd/PreCompact). Never fails the session."""
+    from ..hooks import capture
+
+    try:
+        note = capture(Path.cwd())
+    except Exception as e:  # a failed capture must not block the session
+        note = f"Daedalus: capture hook skipped ({e})"
+    if note:
+        click.echo(note)
+
+
 @main.command("doctor")
 @click.option("--json", "as_json", is_flag=True, help="Print findings as JSON")
 def doctor(as_json: bool):
@@ -384,3 +397,31 @@ def gameplan_task_defer(task_id: str, reason: str):
 
 if __name__ == "__main__":
     main()
+
+
+@gameplan.group("pending", invoke_without_command=True)
+@click.pass_context
+def gameplan_pending(ctx):
+    """Proposed gameplan updates (from the capture hook). Lists them; apply or drop each one."""
+    if ctx.invoked_subcommand is None:
+        from .commands import list_pending
+
+        list_pending(Path.cwd())
+
+
+@gameplan_pending.command("apply")
+@click.argument("proposal_id")
+def gameplan_pending_apply(proposal_id: str):
+    """Apply a proposal (P1, P2, ... or 'all') to the gameplan."""
+    from .commands import apply_pending
+
+    apply_pending(Path.cwd(), proposal_id)
+
+
+@gameplan_pending.command("drop")
+@click.argument("proposal_id")
+def gameplan_pending_drop(proposal_id: str):
+    """Discard a proposal (P1, P2, ... or 'all')."""
+    from .commands import drop_pending
+
+    drop_pending(Path.cwd(), proposal_id)

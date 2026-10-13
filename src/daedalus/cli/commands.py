@@ -548,3 +548,36 @@ def defer_gameplan_task(project_dir: Path, task_id: str, reason: str):
 
     if _gameplan_run(project_dir, lambda d: gp.defer_task(d, task_id, reason=reason)):
         click.echo(f"Deferred task: {task_id}")
+
+
+def list_pending(project_dir: Path):
+    from . import gameplan as gp
+
+    proposals = gp.load_pending(project_dir)
+    if not proposals:
+        click.echo("No pending gameplan updates.")
+        return
+    for p in proposals:
+        click.echo(f"{p['id']}: {p['task']} -> {p['status']}  ({p.get('source', '')}, {p.get('created', '')})")
+        if p.get("resolution"):
+            click.echo(f"    {p['resolution']}")
+
+
+def apply_pending(project_dir: Path, which: str):
+    from . import gameplan as gp
+
+    applied = _gameplan_run(project_dir, lambda d: gp.apply_pending(project_dir, d, which))
+    for p in applied or []:
+        click.echo(f"Applied {p['id']}: {p['task']} -> {p['status']}")
+
+
+def drop_pending(project_dir: Path, which: str):
+    from . import gameplan as gp
+
+    try:
+        dropped = gp.drop_pending(project_dir, which)
+    except gp.GameplanError as e:
+        click.echo(str(e), err=True)
+        return
+    for p in dropped:
+        click.echo(f"Dropped {p['id']}: {p['task']}")

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +21,8 @@ from .cli import gameplan as gp
 MAX_BRIEF_LINES = 40
 MAX_NOTE_LINES = 12
 SESSION_START_COMMAND = "daedalus hook session-start"
+CAPTURE_COMMAND = "daedalus hook capture"
+MIN_TITLE_MATCH = 12  # shorter task titles are too generic to match against commit messages
 SUMMARY_HEADING = re.compile(r"^## .*$", re.MULTILINE)
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -130,8 +134,8 @@ def wanted_hooks(session_start: bool, capture: bool) -> dict[str, str]:
     if session_start:
         wanted["SessionStart"] = SESSION_START_COMMAND
     if capture:
-        wanted["SessionEnd"] = "daedalus hook capture"
-        wanted["PreCompact"] = "daedalus hook capture"
+        wanted["SessionEnd"] = CAPTURE_COMMAND
+        wanted["PreCompact"] = CAPTURE_COMMAND
     return wanted
 
 
@@ -168,3 +172,82 @@ def register_hooks(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     return added, None
+
+
+# ---------- capture: propose gameplan updates from commits ----------
+
+
+def _git(project_dir: Path, *args: str) -> Optional[str]:
+    try:
+        return subprocess.run(
+            ["git", *args], cwd=project_dir, capture_output=True, text=True, check=True
+        ).stdout
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+
+def commits_since_gameplan(project_dir: Path) -> list[dict]:
+    """
+    Commits on HEAD since the gameplan last changed: since its last commit when it is tracked,
+    otherwise since the file was last written (a gitignored gameplan has no commits).
+    """
+    rel = str(gp.GameplanPaths.for_project(project_dir).gameplan_file.relative_to(project_dir))
+    last = (_git(project_dir, "log", "-1", "--format=%H", "--", rel) or "").strip()
+    if last:
+        rev = [f"{last}..HEAD"]
+    else:
+        mtime = gp.GameplanPaths.for_project(project_dir).gameplan_file.stat().st_mtime
+        rev = [f"--since={datetime.fromtimestamp(mtime).isoformat(timespec='seconds')}", "HEAD"]
+    out = _git(project_dir, "log", "--no-merges", "--format=%H%x1f%s%x1f%b%x1e", *rev)
+    commits = []
+    for record in (out or "").split("\x1e"):
+        if not record.strip():
+            continue
+        sha, subject, body = (record.strip("\n").split("\x1f") + ["", ""])[:3]
+        commits.append({"sha": sha, "subject": subject, "body": body})
+    return commits
+
+
+def _mentions(task: dict, message: str) -> bool:
+    if re.search(rf"(?<![\w-]){re.escape(task.get('id', ''))}(?![\w-])", message):
+        return True
+    title = (task.get("title") or "").strip().lower()
+    return len(title) >= MIN_TITLE_MATCH and title in message.lower()
+
+
+def propose_from_commits(project_dir: Path) -> list[dict]:
+    """Proposals marking open active-phase tasks done, for each task some new commit names."""
+    try:
+        data = gp.load_gameplan(project_dir)
+    except (gp.GameplanError, json.JSONDecodeError):
+        return []
+    active = data.get("activePhase") or {}
+    open_tasks = [t for t in active.get("tasks", []) if t.get("status") != "done"]
+    if not open_tasks:
+        return []
+    commits = commits_since_gameplan(project_dir)
+    proposals = []
+    for task in open_tasks:
+        hits = [c for c in commits if _mentions(task, f"{c['subject']}\n{c['body']}")]
+        if not hits:
+            continue
+        cited = "; ".join(f"{c['sha'][:7]} {c['subject']}" for c in reversed(hits))
+        proposals.append({
+            "task": task["id"],
+            "status": "done",
+            "resolution": f"Commits: {cited}",
+            "commits": [c["sha"] for c in hits],
+            "source": "capture hook",
+            "created": date.today().isoformat(),
+        })
+    return proposals
+
+
+def capture(project_dir: Path) -> str:
+    """Write proposals to the pending file. Returns a one-line note, or "" when nothing is new."""
+    added = gp.add_proposals(project_dir, propose_from_commits(project_dir))
+    if not added:
+        return ""
+    tasks = ", ".join(p["task"] for p in added)
+    return (f"Daedalus: proposed gameplan updates for {tasks}. "
+            "Review with `daedalus gameplan pending`, then apply or drop.")
