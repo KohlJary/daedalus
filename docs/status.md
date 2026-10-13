@@ -8,13 +8,15 @@ and `daedalus doctor`. This file carries what the gameplan can't say. See
 **Last updated:** 2026-10-13, by a Daedalus session
 
 ## Last session
-- Built edict 0007 (memory backbone), merged as PR #21: `daedalus doctor`, the
-  gameplan-first session-start hook, capture proposals, `--edict` links.
-  Edicts 0004 and 0007 are now `done`.
-- Two Daedalus sessions are working in parallel: one on Ariadne (p1: T-e5,
-  T-e8..T-e11), one on memory (edict 0006, reconstruction, on
-  `feat/0006-reconstruction`). The gameplan has a single active phase, so p1
-  stays active and 0006 is tracked in p2b's notes.
+- Built edicts 0007 (memory backbone, PR #21) and 0006 (memory reconstruction,
+  PR #22); both merged and marked `done`. Drafted edicts 0008 (workstreams)
+  and 0009 (agent mailbox) at Kohl's request; next to build, in that order.
+- 0006's real run on temple-codex (sparse messages) surfaced two places where
+  `research/hybrid.md` reports more than its logs support (the TSP arithmetic,
+  the unreported Gemini Busy Beaver runs). Momus confirmed both. The proposal
+  is kept outside any repo, pending Kohl's call.
+- Two Daedalus sessions are working in parallel: one on Ariadne (p1), one on
+  memory. Edict 0008 exists because the single active phase couldn't hold both.
 
 ## Open dissents
 None.

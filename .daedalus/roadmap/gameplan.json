@@ -27,9 +27,9 @@
     {
       "id": "p2b-reconstruction",
       "title": "Memory reconstruction from git",
-      "status": "planned",
+      "status": "done",
       "roadmapItems": [],
-      "notes": "BUILT, in review: PR #22 (branch feat/0006-reconstruction, worktree ~/cass/daedalus-0006), CI green, Momus-reviewed (holes fixed in 71fbe28). Sparse-message run on temple-codex reported in docs/examples/reconstruction-runs.md. Mark done when merged. Edict 0006. Depends on p2 (0007: doctor + pending mechanism). Reference run: ~/wonderland-ai/.daedalus/reconstruction/ + .daedalus/momus/reconstruction-review.md.",
+      "notes": "DONE 2026-10-13: PR #22 merged (a218489), CI green. gather (scored messages, diffs for weak ones, --since/--until/--author), check (window from the bundle, done only on shown, roadmap item by item, coverage), pending import, mnemosyne agent, /reconstruct skill. Momus reviewed the build (holes fixed in 71fbe28; fixed version not re-reviewed) and the temple-codex run (0 contradicted). Not covered: a question-answering 'recall' mode (\"what did Frank build in June?\" as an answer, not gameplan proposals), proposed as its own edict.",
       "edict": "0006"
     },
     {

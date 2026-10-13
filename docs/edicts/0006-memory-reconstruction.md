@@ -1,5 +1,5 @@
 # Edict 0006: Memory reconstruction
-Status: accepted
+Status: done
 Depends on: Edict 0007 (memory backbone: `doctor`, pending proposals)
 
 ## Intent
