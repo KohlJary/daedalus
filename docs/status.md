@@ -19,11 +19,11 @@ Gameplan (`.daedalus/roadmap/gameplan.json`, local) created this session:
 ## Edicts
 | Edict | Status | Built? | Notes |
 |-------|--------|--------|-------|
-| 0001 Intent flows from edicts | accepted | no | Header reads `Status: acccepted` (typo); Kohl to fix. Build behind 0005's intent-source interface. |
+| 0001 Intent flows from edicts | accepted | no | Header reads `Status: acccepted` (typo); Kohl to fix. Build first; its edict CLI is shared with 0003 and 0005. |
 | 0002 Model casting | accepted | no | Non-goal narrowed by 2026-10-13 amendment; local backends still need their own edict (#16). |
 | 0003 Dissent | accepted | no | Depends on 0001's edict CLI. |
-| 0004 Memory backbone | accepted | no | `daedalus doctor`, gameplan-first session-start hook, proposal-only capture hook, optional free-form memory. |
-| 0005 Edicts opt-in, intent from any source | accepted | no | `edicts.enabled` (default off); intent-source interface with edict and github-issue sources. |
+| 0004 Memory backbone | accepted | no | Amended 2026-10-13: gameplan committed and sole tracker of edict build state; this table goes away when 0004 lands. |
+| 0005 Edicts opt-in | accepted | no | Amended 2026-10-13: cut to opt-in only (`edicts.enabled`, default off). |
 
 0004 and 0005 were drafted by Daedalus at Kohl's request and committed to
 `main` directly at his instruction.
@@ -51,5 +51,5 @@ path), not `.daedalus/roadmap/` (covered by 0004).
 **Guardrail:** never run live model calls (workers, judge, the live tier) on
 an employer's account or machine. The hermetic tier needs no model.
 
-**Next, in order:** T-e1 + T-e7 (0001 behind 0005's intent-source interface),
-then T-e2, T-e3, T-e4; then activate p2 for edict 0004.
+**Next, in order:** T-e1, then T-e7 and T-e2, T-e3, T-e4; then activate p2 for
+edict 0004.

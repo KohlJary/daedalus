@@ -1,18 +1,14 @@
-# Edict 0005: Edicts opt-in, intent from any approved source
+# Edict 0005: Edicts opt-in
 Status: accepted
-Depends on: Edict 0001 (intent flows from edicts)
 
 ## Intent
-Edicts are how Kohl runs his own projects. They should not be imposed on
-every project that installs Daedalus. In a team or enterprise repo, design
-intent already lives in tickets, issues, and ADRs, and "merging is sign-off"
-already means something else there. A default CLAUDE.md that says "only build
-accepted edicts" would stall ordinary work.
+Edicts are how Kohl sends designs from Claude in chat to Claude Code. They
+should not be imposed on every project that installs Daedalus. In a team or
+enterprise repo, design intent already lives in tickets, issues, and ADRs, and
+"merging is sign-off" already means something else there. A default CLAUDE.md
+that says "only build accepted edicts" would stall ordinary work.
 
-The part that must hold everywhere is narrower: Ariadne's judge grades a diff
-against intent a human approved, never against the worker's own description
-(0001). That rule does not care where the intent comes from. So edicts become
-one intent source among others, and they are off by default.
+So edicts are off by default and turned on per project.
 
 Drafted by Daedalus at Kohl's request in conversation on 2026-10-13, and
 committed to `main` directly at his instruction.
@@ -21,41 +17,35 @@ committed to `main` directly at his instruction.
 - Config key `edicts.enabled` (default `false`). `daedalus init --edicts` sets
   it to `true` and scaffolds `docs/edicts/README.md` (format and lifecycle) and
   `docs/edicts/dissents/`.
-- The CLAUDE.md template's Edicts section, and its edict line in the status
-  handoff, are rendered only when `edicts.enabled` is true. Otherwise neither
-  appears.
-- Ariadne reads approved intent through a single intent-source interface that
-  returns: source ID, intent text, acceptance criteria, and whether it is
-  approved. Built-in sources:
-  - `edict`: accepted edicts on `main` (0001's rules, unchanged).
-  - `github-issue`: an issue carrying a configured approval label (default
-    `approved`), with its body as intent and an `## Acceptance criteria`
-    section as criteria.
-- 0001's fail-closed rule applies to every source. A diff with no approved
-  intent goes to `NEEDS_REVIEW` and is never auto-committed.
-- Where this conflicts with 0001's "only edicts with `Status: accepted` may be
-  dispatched", this edict governs: work items from any approved source may be
-  dispatched.
+- The CLAUDE.md template's Edicts section is rendered only when
+  `edicts.enabled` is true.
+- When edicts are off, Ariadne's fail-closed rule from 0001 still applies: a
+  diff with no human-approved intent goes to `NEEDS_REVIEW` and is never
+  auto-committed.
 - This repository enables edicts (`edicts.enabled = true`).
 
 ## Acceptance criteria
 - With `edicts.enabled` false, `daedalus init` creates no `docs/edicts/`, and
   the rendered CLAUDE.md contains no edict instructions.
-- With it true, the rendered CLAUDE.md matches today's Edicts section, and
+- With it true, the rendered CLAUDE.md contains the Edicts section, and
   `docs/edicts/README.md` exists after init.
 - Re-rendering the managed CLAUDE.md section in a project that already has
   edicts on disk but no config key leaves the Edicts section in place and
   prints a hint to set `edicts.enabled`. Upgrading never silently drops it.
-- Ariadne planning from a `github-issue` source records
-  `diff.metadata["intent_source"]` (e.g. `github-issue:42`) and the intent and
-  criteria, and the judge grades against those.
-- An unlabeled issue is not approved. Its diffs route to `NEEDS_REVIEW`.
+- With edicts off, every Ariadne diff routes to `NEEDS_REVIEW`.
 - Tests cover: template rendering with the flag on and off, the upgrade hint,
-  both sources, and fail-closed for each.
+  and fail-closed with edicts off.
 
 ## Non-goals
-- No Jira, Linear, or ADR sources yet. The interface should allow them; the
-  edict does not build them.
-- Dissent (0003) stays edict-only. Other sources raise disagreement through
-  their own channels (issue comments, review).
+- No other intent sources (GitHub issues, Jira, Linear, ADRs). Add them when a
+  real team needs them.
 - No change to how Kohl's own edicts are written, accepted, or amended.
+
+## Amendments
+- 2026-10-13, requested by Kohl: cut down to opt-in only. Removed the
+  intent-source interface, the `github-issue` source, `intent_source`
+  metadata, and the override of 0001's dispatch rule; 0001 stands unchanged.
+  Dropped the dependency on 0001 and the edict line in the status handoff
+  (0004 now makes `status.md` a session note). Why: the pluggable sources
+  were designed for enterprise teams that don't exist yet, and they added a
+  second layer over the gameplan.

@@ -18,11 +18,25 @@ separate chore, and it gets skipped. So the gameplan carries the memory,
 tooling catches it when it falls behind, and the free-form files become
 optional.
 
+The gameplan is also what crosses the boundary from Claude Code back to Claude
+in chat. Designs travel chat → code as edicts; progress travels code → chat
+through the gameplan. That only works if the gameplan is committed. Each fact
+lives in one place: an edict says what to build and why; the gameplan says
+what has been built.
+
 Drafted by Daedalus at Kohl's request in conversation on 2026-10-13, and
 committed to `main` directly at his instruction.
 
 ## Constraints
 - Everything stays plain files in the repo. No database or service.
+- `.daedalus/roadmap/gameplan.json` is tracked in git. `daedalus init` makes
+  sure it is not ignored, even if the rest of `.daedalus/` is.
+- Phases and tasks may carry an optional `edict` field (e.g. `"0004"`). Whether
+  an edict has been built is recorded only in the gameplan, never in the edict
+  file or in `docs/status.md`.
+- `docs/status.md` is a short note on the last session: what happened and
+  anything the gameplan can't say. It does not duplicate phases, tasks, or
+  edict progress.
 - Hooks are deterministic and make no model calls. They must be cheap, testable,
   and safe to run on any machine.
 - Hooks never edit the gameplan, `docs/status.md`, or edicts directly. They only
@@ -38,12 +52,16 @@ committed to `main` directly at his instruction.
   - an active phase still `in_progress` whose tasks are all `done`
   - tasks `in_progress` for longer than the configured threshold
   - edicts whose `Status:` line is not one of `proposed | accepted | done`
-  - `docs/status.md` naming an edict status that disagrees with the edict file
+  - accepted edicts that no gameplan phase or task references (only when
+    edicts are enabled, see 0005)
+  - the gameplan file being ignored by git
   - top-level source packages absent from `project-map.md`, when that file exists
   - memory files that are empty templates but still read by a hook
   It exits non-zero when it finds anything, so it can run in CI.
 - Tests run `doctor` against fixtures modelled on the wonderland-ai and
   cass-vessel `.daedalus/` states, and each finding above fires on its fixture.
+- `gameplan phase add` and `gameplan task add` accept `--edict <id>`, and
+  `gameplan show` displays it.
 - The session-start hook leads with the active phase's goal, the next
   pending task, and the head of `docs/status.md`, followed by any `doctor`
   findings in one line each. It reads the roadmap from `.daedalus/roadmap/`
@@ -55,13 +73,27 @@ committed to `main` directly at his instruction.
   pending` lists them, and `apply` / `drop` resolve them.
 - `daedalus init` no longer creates empty `warnings.md`, `lessons.md`, or
   `observations.json`. The memory agent and hooks treat missing files as normal.
-- The README presents the gameplan and the committed `docs/status.md` as the
-  core, and says plainly how this differs from Claude Code's built-in per-user
-  memory: it is committed, shared, and structured around tasks.
+- The CLAUDE.md template and `docs/edicts/README.md` describe the split: edicts
+  carry designs, the gameplan carries progress, `status.md` is the session note.
+- The README presents the gameplan as the core, and says plainly how this
+  differs from Claude Code's built-in per-user memory: it is committed,
+  shared, and structured around tasks.
 
 ## Non-goals
 - No model-written resolutions or summaries. Drafting prose with a model is a
   later edict, once the deterministic version has been used for a while.
 - No automatic writes to the gameplan, status, or edicts.
+- No automatic conversion of edicts into gameplan phases. Claude Code does that
+  by hand; `doctor` only flags edicts that nothing references.
 - No migration of existing session summaries into the gameplan.
 - No Theseus report indexing (gameplan phase p3) or resume benchmark (p4).
+
+## Amendments
+- 2026-10-13, requested by Kohl: the gameplan is committed, and tracking
+  whether an edict is built lives only there (`edict` field on phases and
+  tasks). `status.md` shrinks to a session note. `doctor` gains checks for
+  accepted edicts that nothing references and for an ignored gameplan file,
+  and drops the `status.md`-vs-edict check. Why: the edict file, a gameplan
+  task, and a `status.md` table were all tracking the same thing ("hat on a
+  hat"), and the gameplan being gitignored was the reason `status.md` had to
+  duplicate it for chat.
