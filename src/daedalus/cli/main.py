@@ -30,7 +30,8 @@ def main():
 
 @main.command()
 @click.option("--force", is_flag=True, help="Overwrite existing files")
-def init(force: bool):
+@click.option("--hooks/--no-hooks", default=True, help="Register Claude Code hooks in .claude/settings.json")
+def init(force: bool, hooks: bool):
     """Initialize Daedalus in the current project.
 
     Creates:
@@ -40,15 +41,16 @@ def init(force: bool):
     """
     from .commands import init_project
 
-    init_project(Path.cwd(), force=force)
+    init_project(Path.cwd(), force=force, hooks=hooks)
 
 
 @main.command()
 @click.option("--agents/--no-agents", default=True, help="Copy agents to .claude/agents/")
 @click.option("--template/--no-template", default=True, help="Inject CLAUDE.md template")
 @click.option("--skills/--no-skills", default=True, help="Install plugin skills to .claude/skills/")
-@click.option("--dry-run", is_flag=True, help="Show what would change (CLAUDE.md diff, agents and skills); write nothing")
-def hydrate(agents: bool, template: bool, skills: bool, dry_run: bool):
+@click.option("--hooks/--no-hooks", default=True, help="Register Claude Code hooks in .claude/settings.json")
+@click.option("--dry-run", is_flag=True, help="Show what would change (CLAUDE.md diff, agents, skills, hooks); write nothing")
+def hydrate(agents: bool, template: bool, skills: bool, hooks: bool, dry_run: bool):
     """Update Daedalus assets in current project.
 
     Re-injects the CLAUDE.md template and optionally updates agents. Text inside the
@@ -56,7 +58,7 @@ def hydrate(agents: bool, template: bool, skills: bool, dry_run: bool):
     """
     from .commands import hydrate_project
 
-    hydrate_project(Path.cwd(), agents=agents, template=template, dry_run=dry_run, skills=skills)
+    hydrate_project(Path.cwd(), agents=agents, template=template, dry_run=dry_run, skills=skills, hooks=hooks)
 
 
 @main.command("config")
@@ -113,6 +115,23 @@ def config_cmd(key: str, value: str, project: bool):
             click.echo(f"Set {key} = {value}")
         else:
             click.echo(f"Unknown config key: {key}", err=True)
+
+
+@main.group("hook")
+def hook():
+    """Claude Code hook entry points (registered by init/hydrate)."""
+    pass
+
+
+@hook.command("session-start")
+def hook_session_start():
+    """Print the gameplan-first session brief. Never fails the session."""
+    from ..hooks import session_start_brief
+
+    try:
+        click.echo(session_start_brief(Path.cwd()))
+    except Exception as e:  # a broken brief must not block the session
+        click.echo(f"## Daedalus\n(session brief unavailable: {e}) Run /inhale.")
 
 
 @main.command("doctor")

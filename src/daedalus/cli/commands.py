@@ -64,7 +64,7 @@ def _ensure_global_identity():
         identity_json.write_text(GLOBAL_IDENTITY_JSON, encoding="utf-8")
 
 
-def init_project(project_dir: Path, force: bool = False):
+def init_project(project_dir: Path, force: bool = False, hooks: bool = True):
     """Initialize Daedalus in a project."""
     click.echo(f"Initializing Daedalus in {project_dir}")
 
@@ -110,6 +110,9 @@ def init_project(project_dir: Path, force: bool = False):
     # Install skills
     _copy_skills(project_dir / ".claude" / "skills", force)
 
+    if hooks:
+        _register_hooks(project_dir)
+
     # Inject CLAUDE.md template
     from ..templates.injector import inject_claude_template
 
@@ -126,9 +129,13 @@ def init_project(project_dir: Path, force: bool = False):
 
 
 def hydrate_project(
-    project_dir: Path, agents: bool = True, template: bool = True, dry_run: bool = False, skills: bool = True
+    project_dir: Path, agents: bool = True, template: bool = True, dry_run: bool = False, skills: bool = True,
+    hooks: bool = True,
 ):
     """Update Daedalus assets in project. With dry_run, report what would change and write nothing."""
+    if hooks:
+        _register_hooks(project_dir, dry_run=dry_run)
+
     if skills:
         skills_dir = project_dir / ".claude" / "skills"
         if dry_run:
@@ -182,6 +189,23 @@ def hydrate_project(
             click.echo("Updated CLAUDE.md template")
         else:
             click.echo("Warning: Could not update CLAUDE.md template", err=True)
+
+
+def _register_hooks(project_dir: Path, dry_run: bool = False):
+    """Register the hooks enabled in config (hooks.session_start, hooks.capture) in .claude/settings.json."""
+    from ..config import get_project_settings
+    from ..hooks import register_hooks
+
+    settings = get_project_settings(project_dir, "hooks")
+    added, error = register_hooks(
+        project_dir, session_start=settings["session_start"], capture=settings["capture"], dry_run=dry_run
+    )
+    if error:
+        click.echo(f"  Warning: {error}", err=True)
+    elif dry_run:
+        click.echo("Hooks that would be registered: " + (", ".join(added) if added else "none"))
+    elif added:
+        click.echo(f"  Registered hooks in .claude/settings.json: {', '.join(added)}")
 
 
 def _skill_files(name: str):
