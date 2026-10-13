@@ -165,12 +165,17 @@ The mythology: Ariadne gave Theseus the thread that guided him through the Labyr
 # Initialize Daedalus in current directory
 daedalus init
 
-# Update templates and agents (after plugin updates)
+# Update the CLAUDE.md template, agents and skills (after plugin updates)
 daedalus hydrate
 
 # See what hydrate would change, without writing anything
 daedalus hydrate --dry-run
 ```
+
+`init` and `hydrate` install the plugin's skills into `.claude/skills/` (`--no-skills` to skip),
+including `exhale` and `inhale`, the session rituals behind Context as Breath (edict 0004): exhale
+preserves the session's work before a breakpoint or `/compact`, inhale picks it back up. Projects add
+their own steps in CLAUDE.md, in a paragraph beginning "In this repo, exhaling cleanly means".
 
 ### Configuration
 

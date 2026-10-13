@@ -10,7 +10,7 @@ from typing import Optional
 import click
 
 from ..config import get_config_dir
-from ..plugin import get_agents_dir
+from ..plugin import get_agents_dir, get_skills_dir, list_skills
 
 
 GLOBAL_IDENTITY_MD = """# Daedalus Identity
@@ -107,6 +107,9 @@ def init_project(project_dir: Path, force: bool = False):
     agents_dir.mkdir(parents=True, exist_ok=True)
     _copy_agents(agents_dir, force)
 
+    # Install skills
+    _copy_skills(project_dir / ".claude" / "skills", force)
+
     # Inject CLAUDE.md template
     from ..templates.injector import inject_claude_template
 
@@ -122,8 +125,19 @@ def init_project(project_dir: Path, force: bool = False):
     click.echo("  2. Start Claude Code in this directory")
 
 
-def hydrate_project(project_dir: Path, agents: bool = True, template: bool = True, dry_run: bool = False):
+def hydrate_project(
+    project_dir: Path, agents: bool = True, template: bool = True, dry_run: bool = False, skills: bool = True
+):
     """Update Daedalus assets in project. With dry_run, report what would change and write nothing."""
+    if skills:
+        skills_dir = project_dir / ".claude" / "skills"
+        if dry_run:
+            changed = _skills_that_would_change(skills_dir)
+            click.echo("Skills that would be written: " + (", ".join(changed) if changed else "none"))
+        else:
+            _copy_skills(skills_dir, force=True)
+            click.echo("Updated skills in .claude/skills/")
+
     if agents:
         agents_dir = project_dir / ".claude" / "agents"
         if dry_run:
@@ -168,6 +182,36 @@ def hydrate_project(project_dir: Path, agents: bool = True, template: bool = Tru
             click.echo("Updated CLAUDE.md template")
         else:
             click.echo("Warning: Could not update CLAUDE.md template", err=True)
+
+
+def _skill_files(name: str):
+    """(relative path, source file) for every file in a bundled skill's folder."""
+    src = get_skills_dir() / name
+    return [(f.relative_to(src), f) for f in sorted(src.rglob("*")) if f.is_file() and "__pycache__" not in f.parts]
+
+
+def _skills_that_would_change(dest_dir: Path) -> list:
+    """Bundled skills whose installed copy is missing or differs."""
+    changed = []
+    for name in list_skills():
+        files = _skill_files(name)
+        if any(not (dest_dir / name / rel).exists() or (dest_dir / name / rel).read_bytes() != f.read_bytes()
+               for rel, f in files):
+            changed.append(name)
+    return changed
+
+
+def _copy_skills(dest_dir: Path, force: bool = False):
+    """Install each skill listed in plugin.yaml into dest_dir/<name>/ (the project's .claude/skills)."""
+    for name in list_skills():
+        target = dest_dir / name
+        if target.exists() and not force:
+            click.echo(f"  Skipping skill {name} (exists)")
+            continue
+        for rel, f in _skill_files(name):
+            (target / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(f, target / rel)
+        click.echo(f"  Installed skill {name}")
 
 
 def _copy_agents(dest_dir: Path, force: bool = False):
