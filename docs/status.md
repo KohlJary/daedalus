@@ -12,6 +12,7 @@ Gameplan (`.daedalus/roadmap/gameplan.json`, local) created this session:
   fails closed and gains an import/build check (#15); bugs #13, #14; local
   backends + live tier (#16) blocked on an edict.
 - **p2-memory-backbone** (planned): edict 0004.
+- **p2b-reconstruction** (planned): edict 0006.
 - **p3-theseus-index** (planned): index, status, and linkage for Theseus reports.
 - **p4-evidence** (planned): resume benchmark against plain Claude Code, with
   cost telemetry and a falsifier registered with Momus first.
@@ -24,6 +25,7 @@ Gameplan (`.daedalus/roadmap/gameplan.json`, local) created this session:
 | 0003 Dissent | accepted | no | Depends on 0001's edict CLI. |
 | 0004 Memory backbone | accepted | no | Amended 2026-10-13: gameplan committed and sole tracker of edict build state; this table goes away when 0004 lands. |
 | 0005 Edicts opt-in | accepted | no | Amended 2026-10-13: cut to opt-in only (`edicts.enabled`, default off). |
+| 0006 Memory reconstruction | accepted | no | Rebuild missing gameplan periods from git, with commit-message scoring, diffs for weak messages, and a Momus check. Depends on 0004. |
 
 0004 and 0005 were drafted by Daedalus at Kohl's request and committed to
 `main` directly at his instruction.
@@ -44,6 +46,8 @@ Surveyed real Daedalus usage to pick the next value-add:
   written. LLM review passed code that failed at import.
 - Conclusion: structured, task-shaped memory gets written; free-form memory
   doesn't; both go stale unless drift is surfaced. Led to edicts 0004 and 0005.
+- Ran a reconstruction of wonderland-ai's missing gameplan period by hand
+  (95 commits, 2026-05-18 to 2026-06-23) and had Momus check it. Led to 0006.
 
 Found: the session-start hook reads `data/roadmap/index.json` (a cass-vessel
 path), not `.daedalus/roadmap/` (covered by 0004).
