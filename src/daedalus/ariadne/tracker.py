@@ -217,6 +217,50 @@ class Tracker:
 
         return None
 
+    def approve_review(
+        self,
+        plan_id: str,
+        commit_hash: Optional[str] = None,
+    ) -> Optional[RoadmapItem]:
+        """
+        Resolve a feature out of 'review' (set by complete_feature) into
+        'done'. This is the other half of complete_feature -- without it,
+        'review' was a dead end nothing could ever leave.
+        """
+        items = self._load_items_by_plan(plan_id)
+
+        for item in items:
+            if item.plan_id == plan_id and item.item_type == "feature":
+                item.status = "done"
+                if commit_hash:
+                    item.commit_hash = commit_hash
+                item.updated_at = datetime.now(timezone.utc).isoformat()
+                self._save_item(item)
+                return item
+
+        return None
+
+    def reject_review(
+        self,
+        plan_id: str,
+        reason: str,
+    ) -> Optional[RoadmapItem]:
+        """
+        Resolve a feature out of 'review' back to 'backlog' -- the review
+        caught something that needs rework, mirroring fail_feature's shape.
+        """
+        items = self._load_items_by_plan(plan_id)
+
+        for item in items:
+            if item.plan_id == plan_id and item.item_type == "feature":
+                item.status = "backlog"
+                item.description += f"\n\n**Sent back from review**: {reason}"
+                item.updated_at = datetime.now(timezone.utc).isoformat()
+                self._save_item(item)
+                return item
+
+        return None
+
     # ========== Progress Queries ==========
 
     def get_feature_progress(self, plan_id: str) -> Optional[FeatureProgress]:
