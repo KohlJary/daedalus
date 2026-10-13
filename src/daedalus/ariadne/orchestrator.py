@@ -231,7 +231,11 @@ class AriadneOrchestrator:
         pending = self.bus.list_pending_diffs()
         result.diffs_processed = len(pending)
 
-        if not pending:
+        # Only early-return if there's also nothing already VERIFIED waiting
+        # to be committed (e.g. a diff a human just approved out of
+        # NEEDS_REVIEW) -- otherwise a cycle with zero new pending diffs
+        # would never pick those up.
+        if not pending and not self.bus.list_verified_diffs():
             result.completed_at = datetime.now(timezone.utc).isoformat()
             result.duration_seconds = time.time() - start_time
             return result
@@ -280,12 +284,20 @@ class AriadneOrchestrator:
                     result.conflicts_resolved += 1
 
         # Phase 3: Semantic review gate, then merge and commit if auto_commit enabled
-        if self.auto_commit and verified_diffs:
+        #
+        # Deliberately re-reads the bus's full VERIFIED set rather than just
+        # this cycle's `verified_diffs` -- otherwise a diff a human approved
+        # out of NEEDS_REVIEW via bus.approve_review() (which moves it back
+        # to VERIFIED, not PENDING) would never get picked up again, since
+        # it won't appear in list_pending_diffs() on a later cycle. Found by
+        # manually smoke-testing the review -> approve -> process loop.
+        commit_candidates = self.bus.list_verified_diffs()
+        if self.auto_commit and commit_candidates:
             # Only proceed if no unresolved conflicts
             unresolved = self.bus.list_conflicts(resolved=False)
             if not unresolved:
                 approved_for_commit = []
-                for diff in verified_diffs:
+                for diff in commit_candidates:
                     verification = verifications_by_id.get(diff.id)
                     if self._passes_semantic_review(diff, verification):
                         approved_for_commit.append(diff)

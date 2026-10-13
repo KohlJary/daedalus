@@ -70,7 +70,9 @@ def render_conditionals(text: str, settings: dict) -> str:
     rendered = IF_RE.sub(replace, text)
     if "DAEDALUS_IF" in rendered:
         raise TemplateError("unbalanced or nested DAEDALUS_IF block (nesting isn't supported)")
-    return rendered
+    # Dropped blocks leave their surrounding blank lines behind; collapse the runs they create.
+    # This runs before slots are filled, so project text inside slots is never touched.
+    return re.sub(r"\n{3,}", "\n\n", rendered)
 
 
 def extract_slots(text: str) -> Dict[str, str]:

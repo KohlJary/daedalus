@@ -157,7 +157,7 @@ daedalus roadmap add "Brief description" --priority P1 --type feature
 
 The gameplan at `.daedalus/roadmap/gameplan.json` is the compaction-survival planning layer above the roadmap. It groups roadmap items into phases and breaks the currently active phase into concrete tasks with a sequencing narrative.
 
-**Always check the gameplan at session start** — it tells you what phase is in flight and the next pending task, so a fresh context can pick up where the previous session left off.
+**Always check the gameplan at session start** - it tells you what phase is in flight and the next pending task, so a fresh context can pick up where the previous session left off.
 
 ```bash
 daedalus gameplan show                          # current phase + tasks
@@ -167,7 +167,7 @@ daedalus gameplan task add <task_id> "Title" --details "..."
 daedalus gameplan task status <task_id> done --resolution "..."
 ```
 
-Use the `gameplan` subagent for detailed queries. When a task ships, record the resolution — future sessions read it instead of re-deriving from git.
+Use the `gameplan` subagent for detailed queries. When a task ships, record the resolution - future sessions read it instead of re-deriving from git.
 
 <!-- DAEDALUS_LOCAL end -->
 <!-- /DAEDALUS_LOCAL -->

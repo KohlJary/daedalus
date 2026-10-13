@@ -228,6 +228,39 @@ def test_bus_approve_review_moves_diff_back_to_verified(repo, bus):
     assert len(reviewer.calls) == calls_before
 
 
+def test_process_pending_picks_up_a_previously_approved_diff(repo, bus):
+    """
+    Real bug found by manually smoke-testing the CLI review loop: `ariadne
+    process --auto-commit` calls process_pending(), which used to (a) only
+    look at diffs it verified *this* cycle, and (b) early-return before even
+    reaching the commit phase whenever there were no new PENDING diffs --
+    so a diff approved out of NEEDS_REVIEW (which moves it to VERIFIED, not
+    PENDING) was never picked up by a subsequent `ariadne process` call.
+    Only the separate resolve_and_commit() path (not CLI-reachable) handled
+    it. This is the exact loop a human approving a review in conversation
+    would trigger: approve, then re-run `ariadne process`.
+    """
+    diff = _submit_diff(repo, bus)
+    orchestrator = AriadneOrchestrator(
+        repo, bus=bus, auto_commit=True, autonomy="supervised",
+        semantic_reviewer=_ScriptedReviewer(ReviewVerdict.APPROVED),
+    )
+    orchestrator.verifier = _noop_verifier(repo)
+
+    first = orchestrator.process_pending()
+    assert first.commits_created == 0
+    assert first.diffs_needs_review == 1
+
+    pending = bus.list_needs_review_diffs()
+    assert bus.approve_review(pending[0].id) is True
+
+    # No new diffs submitted -- this call has nothing new to verify, but the
+    # previously-approved diff must still get committed.
+    second = orchestrator.process_pending()
+    assert second.commits_created == 1
+    assert bus.status_summary()["diffs"]["merged"] == 1
+
+
 def test_bus_reject_review_moves_diff_to_rejected(repo, bus):
     diff = _submit_diff(repo, bus)
     orchestrator = AriadneOrchestrator(

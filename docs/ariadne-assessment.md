@@ -180,11 +180,56 @@ start, not a regression.
   list --json`, shows the diff and the judge's reasoning inline in whatever
   conversation it's already having with the human, states its own take and a
   recommendation, and calls `approve`/`reject` once the human responds.
-- Tests (`tests/test_semantic_review_gate.py`, 14 new) cover the full
+- Tests (`tests/test_semantic_review_gate.py`, 15 new) cover the full
   autonomy-mode policy table with a scripted (non-LLM) reviewer, the bus's
   approve/reject resolution paths, the tracker wiring, and `LLMJudge`'s
-  fail-closed behavior when `claude-agent-sdk` isn't installed (this
-  environment) — never silently approving when the backend is unavailable.
+  fail-closed behavior when `claude-agent-sdk` isn't installed — never
+  silently approving when the backend is unavailable.
+
+### Live smoke test: the review → approve → commit loop, end to end
+
+Automated tests above use a scripted stub reviewer. To actually prove the
+CLI loop a human/agent would drive in conversation, ran it for real against
+a scratch git repo, through the installed `ariadne` console script (not a
+test harness): `ariadne init` → submit a simulated worker diff → `ariadne
+process --auto-commit` → `ariadne review list/show` → `ariadne review
+approve` → `ariadne process --auto-commit` again → confirm the commit
+landed in the real working tree.
+
+`claude-agent-sdk` was installed mid-session specifically to exercise the
+*real* `LLMJudge` path (not just the "SDK not installed" fail-closed branch
+already covered by tests) — and happened to catch a second, more realistic
+failure mode for free: the `claude` CLI backend was mid-session-limit at the
+time (`You've hit your session limit · resets 3pm`). `LLMJudge` correctly
+caught that as a runtime exception and routed the diff to `NEEDS_REVIEW`
+with the real error message captured in `semantic_review.reasoning` —
+exactly the fail-closed behavior the design intends, now confirmed against
+an actual backend failure rather than just an absent import.
+
+That smoke test then surfaced two real, CLI-reachable bugs that no unit test
+caught, both now fixed with a regression test added:
+
+1. **`process_pending()` never re-checked the bus's `VERIFIED` bucket** —
+   only diffs verified *during that same cycle* were eligible for the commit
+   phase. A diff approved out of `NEEDS_REVIEW` (which moves it to
+   `VERIFIED`, not back to `PENDING`) was invisible to every later call.
+2. **`process_pending()` early-returned before reaching the commit phase at
+   all** whenever there were no new `PENDING` diffs — which is exactly the
+   state right after approving a review and nothing new has come in.
+
+Net effect before the fix: `ariadne review approve <id>` told the human
+"it will be committed on the next process cycle," but no `ariadne process`
+call would ever actually commit it — the approved diff was stuck forever
+unless something called the separate (non-CLI) `resolve_and_commit()`
+directly. This is the kind of gap that's invisible to a mechanical
+verification gate or a stub-reviewer unit test, because both of those
+exercise a single call in isolation rather than the actual multi-step
+human-in-the-loop sequence a real review would follow. Fixed in
+`orchestrator.py`: Phase 3 now commits against `bus.list_verified_diffs()`
+(the full bus state) rather than the current cycle's local list, and the
+early-return now also checks for outstanding verified diffs before bailing.
+Re-ran the full manual loop after the fix — `ariadne process --auto-commit`
+picked up the approved diff and committed it on the very next call.
 
 This doesn't change the Beta-in-spirit verdict above, but it closes the one
 gap in the pipeline that mechanical verification was never going to close:
