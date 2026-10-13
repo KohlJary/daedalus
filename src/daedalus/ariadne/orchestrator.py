@@ -36,6 +36,25 @@ from .diff_bus import (
 )
 from .conflict_detector import ConflictDetector, ConflictAnalysis, ConflictSeverity
 from .verification import CausalSliceVerifier, VerificationResult, extract_causal_chain
+from ..config import get_daedalus_email, load_config
+
+
+def _commit_args(message: str) -> List[str]:
+    """
+    Build the `git commit` argument list honoring the configured git.authorship.
+
+    daedalus (default): authored as Daedalus via --author, matching what the CLAUDE.md
+    template tells Claude to type by hand.
+    user: no --author (commits as the configured git identity), with a '- Daedalus'
+    sign-off appended to the body, matching the template's `git.authorship=user` text.
+    """
+    config = load_config()
+    if config.git.authorship == "user":
+        signed_message = message.rstrip("\n") + "\n\n- Daedalus\n"
+        return ["git", "commit", "-a", "-m", signed_message]
+
+    email = get_daedalus_email(config)
+    return ["git", "commit", "-a", f"--author=Daedalus <{email}>", "-m", message]
 
 
 @dataclass
@@ -230,7 +249,7 @@ class AriadneOrchestrator:
             message = message_file.read_text(encoding="utf-8")
 
             result = subprocess.run(
-                ["git", "commit", "-a", "--author=Daedalus <daedalus@localhost>", "-m", message],
+                _commit_args(message),
                 cwd=self.repo_path,
                 capture_output=True,
                 text=True,
