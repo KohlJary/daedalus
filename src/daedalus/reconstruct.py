@@ -287,3 +287,172 @@ def write_bundle(project_dir: Path, bundle: Bundle) -> Path:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(asdict(bundle), indent=2) + "\n", encoding="utf-8")
     return out
+
+
+# ---------- proposal check ----------
+#
+# A proposal (written by the mnemosyne agent) looks like:
+#
+# {
+#   "schema": "daedalus.reconstruction/1",
+#   "window": {"from": "<sha or null>", "from_date": "YYYY-MM-DD", "to": "<sha>"},   # from the bundle
+#   "evidence_scope": "git" | "git+paths",
+#   "updates": [   # status changes to existing gameplan tasks
+#     {"task": "T-a1", "proposed_status": "done" | "in_progress" | "pending" | "needs-confirmation",
+#      "confidence": "shown" | "inferred" | "unknown", "basis": "messages" | "diffs" | "both" | "outside-git",
+#      "resolution": "...", "commits": ["<sha>"], "files": ["path"], "cheapest_check": "..."}
+#   ],
+#   "phases": [    # missing phases, each with its tasks
+#     {"id": "...", "title": "...", "status": "done", "confidence": ..., "basis": ..., "goal": "...",
+#      "commits": [...], "tasks": [{"id", "title", "status", "confidence", "basis", "resolution", "commits"}]}
+#   ],
+#   "roadmap": [   # roadmap items whose status disagrees with the evidence
+#     {"item": "<id>", "current_status": "backlog", "proposed_status": "done", "confidence": ..., "basis": ...,
+#      "commits": [...]}
+#   ],
+#   "conflicts": [{"about": "...", "sources": ["<sha or path>", ...]}],   # both recorded, neither chosen
+#   "context_commits": ["<sha>"],   # commits before the window cited as background
+#   "files": ["path"]               # other files the proposal relies on
+# }
+
+CONFIDENCE = ("shown", "inferred", "unknown")
+BASIS = ("messages", "diffs", "both", "outside-git")
+UPDATE_STATUSES = ("done", "in_progress", "pending", "needs-confirmation")
+HASH = re.compile(r"\b(?=[0-9a-f]*[a-f])(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b")
+PATH_REF = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)*[\w.-]+\.(?:md|json|jsonl|py|ya?ml|txt|toml))(?::\d+(?:-\d+)?)?\b")
+TEXT_FIELDS = ("resolution", "note", "notes", "goal", "evidence", "cheapest_check", "about", "title")
+
+
+@dataclass
+class CheckResult:
+    errors: list = field(default_factory=list)
+    uncited: list = field(default_factory=list)
+    labels: dict = field(default_factory=dict)
+    entries: int = 0
+
+
+def _entries(proposal: dict):
+    """(where, entry, kind) for every labelled entry in the proposal."""
+    for i, u in enumerate(proposal.get("updates", [])):
+        yield f"updates[{i}] ({u.get('task')})", u, "update"
+    for i, ph in enumerate(proposal.get("phases", [])):
+        yield f"phases[{i}] ({ph.get('id')})", ph, "phase"
+        for j, t in enumerate(ph.get("tasks", [])):
+            yield f"phases[{i}].tasks[{j}] ({t.get('id')})", t, "task"
+    for i, r in enumerate(proposal.get("roadmap", [])):
+        yield f"roadmap[{i}] ({r.get('item')})", r, "roadmap"
+
+
+def _cited(entry: dict) -> list[str]:
+    shas = list(entry.get("commits", []))
+    for key in TEXT_FIELDS:
+        if isinstance(entry.get(key), str):
+            shas += HASH.findall(entry[key])
+    return shas
+
+
+def _text_paths(obj) -> list[str]:
+    found = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k in TEXT_FIELDS or k == "description":
+                found += _text_paths(v) if not isinstance(v, str) else PATH_REF.findall(v)
+            elif isinstance(v, (dict, list)):
+                found += _text_paths(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            found += _text_paths(v)
+    return found
+
+
+def _file_exists(project_dir: Path, rel: str, tracked: list[str]) -> bool:
+    if (project_dir / rel).exists():
+        return True
+    name = rel.rsplit("/", 1)[-1]
+    return any(t == rel or t.endswith("/" + rel) or (rel == name and t.rsplit("/", 1)[-1] == name)
+               for t in tracked)
+
+
+def check_proposal(project_dir: Path, proposal: dict) -> CheckResult:
+    project_dir = Path(project_dir)
+    result = CheckResult()
+    err = result.errors.append
+
+    if proposal.get("schema") != PROPOSAL_SCHEMA:
+        err(f"schema is {proposal.get('schema')!r}, expected {PROPOSAL_SCHEMA!r}")
+    window = proposal.get("window") or {}
+    to = window.get("to") or "HEAD"
+    if window.get("from"):
+        rng = [f"{window['from']}..{to}"]
+    elif window.get("from_date"):
+        rng = [f"--since={window['from_date']}", to]
+    else:
+        err("window has neither 'from' nor 'from_date'")
+        rng = [to]
+    in_window = _git(project_dir, "rev-list", *rng).split()
+    non_merge = _git(project_dir, "rev-list", "--no-merges", *rng).split()
+    context = proposal.get("context_commits", [])
+
+    def resolve(sha: str) -> Optional[str]:
+        full = _git(project_dir, "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}", check=False).strip()
+        return full or None
+
+    tracked = _git(project_dir, "ls-files").splitlines()
+    open_tasks = {t["id"] for t in _open_tasks(project_dir)}
+    cited_all: set[str] = set()
+
+    for c in context:
+        if not resolve(c):
+            err(f"context_commits: {c} is not a commit in this repository")
+
+    for where, entry, kind in _entries(proposal):
+        result.entries += 1
+        conf = entry.get("confidence")
+        result.labels[conf] = result.labels.get(conf, 0) + 1
+        if conf not in CONFIDENCE:
+            err(f"{where}: confidence is {conf!r}, not one of {', '.join(CONFIDENCE)}")
+        if conf != "unknown" and entry.get("basis") not in BASIS:
+            err(f"{where}: basis is {entry.get('basis')!r}, not one of {', '.join(BASIS)}")
+
+        shas = _cited(entry)
+        if conf in ("shown", "inferred") and kind != "phase" and not shas:
+            err(f"{where}: confidence {conf} but cites no commit")
+        for sha in shas:
+            full = resolve(sha)
+            if not full:
+                err(f"{where}: {sha} is not a commit in this repository")
+            elif full not in in_window and not any(full.startswith(c) or c.startswith(full[:len(c)]) for c in context):
+                err(f"{where}: {sha} is outside the window and not listed in context_commits")
+            else:
+                cited_all.add(full)
+
+        for rel in entry.get("files", []):
+            if not _file_exists(project_dir, rel, tracked):
+                err(f"{where}: file {rel} does not exist")
+
+        if kind == "update":
+            status = entry.get("proposed_status")
+            if status not in UPDATE_STATUSES:
+                err(f"{where}: proposed_status {status!r}, not one of {', '.join(UPDATE_STATUSES)}")
+            if status == "done" and conf != "shown":
+                err(f"{where}: proposes done on {conf!r} evidence; done needs 'shown' "
+                    "(use needs-confirmation with a cheapest_check)")
+            if status == "needs-confirmation" and not entry.get("cheapest_check"):
+                err(f"{where}: needs-confirmation without a cheapest_check")
+            if entry.get("task") not in open_tasks:
+                err(f"{where}: task {entry.get('task')!r} is not an open task in the active phase")
+
+    for i, c in enumerate(proposal.get("conflicts", [])):
+        if len(c.get("sources", [])) < 2:
+            err(f"conflicts[{i}]: a conflict records at least two sources")
+        for sha in HASH.findall(" ".join(c.get("sources", []))):
+            full = resolve(sha)
+            if full:
+                cited_all.add(full)
+
+    for rel in proposal.get("files", []) + _text_paths(proposal):
+        if not _file_exists(project_dir, rel, tracked):
+            err(f"file {rel} is referenced but does not exist")
+
+    result.uncited = [sha for sha in non_merge if sha not in cited_all]
+    return result

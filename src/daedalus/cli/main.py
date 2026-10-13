@@ -187,6 +187,34 @@ def reconstruct_gather(since: str | None):
     click.echo(f"Bundle: {path.relative_to(Path.cwd())}")
 
 
+@reconstruct.command("check")
+@click.argument("proposal", type=click.Path(exists=True, dir_okay=False))
+def reconstruct_check(proposal: str):
+    """Validate a reconstruction proposal: hashes, window, labels, files, coverage. Exit 1 on errors."""
+    import json
+
+    from ..reconstruct import check_proposal
+
+    try:
+        data = json.loads(Path(proposal).read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        click.echo(f"{proposal} is not valid JSON: {e}", err=True)
+        raise SystemExit(1)
+    result = check_proposal(Path.cwd(), data)
+    for e in result.errors:
+        click.echo(f"error: {e}")
+    labels = ", ".join(f"{k}: {v}" for k, v in sorted(result.labels.items(), key=lambda kv: str(kv[0])))
+    click.echo(f"Entries: {result.entries} ({labels or 'none'})")
+    if result.uncited:
+        click.echo(f"Uncited commits in the window ({len(result.uncited)}):")
+        for sha in result.uncited:
+            click.echo(f"  {sha[:10]}")
+    else:
+        click.echo("Coverage: every commit in the window is cited.")
+    click.echo("OK" if not result.errors else f"{len(result.errors)} error(s)")
+    raise SystemExit(1 if result.errors else 0)
+
+
 @main.command("doctor")
 @click.option("--json", "as_json", is_flag=True, help="Print findings as JSON")
 def doctor(as_json: bool):
