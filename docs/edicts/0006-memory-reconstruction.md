@@ -84,7 +84,8 @@ committed to `main` directly at his instruction.
 - When `doctor` (0004) reports commits after the gameplan's last update, it
   suggests `/reconstruct`.
 - The wonderland-ai reconstruction from 2026-10-13 is kept as a reference
-  example: the proposal and the Momus review, with Kohl's consent.
+  example in `docs/examples/wonderland-reconstruction/` (Kohl approved
+  2026-10-13).
 - The approach is run once on a repo with sparse commit messages, and its
   shown/inferred/unknown split is reported next to wonderland-ai's.
 

@@ -1,0 +1,270 @@
+{
+  "description": "RECONSTRUCTION (draft, 2026-10-13). Proposed gameplan changes covering 2026-05-18 (ccaf3f7, last gameplan commit) to 2026-06-23 (73c0800, HEAD): 95 commits, releases 0.8.1-0.12.1. Rebuilt from git history, release commits, analyses 046-048 and the roadmap. Not applied to gameplan.json. Phase IDs other than p21-diagrams (named in commits) are inferred. Every resolution cites the commits it rests on; see .daedalus/momus/reconstruction-review.md for the critic's verdicts (22 shown, 3 consistent, 2 contradicted before corrections). Revised after Momus review.",
+  "updates_to_existing": [
+    {
+      "phase": "p20-autonomous-pilot",
+      "task": "T-a1",
+      "from": "in_progress",
+      "proposed": "needs confirmation (leave in_progress)",
+      "confidence": "consistent",
+      "resolution": "Strong candidate: the _apply_allowed_decisions_filter / _delete_artifact_file path fixed in 5abfd9c (0.12.1, 8095965). Momus: the path existed at ccaf3f7 (from c0c3d1e), tdd-design disallowed milestone_plan then, and e795040's regression test FAILS against ccaf3f7 code (the milestone file is deleted). mvp-demo run 20260518T030733: Rabbit quotes M1 on disk at 03:08:41, publishes a milestone_plan utterance at 03:08:49, and the run aborts with 'M1 milestone file missing from disk'. The raw pre-filter utterance isn't recorded, so the link is circumstantial. A second, unlogged M1 loss (roadmap ccf5fdfe, mvp-demo-rerun-A) pointed to agent delete_file use, which the 0.9.0 delete-guard (d41d3c0) fixed, so there may have been two causes. Correction: the tracing wrapper this task proposed already shipped in ccaf3f7. It couldn't see this path because the filter unlinks directly. Cheapest check: find the raw 03:08:49 utterance in mvp-demo's episodic memory/telemetry and see whether it carries a milestone artifact pointing at the M1 file."
+    },
+    {
+      "phase": "p20-autonomous-pilot",
+      "task": "T-a6",
+      "from": "pending",
+      "proposed": "pending",
+      "confidence": "shown",
+      "resolution": null,
+      "note": "Partly covered, still open. 20cb7af/1554e4b verify_wiring (diagram nodes vs built code) and de3f192 (done_whens as observable outcomes) move toward milestone-vs-code coherence, but no milestone_satisfaction build_check exists."
+    },
+    {
+      "phase": "p20-autonomous-pilot",
+      "task": null,
+      "from": "in_progress",
+      "proposed": "done once T-a1 closes",
+      "confidence": "shown",
+      "note": "T-a7 (the Tier-2 pilot) resolved 2026-05-18. The phase goal was met; only T-a1 and the nice-to-have T-a6 remain. The 0.11.0 commit (ae959d3) still files its batch under 'Phase p20-autonomous-pilot', but by then the work had moved on to autonomous design."
+    }
+  ],
+  "proposed_phases": [
+    {
+      "id": "p20b-cost-reduction-and-receipt",
+      "title": "Cost reduction to the mvp-redux receipt",
+      "status": "done",
+      "dates": "2026-05-18 to 2026-05-23",
+      "confidence": "inferred-name",
+      "goal": "Cut per-pilot cost while keeping quality artifacts, and produce a like-for-like receipt against mvp-demo2 ($83.78).",
+      "tasks": [
+        {
+          "id": "R-1",
+          "title": "Substrate cost-reduction pass (FindingKind, Levers A/C)",
+          "status": "done",
+          "resolution": "458ee6f; released 0.8.1 (c2cf326)."
+        },
+        {
+          "id": "R-2",
+          "title": "TUI hotfixes: live-run markup crash, DuplicateIds race",
+          "status": "done",
+          "resolution": "c8bf599 -> 0.8.2; 51b3f88 -> 0.8.3."
+        },
+        {
+          "id": "R-3",
+          "title": "obol pilot fixes: phantom-citation filter, lifecycle bugs, exec_smoke_probe",
+          "status": "done",
+          "resolution": "f49254c exec_smoke_probe (runtime probe for bugs static review misses); 93306e6/6597a1f/34f37c9 phantom-citation and milestone-scope filters; bd882be three lifecycle bugs; 37527f8 episodic branching moved from ContextVar to workflow-scoped global."
+        },
+        {
+          "id": "R-4",
+          "title": "Foundation/capability axis + per-artifact milestone attribution",
+          "status": "done",
+          "resolution": "Released 0.9.0 (d41d3c0): RequirementAxis, MilestoneKind with kind-consistency validator, cross-milestone emission rejection. mvp-demo-rerun-A M1 $18.91, ~33% below the mvp-demo2 per-milestone baseline. 494 tests passing."
+        },
+        {
+          "id": "R-5",
+          "title": "Close cross-milestone bleed (T-ab35..T-ab53)",
+          "status": "done",
+          "resolution": "Released 0.10.0 (473a7b1): seed resolution (T-ab51), tool-layer reads (T-ab35/46), framing (T-ab34/45), read-side branch isolation (T-ab52/53). obol-260522 M6 went from 16 silent reruns to shipped stories."
+        },
+        {
+          "id": "R-6",
+          "title": "Roster + tool-result cap (T-ab54, T-ab57)",
+          "status": "done",
+          "resolution": "Released 0.10.1 (61f3451): tweedles out of M8; tool results capped at 5K chars. release-notes/0.10.1.md projects 53% of tool-result bytes saved (a projection, not a measurement)."
+        },
+        {
+          "id": "R-7",
+          "title": "mvp-redux receipt (T-ab58..T-ab60)",
+          "status": "done",
+          "resolution": "Released 0.10.2 (dbab6cc): same notebook spec, $30.58 vs $83.78 on 0.8.0 (63% lower); M1 $15.59 / M2 $10.91 / M3 $3.72. Writeup in analyses/046. Single-shot baseline ~$2-3 per paper/drink-me.md:76."
+        }
+      ]
+    },
+    {
+      "id": "p20c-paper-draft",
+      "title": "Drink Me: first public draft",
+      "status": "done",
+      "dates": "2026-05-26 to 2026-05-27",
+      "confidence": "inferred-name",
+      "goal": "Paper draft for arXiv prep.",
+      "tasks": [
+        {
+          "id": "R-8",
+          "title": "First public draft + appendices",
+          "status": "done",
+          "resolution": "1f4a3f5 draft; 3bb5d28 appendices A-C; 5d4144b adversarial review of baselines as Appendix D; 8f7e048 README condensed."
+        },
+        {
+          "id": "R-9",
+          "title": "Ground section 1.1 with single-shot sweep",
+          "status": "done",
+          "resolution": "2ec94db: single-shot Sonnet + Opus sweep."
+        }
+      ]
+    },
+    {
+      "id": "p20d-autonomous-design-layer",
+      "title": "Autonomous design layer + surface-signature dedup",
+      "status": "done",
+      "dates": "2026-06-05 to 2026-06-16",
+      "confidence": "inferred-name",
+      "goal": "Make a tdd-design pass runnable without the operator answering routine questions, and output a deduplicated, implementation-ready ticket set.",
+      "tasks": [
+        {
+          "id": "R-10",
+          "title": "M1-experiment substrate fixes (T-ab50, T-ab63..T-ab73)",
+          "status": "done",
+          "resolution": "34a15b6, d5cfa00, 032262b, f051010, 330a050, 203a221, 31d63e6, fefce89. T-ab70 follow-up e4e1f4a reverted in ffad1cb. The sources disagree on the 42-minute loop: e4e1f4a blames T-ab70's directive over-correcting into a question loop (ldr-final v2 M1, zero features), while ae959d3 blames scope enforcement in the retry path. Both are recorded; neither is chosen."
+        },
+        {
+          "id": "R-11",
+          "title": "Content-level scope-leak gate (T-ab74)",
+          "status": "done",
+          "resolution": "In 0.11.0 (ae959d3): title-only foreign-surface scan, auto-retract at the M3.75 hook, outside the retry path. On ldr-final: 3/3 leaks flagged, 3/3 legitimate references cleared. 9 new tests."
+        },
+        {
+          "id": "R-12",
+          "title": "Automated operator-question resolver (T-ab77)",
+          "status": "done",
+          "resolution": "In 0.11.0 (ae959d3): opt-in resolver, structured outcomes + per-run jsonl, 'answering isn't composing' forcing function. question_resolver.py first added in ae959d3."
+        },
+        {
+          "id": "R-13",
+          "title": "Surface-signature dedup (T-ab76, T-ab78, T-ab79)",
+          "status": "done",
+          "resolution": "In 0.11.0 (ae959d3): auto-stamp feature.milestone, orphan re-attribution before dedup, within/cross/orphan dedup unified on surface signatures, merges gated on surface agreement."
+        }
+      ]
+    },
+    {
+      "id": "p21-diagrams",
+      "title": "P21 diagram build-tracker + 0.12.0 substrate fixes",
+      "status": "done",
+      "dates": "2026-06-16 to 2026-06-19",
+      "confidence": "name-from-commits",
+      "goal": "Diagrams as structural artifacts that track the build and catch hollow builds.",
+      "tasks": [
+        {
+          "id": "R-14",
+          "title": "Diagram registry, milestone-plan diagram meeting, TUI tabs",
+          "status": "done",
+          "resolution": "8eacb14 chunk 1; b5d7d6f chunk 2; 3f98bf2/9d6faab TUI; 736ff8e, c544b90, a04bf96, 366df3d, d2a1459, 52cc03b, 85b07ca linking and precision fixes on real M2 data."
+        },
+        {
+          "id": "R-15",
+          "title": "verify_wiring: the hollow-build catcher",
+          "status": "done",
+          "resolution": "20cb7af; milestone-scoped in 1554e4b; counts IN_PROGRESS tickets in 9cdefff; de0ae22 closes the M8 hole where silence shipped hollow builds."
+        },
+        {
+          "id": "R-16",
+          "title": "Tool-loop exhaustion fixes",
+          "status": "done",
+          "resolution": "91d3655 parse-retry 1->3; ac5f9f2 bail after 2 empty responses; d4337f6 converge instead of returning ''; 0b3c78f split read/write budgets; 87a8bf3 per-loop read cache. Root cause in analyses/048."
+        },
+        {
+          "id": "R-17",
+          "title": "Phantom tickets + validation tooling",
+          "status": "done",
+          "resolution": "35ae713 tombstone on prune; 543ad29 aborted tickets stop driving feature state; 0cae098 implement_artifact_gap; 77bbac8 run_health."
+        },
+        {
+          "id": "R-18",
+          "title": "ldr-ophanic pilot closeout",
+          "status": "done",
+          "resolution": "Released 0.12.0 (1471045): demo/ldr-ophanic, analyses/048 (confidently wrong reviews let a broken fix through, and the bug spread to a sibling feature). README states an unpatched staleness bug."
+        }
+      ],
+      "open": [
+        "4d257120: dedicated diagram-refinement meeting in tdd-design (backlog)",
+        "05d45b74: P21 remaining integration arc (backlog)",
+        "463f5564: diagram-meeting robustness (backlog)"
+      ],
+      "note": "R-16 and R-17 aren't diagram work; they shipped in the same release (0.12.0)."
+    },
+    {
+      "id": "p22-wwu-pilot",
+      "title": "wwu-cms pilot (wrestling promotion CMS)",
+      "status": "in_progress",
+      "dates": "2026-06-19 to 2026-06-25 (last on-disk run; last commit 06-23)",
+      "confidence": "inferred-name",
+      "goal": "Next greenfield pilot on 0.12.x.",
+      "tasks": [
+        {
+          "id": "R-19",
+          "title": "Milestone-plan wiped its own plan during the diagram meeting",
+          "status": "done",
+          "resolution": "5abfd9c; released 0.12.1 (8095965); test pinned in e795040. See T-a1."
+        },
+        {
+          "id": "R-20",
+          "title": "Planning and design quality: milestone sizing, done_whens, conventions charter",
+          "status": "done",
+          "resolution": "eff2068 size by scope, not 3-7; de3f192 done_whens are observable outcomes; ffc01a2 composition no longer starves commit; cecfc02 fold duplicate features; 807c233 + 2d58776 conventions charter carried across milestones."
+        },
+        {
+          "id": "R-21",
+          "title": "Run tests and import-probes under the project venv",
+          "status": "done",
+          "resolution": "03a1836."
+        },
+        {
+          "id": "R-22",
+          "title": "Surface signature generalized past the hardcoded whitelist",
+          "status": "done",
+          "resolution": "3a6f408, 06b0d7d, merged 82fb702."
+        },
+        {
+          "id": "R-23",
+          "title": "scope_leak: relational domains",
+          "status": "done",
+          "resolution": "73c0800: wwu M3 auto-aborted 11 genuine tickets for naming earlier-milestone entities (wrestlers, championship). Last commit in the repo."
+        },
+        {
+          "id": "R-24",
+          "title": "wwu pilot outcome",
+          "status": "unknown",
+          "resolution": null,
+          "note": "53 wwu runs (~$188) through 2026-06-25 exist on disk but are gitignored, so git doesn't show them. Whether the pilot finished isn't determined. The reconstruction only had git evidence."
+        }
+      ]
+    }
+  ],
+  "roadmap_drift": [
+    {
+      "item": "d16bfb33 T-ab74",
+      "roadmap": "backlog",
+      "evidence": "shipped in ae959d3 (0.11.0)"
+    },
+    {
+      "item": "0facd1e4 T-ab76",
+      "roadmap": "backlog",
+      "evidence": "shipped in ae959d3 (0.11.0)"
+    },
+    {
+      "item": "85bd06c2 T-ab77",
+      "roadmap": "backlog",
+      "evidence": "shipped in ae959d3 (0.11.0)"
+    },
+    {
+      "item": "c80b4979 T-ab78",
+      "roadmap": "backlog",
+      "evidence": "shipped in ae959d3 (0.11.0); follow-up 966d76a5 is a separate bug"
+    },
+    {
+      "item": ".daedalus/roadmap/index.json",
+      "roadmap": "30 lines uncommitted since 2026-06-19",
+      "evidence": "git diff"
+    },
+    {
+      "item": "candidates (unverified)",
+      "roadmap": "various",
+      "evidence": "Momus flagged likely further drift: ccf5fdfe, 98ec46b0, 884bbad2, 0393015e, c10f6d5f, cbed1a0e, and the T-a2..T-a7 items (e2d44cac, 73690727, dc95169a, 24d57b85, 040f2f3f). 966d76a5 and 4d257120 exist only in the uncommitted working copy."
+    }
+  ],
+  "coverage": {
+    "commits_in_window": 95,
+    "uncited": 23,
+    "note": "23 commits uncited, including 5f6db21, b7d51a7, a217027 and the obol/ldr-dashboard/wwu directive commits. See the Momus review for the list."
+  }
+}
