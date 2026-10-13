@@ -293,4 +293,4 @@ Daedalus is named after the mythological master craftsman who built the Labyrint
 
 ## License
 
-[Hippocratic License 3.0](https://firstdonoharm.dev/) - Software that can't be used to harm people.
+[MIT](LICENSE)
