@@ -718,6 +718,9 @@ def list_edicts(project_dir: Path):
         click.echo("No edicts in docs/edicts/.")
         return
     refs = _gameplan_refs(project_dir)
+    numbers = [e["number"] for e in edicts]
+    for dup in sorted({n for n in numbers if numbers.count(n) > 1}):
+        click.echo(f"warning: edict {dup} is used by {numbers.count(dup)} files", err=True)
     for e in edicts:
         title = _edict_title(edicts_dir(project_dir) / e["file"])
         tracked = refs.get(e["number"], [])
@@ -728,6 +731,9 @@ def list_edicts(project_dir: Path):
 def show_edict(project_dir: Path, number: str):
     from ..doctor import edicts_dir, load_edicts
 
+    if not number.isdigit():
+        click.echo(f"'{number}' is not an edict number (expected digits, e.g. 7 or 0007).", err=True)
+        raise SystemExit(1)
     number = number.zfill(4)
     matches = [e for e in load_edicts(project_dir) if e["number"] == number]
     if not matches:

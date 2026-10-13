@@ -46,7 +46,7 @@ session. List everything else as pending in the report.
    `daedalus gameplan task status <id> done --resolution "..."` (what shipped,
    with commit hashes). Mark work you started `in_progress`. Add tasks for work
    discovered this session: `daedalus gameplan task add <id> "Title"
-   --details "..."` (with `--edict NNNN` when it implements one). If
+   --details "..."` (and, in projects that use edicts, `--edict NNNN` when it implements one). If
    `daedalus gameplan pending` lists proposals, apply the ones this session
    confirms and drop the wrong ones. Finish with `daedalus doctor`; anything it
    reports about the gameplan is unfinished exhaling.

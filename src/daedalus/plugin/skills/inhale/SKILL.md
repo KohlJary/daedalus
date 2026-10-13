@@ -28,7 +28,7 @@ different from a step below, follow CLAUDE.md.
 
 2. **Drift.** `daedalus doctor`. Its findings are the test of whether the last
    session exhaled: commits after the gameplan's last update, a finished phase
-   still open, tasks stuck in progress, or accepted edicts nothing in the
+   still open, tasks stuck in progress, or (in projects that use edicts) accepted edicts nothing in the
    gameplan tracks.
 
 3. **Last summary.** Read the latest entry in `.daedalus/session-summaries.md`

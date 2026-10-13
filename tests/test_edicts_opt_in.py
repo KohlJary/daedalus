@@ -108,3 +108,25 @@ def test_edict_list_and_show(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     missing = CliRunner().invoke(main, ["edict", "show", "9"])
     assert missing.exit_code == 1 and "No edict 0009" in missing.output
+
+
+
+def test_edict_cli_edge_cases(tmp_path, monkeypatch):
+    (tmp_path / "docs/edicts").mkdir(parents=True)
+    (tmp_path / "docs/edicts/0004-a.md").write_text("# Edict 0004: A\nStatus: accepted\n")
+    (tmp_path / "docs/edicts/0004-b.md").write_text("# Edict 0004: B\nStatus: done\n")
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    out = runner.invoke(main, ["edict", "list"])
+    assert "warning: edict 0004 is used by 2 files" in out.output
+    bad = runner.invoke(main, ["edict", "show", "abc"])
+    assert bad.exit_code == 1 and "'abc' is not an edict number" in bad.output
+
+
+def test_installed_skills_only_mention_edicts_conditionally():
+    from daedalus.plugin import get_agents_dir, get_skills_dir
+    for path in [get_skills_dir() / "inhale/SKILL.md", get_skills_dir() / "exhale/SKILL.md",
+                 get_agents_dir() / "memory.md"]:
+        for line in path.read_text().splitlines():
+            if "edict" in line.lower():
+                assert "use edicts" in line or "using edicts" in line, (path.name, line)
