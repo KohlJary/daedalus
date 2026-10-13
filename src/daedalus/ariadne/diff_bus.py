@@ -287,6 +287,7 @@ class AriadneBus:
             "pending": root / "diffs" / "pending",
             "verified": root / "diffs" / "verified",
             "rejected": root / "diffs" / "rejected",
+            "merged": root / "diffs" / "merged",
             "conflicts": root / "conflicts",
             "merges": root / "merges",
             "commits": root / "commits",
@@ -327,7 +328,7 @@ class AriadneBus:
 
     def get_diff(self, diff_id: str) -> Optional[Diff]:
         """Get a diff by ID, checking all directories."""
-        for dir_name in ["pending", "verified", "rejected"]:
+        for dir_name in ["pending", "verified", "rejected", "merged"]:
             diff_file = self.dirs[dir_name] / f"{diff_id}.json"
             if diff_file.exists():
                 data = json.loads(diff_file.read_text(encoding="utf-8"))
@@ -370,7 +371,7 @@ class AriadneBus:
             return False
 
         # Remove from current location
-        for dir_name in ["pending", "verified", "rejected"]:
+        for dir_name in ["pending", "verified", "rejected", "merged"]:
             old_file = self.dirs[dir_name] / f"{diff_id}.json"
             if old_file.exists():
                 old_file.unlink()
@@ -384,12 +385,16 @@ class AriadneBus:
             diff.verification_error = error
         if new_status == DiffStatus.VERIFIED:
             diff.verified_at = datetime.now(timezone.utc).isoformat()
+        if new_status == DiffStatus.MERGED:
+            diff.merged_at = datetime.now(timezone.utc).isoformat()
 
         # Write to new location
         if new_status in [DiffStatus.PENDING, DiffStatus.VERIFYING]:
             target_dir = self.dirs["pending"]
         elif new_status == DiffStatus.VERIFIED:
             target_dir = self.dirs["verified"]
+        elif new_status == DiffStatus.MERGED:
+            target_dir = self.dirs["merged"]
         else:
             target_dir = self.dirs["rejected"]
 
@@ -623,6 +628,7 @@ class AriadneBus:
                 "pending": len(list(self.dirs["pending"].glob("*.json"))),
                 "verified": len(list(self.dirs["verified"].glob("*.json"))),
                 "rejected": len(list(self.dirs["rejected"].glob("*.json"))),
+                "merged": len(list(self.dirs["merged"].glob("*.json"))),
             },
             "conflicts": {
                 "total": len(list(self.dirs["conflicts"].glob("*.json"))),
