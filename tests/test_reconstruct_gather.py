@@ -142,3 +142,32 @@ def test_no_gameplan_needs_since(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = CliRunner().invoke(main, ["reconstruct", "gather"])
     assert result.exit_code == 2 and "--since" in result.output
+
+
+def test_until_and_author_narrow_the_window(repo):
+    log = subprocess.run(["git", "log", "--reverse", "--format=%H"], cwd=repo, capture_output=True,
+                         text=True).stdout.split()
+    bundle = gather(repo, until=log[3])                 # gameplan..(fix stuff, wip) + rich
+    assert [c["subject"] for c in bundle.commits][-1] == "wip"
+    assert bundle.window["until"] == log[3] and bundle.window["to"] == log[3]
+
+    env = {**ENV, "GIT_AUTHOR_NAME": "Frank"}
+    subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "Frank's June work on the parser"],
+                   cwd=repo, check=True, env=env)
+    frank = gather(repo, author="Frank")
+    assert [(c["author"], c["subject"]) for c in frank.commits] == [("Frank", "Frank's June work on the parser")]
+    assert frank.window["author"] == "Frank"
+
+
+def test_date_windows(repo):
+    today = subprocess.run(["git", "log", "-1", "--format=%as"], cwd=repo, capture_output=True,
+                           text=True).stdout.strip()
+    assert gather(repo, since=today, until=today).window["commits"] >= 5
+    assert gather(repo, since="2001-01-01", until="2001-01-31") is None
+
+
+def test_bundle_names_do_not_collide(repo, monkeypatch):
+    from daedalus.reconstruct import write_bundle
+    a = write_bundle(repo, gather(repo))
+    b = write_bundle(repo, gather(repo, author="t"))
+    assert a != b and a.exists() and b.exists()

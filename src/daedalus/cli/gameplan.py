@@ -267,6 +267,35 @@ def defer_task(data: dict[str, Any], task_id: str, reason: str = "") -> dict[str
 
 PENDING_FILENAME = "pending.json"
 
+# Proposal kinds. A proposal without "kind" is a task-status change (the capture hook's shape).
+#   task-status:    {"task", "status", "resolution"}
+#   new-phase:      {"phase": {"id", "title", "status", "notes", "tasks": [...], ...}}
+#   roadmap-status: {"item", "status"}
+PROPOSAL_KINDS = ("task-status", "new-phase", "roadmap-status")
+
+
+def proposal_kind(proposal: dict[str, Any]) -> str:
+    return proposal.get("kind", "task-status")
+
+
+def proposal_key(proposal: dict[str, Any]) -> str:
+    kind = proposal_kind(proposal)
+    if kind == "new-phase":
+        return f"phase:{proposal['phase']['id']}"
+    if kind == "roadmap-status":
+        return f"roadmap:{proposal['item']}"
+    return f"task:{proposal['task']}"
+
+
+def describe_proposal(proposal: dict[str, Any]) -> str:
+    kind = proposal_kind(proposal)
+    if kind == "new-phase":
+        ph = proposal["phase"]
+        return f"new phase {ph['id']} ({ph.get('status', 'planned')}, {len(ph.get('tasks', []))} tasks): {ph.get('title', '')}"
+    if kind == "roadmap-status":
+        return f"roadmap {proposal['item']} -> {proposal['status']}"
+    return f"{proposal['task']} -> {proposal['status']}"
+
 
 def pending_path(project_dir: Path) -> Path:
     return GameplanPaths.for_project(project_dir).roadmap_dir / PENDING_FILENAME
@@ -298,11 +327,11 @@ def add_proposals(project_dir: Path, new: list[dict[str, Any]]) -> list[dict[str
     when it brings commits the old one didn't have; otherwise it is skipped. Returns what was added.
     """
     proposals = load_pending(project_dir)
-    by_task = {p.get("task"): p for p in proposals}
+    by_key = {proposal_key(p): p for p in proposals}
     next_num = max((int(p["id"][1:]) for p in proposals if p.get("id", "")[1:].isdigit()), default=0) + 1
     added = []
     for proposal in new:
-        old = by_task.get(proposal["task"])
+        old = by_key.get(proposal_key(proposal))
         if old and set(proposal.get("commits", [])) <= set(old.get("commits", [])):
             continue
         if old:
@@ -312,7 +341,7 @@ def add_proposals(project_dir: Path, new: list[dict[str, Any]]) -> list[dict[str
             proposal["id"] = f"P{next_num}"
             next_num += 1
             proposals.append(proposal)
-        by_task[proposal["task"]] = proposal
+        by_key[proposal_key(proposal)] = proposal
         added.append(proposal)
     save_pending(project_dir, proposals)
     return added
@@ -329,10 +358,89 @@ def apply_pending(project_dir: Path, data: dict[str, Any], which: str) -> list[d
     """Apply proposals (an id or 'all') to the gameplan data; removes them from the pending file."""
     proposals = load_pending(project_dir)
     chosen = _select(proposals, which)
+    roadmap_changes = []
     for p in chosen:
-        set_task_status(data, p["task"], p["status"], resolution=p.get("resolution", ""))
+        kind = proposal_kind(p)
+        if kind == "new-phase":
+            spec = p["phase"]
+            phase = add_phase(data, spec["id"], spec["title"], notes=spec.get("notes", ""),
+                              status=spec.get("status", "planned"), edict=spec.get("edict", ""))
+            for key in ("goal", "dates", "tasks", "provenance"):
+                if spec.get(key):
+                    phase[key] = spec[key]
+        elif kind == "roadmap-status":
+            roadmap_changes.append(p)
+        else:
+            set_task_status(data, p["task"], p["status"], resolution=p.get("resolution", ""))
+    if roadmap_changes:
+        _apply_roadmap_status(project_dir, roadmap_changes)
     save_pending(project_dir, [p for p in proposals if p not in chosen])
     return chosen
+
+
+def _apply_roadmap_status(project_dir: Path, changes: list[dict[str, Any]]) -> None:
+    from datetime import datetime
+
+    path = GameplanPaths.for_project(project_dir).roadmap_dir / "index.json"
+    if not path.exists():
+        raise GameplanError(f"No roadmap at {path}")
+    roadmap = json.loads(path.read_text(encoding="utf-8"))
+    items = {i.get("id"): i for i in roadmap.get("items", [])}
+    for change in changes:
+        item = items.get(change["item"])
+        if item is None:
+            raise GameplanError(f"Roadmap item '{change['item']}' not found")
+    for change in changes:
+        items[change["item"]]["status"] = change["status"]
+        items[change["item"]]["status_changed_at"] = datetime.now().isoformat(timespec="seconds")
+    path.write_text(json.dumps(roadmap, indent=2) + "\n", encoding="utf-8")
+
+
+def proposals_from_reconstruction(reconstruction: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
+    """
+    Turn a reconstruction proposal (edict 0006) into pending proposals.
+
+    Returns (proposals, skipped). needs-confirmation updates are not imported: they are questions
+    with a cheapest check, for a person to settle first.
+    """
+    today = date.today().isoformat()
+    source = "reconstruction"
+    proposals, skipped = [], []
+
+    def label(entry):
+        return f"[reconstructed; {entry.get('confidence')}, from {entry.get('basis', 'no evidence')}]"
+
+    for u in reconstruction.get("updates", []):
+        if u.get("proposed_status") == "needs-confirmation":
+            skipped.append(f"{u.get('task')}: needs confirmation ({u.get('cheapest_check', '')})")
+            continue
+        proposals.append({
+            "task": u["task"], "status": u["proposed_status"],
+            "resolution": f"{u.get('resolution') or ''} {label(u)}".strip(),
+            "commits": u.get("commits", []), "source": source, "created": today,
+        })
+    for ph in reconstruction.get("phases", []):
+        tasks = [
+            {"id": t.get("id"), "title": t.get("title"), "status": t.get("status"),
+             **({"resolution": t["resolution"]} if t.get("resolution") else {}),
+             "provenance": label(t)}
+            for t in ph.get("tasks", [])
+        ]
+        proposals.append({
+            "kind": "new-phase",
+            "phase": {"id": ph["id"], "title": ph["title"], "status": ph.get("status", "done"),
+                      "notes": f"{ph.get('notes') or ph.get('goal') or ''} {label(ph)}".strip(),
+                      "goal": ph.get("goal", ""), "dates": ph.get("dates", ""), "tasks": tasks,
+                      "provenance": label(ph)},
+            "commits": ph.get("commits", []), "source": source, "created": today,
+        })
+    for r in reconstruction.get("roadmap", []):
+        proposals.append({
+            "kind": "roadmap-status", "item": r["item"], "status": r["proposed_status"],
+            "resolution": f"was {r.get('current_status')} {label(r)}",
+            "commits": r.get("commits", []), "source": source, "created": today,
+        })
+    return proposals, skipped
 
 
 def drop_pending(project_dir: Path, which: str) -> list[dict[str, Any]]:

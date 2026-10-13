@@ -92,42 +92,60 @@ def _git(project_dir: Path, *args: str, check: bool = True) -> str:
         return ""
 
 
-def find_window(project_dir: Path, since: Optional[str] = None) -> Optional[dict]:
+def _until_args(project_dir: Path, until: Optional[str]) -> tuple[str, list[str]]:
+    """(end revision, extra rev-list args). `until` may be a revision or a YYYY-MM-DD date."""
+    if not until:
+        return "HEAD", []
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", until):
+        return "HEAD", [f"--until={until}T23:59:59"]
+    rev = _git(project_dir, "rev-parse", until).strip()
+    if not rev:
+        raise ValueError(f"Unknown revision: {until}")
+    return rev, []
+
+
+def find_window(project_dir: Path, since: Optional[str] = None, until: Optional[str] = None) -> Optional[dict]:
     """
     The gap: from the gameplan's last commit (or `since`) to HEAD. A gameplan that was never
     committed falls back to its file time. Returns None when there is no gameplan and no `since`.
     """
-    head = _git(project_dir, "rev-parse", "HEAD").strip()
-    if not head:
+    if not _git(project_dir, "rev-parse", "HEAD").strip():
         return None
+    end, until_args = _until_args(project_dir, until)
+    to = _git(project_dir, "rev-parse", end).strip()
+    extra = {"until": until} if until else {}
     rel = str(gp.GameplanPaths.for_project(project_dir).gameplan_file.relative_to(project_dir))
+    if since and re.fullmatch(r"\d{4}-\d{2}-\d{2}", since):
+        return {"from": None, "from_date": since, "to": to, "range": [f"--since={since}", *until_args, end],
+                "anchor": f"--since {since}", **extra}
     if since:
         base = _git(project_dir, "rev-parse", since).strip()
         if not base:
             raise ValueError(f"Unknown revision: {since}")
         return {"from": base, "from_date": _git(project_dir, "log", "-1", "--format=%as", base).strip(),
-                "to": head, "range": [f"{base}..HEAD"], "anchor": f"--since {since}"}
+                "to": to, "range": [*until_args, f"{base}..{end}"], "anchor": f"--since {since}", **extra}
     last = _git(project_dir, "log", "-1", "--format=%H %as", "--", rel).strip()
     if last:
         base, when = last.split()
-        return {"from": base, "from_date": when, "to": head, "range": [f"{base}..HEAD"],
-                "anchor": "last gameplan commit"}
+        return {"from": base, "from_date": when, "to": to, "range": [*until_args, f"{base}..{end}"],
+                "anchor": "last gameplan commit", **extra}
     path = gp.GameplanPaths.for_project(project_dir).gameplan_file
     if not path.exists():
         return None
     stamp = datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")
-    return {"from": None, "from_date": stamp[:10], "to": head, "range": [f"--since={stamp}", "HEAD"],
-            "anchor": "gameplan file time (gameplan has no commits)"}
+    return {"from": None, "from_date": stamp[:10], "to": to, "range": [f"--since={stamp}", *until_args, end],
+            "anchor": "gameplan file time (gameplan has no commits)", **extra}
 
 
-def window_commits(project_dir: Path, window: dict) -> list[dict]:
-    out = _git(project_dir, "log", "--reverse", "--no-merges",
-               "--format=%x1e%H%x1f%as%x1f%s%x1f%b%x1f", "--numstat", *window["range"])
+def window_commits(project_dir: Path, window: dict, author: Optional[str] = None) -> list[dict]:
+    who = [f"--author={author}"] if author else []
+    out = _git(project_dir, "log", "--reverse", "--no-merges", *who,
+               "--format=%x1e%H%x1f%as%x1f%an%x1f%s%x1f%b%x1f", "--numstat", *window["range"])
     commits = []
     for record in out.split("\x1e"):
         if not record.strip():
             continue
-        sha, day, subject, body, stats = (record.split("\x1f") + ["", "", "", "", ""])[:5]
+        sha, day, name, subject, body, stats = (record.split("\x1f") + [""] * 6)[:6]
         files, lines = [], 0
         for row in stats.strip().splitlines():
             parts = row.split("\t")
@@ -135,9 +153,9 @@ def window_commits(project_dir: Path, window: dict) -> list[dict]:
                 added, removed, name = parts
                 files.append(name)
                 lines += (int(added) if added.isdigit() else 0) + (int(removed) if removed.isdigit() else 0)
-        commits.append({"sha": sha.strip(), "date": day, "subject": subject, "body": body.strip(),
+        commits.append({"sha": sha.strip(), "date": day, "author": name, "subject": subject, "body": body.strip(),
                         "files": files[:MAX_FILES], "files_changed": len(files), "lines_changed": lines})
-    merges = _git(project_dir, "rev-list", "--count", "--merges", *window["range"]).strip()
+    merges = _git(project_dir, "rev-list", "--count", "--merges", *who, *window["range"]).strip()
     window["merge_commits"] = int(merges or 0)
     return commits
 
@@ -222,13 +240,22 @@ def reconstruct_settings(project_dir: Path) -> dict:
     return settings
 
 
-def gather(project_dir: Path, since: Optional[str] = None) -> Optional[Bundle]:
-    """Build the evidence bundle, or None when there is no gap."""
+def gather(project_dir: Path, since: Optional[str] = None, until: Optional[str] = None,
+           author: Optional[str] = None) -> Optional[Bundle]:
+    """
+    Build the evidence bundle, or None when the window has no commits.
+
+    since/until take a revision or a YYYY-MM-DD date and default to the gap (the gameplan's last
+    update to HEAD). They let a long history be reconstructed one window at a time. author narrows
+    the commits to one person (git's --author matching).
+    """
     project_dir = Path(project_dir)
-    window = find_window(project_dir, since)
+    window = find_window(project_dir, since, until)
     if window is None:
         raise ValueError("No gameplan and no --since revision: nothing to measure the gap from.")
-    commits = window_commits(project_dir, window)
+    if author:
+        window["author"] = author
+    commits = window_commits(project_dir, window, author)
     if not commits:
         return None
     settings = reconstruct_settings(project_dir)
@@ -250,7 +277,7 @@ def gather(project_dir: Path, since: Optional[str] = None) -> Optional[Bundle]:
 
     doc_prefixes = tuple(settings["doc_paths"])
     added = _git(project_dir, "log", "--diff-filter=A", "--no-merges", "--format=%x1e%H",
-                 "--name-only", *window["range"])
+                 "--name-only", *([f"--author={author}"] if author else []), *window["range"])
     documents = []
     for record in added.split("\x1e"):
         lines = [l for l in record.strip().splitlines() if l]
@@ -259,7 +286,7 @@ def gather(project_dir: Path, since: Optional[str] = None) -> Optional[Bundle]:
                           if f.startswith(doc_prefixes) or f in doc_prefixes]
 
     roadmap_rel = ".daedalus/roadmap/index.json"
-    committed = (_git(project_dir, "diff", window["from"], "HEAD", "--", roadmap_rel)
+    committed = (_git(project_dir, "diff", window["from"], window["to"], "--", roadmap_rel)
                  if window["from"] else "")
     uncommitted = _git(project_dir, "diff", "HEAD", "--", roadmap_rel)
 
@@ -283,7 +310,9 @@ def gather(project_dir: Path, since: Optional[str] = None) -> Optional[Bundle]:
 
 
 def write_bundle(project_dir: Path, bundle: Bundle) -> Path:
-    out = Path(project_dir) / OUT_DIR / f"bundle-{bundle.created}.json"
+    w = bundle.window
+    who = "-" + re.sub(r"[^\w.-]+", "_", w["author"]) if w.get("author") else ""
+    out = Path(project_dir) / OUT_DIR / f"bundle-{w['from_date']}_{w['to'][:7]}{who}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(asdict(bundle), indent=2) + "\n", encoding="utf-8")
     return out
@@ -382,10 +411,13 @@ def check_proposal(project_dir: Path, proposal: dict) -> CheckResult:
         err(f"schema is {proposal.get('schema')!r}, expected {PROPOSAL_SCHEMA!r}")
     window = proposal.get("window") or {}
     to = window.get("to") or "HEAD"
+    until = window.get("until")
+    narrow = ([f"--until={until}T23:59:59"] if until and re.fullmatch(r"\d{4}-\d{2}-\d{2}", until) else []) \
+        + ([f"--author={window['author']}"] if window.get("author") else [])
     if window.get("from"):
-        rng = [f"{window['from']}..{to}"]
+        rng = [*narrow, f"{window['from']}..{to}"]
     elif window.get("from_date"):
-        rng = [f"--since={window['from_date']}", to]
+        rng = [f"--since={window['from_date']}", *narrow, to]
     else:
         err("window has neither 'from' nor 'from_date'")
         rng = [to]

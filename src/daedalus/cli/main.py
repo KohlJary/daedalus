@@ -160,18 +160,23 @@ def reconstruct():
 
 
 @reconstruct.command("gather")
-@click.option("--since", default=None, help="Start the window at this revision instead of the gameplan's last commit")
-def reconstruct_gather(since: str | None):
-    """Find the gap and write the evidence bundle to .daedalus/reconstruction/."""
+@click.option("--since", default=None, help="Window start: a revision or YYYY-MM-DD (default: the gameplan's last commit)")
+@click.option("--until", default=None, help="Window end: a revision or YYYY-MM-DD (default: HEAD)")
+@click.option("--author", default=None, help="Only commits by this author (git --author matching)")
+def reconstruct_gather(since: str | None, until: str | None, author: str | None):
+    """Find the gap (or the given window) and write the evidence bundle to .daedalus/reconstruction/.
+
+    Long histories: reconstruct one window at a time with --since/--until.
+    """
     from ..reconstruct import gather, write_bundle
 
     try:
-        bundle = gather(Path.cwd(), since=since)
+        bundle = gather(Path.cwd(), since=since, until=until, author=author)
     except ValueError as e:
         click.echo(str(e), err=True)
         raise SystemExit(2)
     if bundle is None:
-        click.echo("No gap: the gameplan is current.")
+        click.echo("No commits in that window." if (since or until or author) else "No gap: the gameplan is current.")
         return
     path = write_bundle(Path.cwd(), bundle)
     w = bundle.window
@@ -471,6 +476,15 @@ def gameplan_pending(ctx):
         from .commands import list_pending
 
         list_pending(Path.cwd())
+
+
+@gameplan_pending.command("import")
+@click.argument("proposal", type=click.Path(exists=True, dir_okay=False))
+def gameplan_pending_import(proposal: str):
+    """Load a reconstruction proposal (edict 0006) as pending items. It must pass reconstruct check."""
+    from .commands import import_reconstruction
+
+    import_reconstruction(Path.cwd(), Path(proposal))
 
 
 @gameplan_pending.command("apply")

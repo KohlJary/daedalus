@@ -605,7 +605,7 @@ def list_pending(project_dir: Path):
         click.echo("No pending gameplan updates.")
         return
     for p in proposals:
-        click.echo(f"{p['id']}: {p['task']} -> {p['status']}  ({p.get('source', '')}, {p.get('created', '')})")
+        click.echo(f"{p['id']}: {gp.describe_proposal(p)}  ({p.get('source', '')}, {p.get('created', '')})")
         if p.get("resolution"):
             click.echo(f"    {p['resolution']}")
 
@@ -615,7 +615,7 @@ def apply_pending(project_dir: Path, which: str):
 
     applied = _gameplan_run(project_dir, lambda d: gp.apply_pending(project_dir, d, which))
     for p in applied or []:
-        click.echo(f"Applied {p['id']}: {p['task']} -> {p['status']}")
+        click.echo(f"Applied {p['id']}: {gp.describe_proposal(p)}")
 
 
 def drop_pending(project_dir: Path, which: str):
@@ -627,4 +627,31 @@ def drop_pending(project_dir: Path, which: str):
         click.echo(str(e), err=True)
         return
     for p in dropped:
-        click.echo(f"Dropped {p['id']}: {p['task']}")
+        click.echo(f"Dropped {p['id']}: {gp.describe_proposal(p)}")
+
+
+def import_reconstruction(project_dir: Path, proposal_file: Path):
+    """Load a checked reconstruction proposal into the pending file (edict 0006)."""
+    from . import gameplan as gp
+    from ..reconstruct import check_proposal
+
+    try:
+        data = json.loads(Path(proposal_file).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        click.echo(f"Could not read {proposal_file}: {e}", err=True)
+        raise SystemExit(1)
+    result = check_proposal(project_dir, data)
+    if result.errors:
+        for e in result.errors:
+            click.echo(f"error: {e}", err=True)
+        click.echo("Not imported: fix the proposal so `daedalus reconstruct check` passes.", err=True)
+        raise SystemExit(1)
+    proposals, skipped = gp.proposals_from_reconstruction(data)
+    added = gp.add_proposals(project_dir, proposals)
+    for p in added:
+        click.echo(f"Pending {p['id']}: {gp.describe_proposal(p)}")
+    for s in skipped:
+        click.echo(f"Not imported, {s}")
+    if result.uncited:
+        click.echo(f"Note: {len(result.uncited)} commits in the window are cited by no entry.")
+    click.echo("Review with `daedalus gameplan pending`; apply or drop each one.")
