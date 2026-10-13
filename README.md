@@ -57,6 +57,7 @@ After `daedalus init`, your project gets:
   roadmap.md             # Project management
   docs.md                # Documentation exploration
   test-runner.md         # Test generation
+  momus.md               # Claim and result critic
 
 CLAUDE.md                # Injected Daedalus workflow section
 ```
@@ -72,6 +73,7 @@ CLAUDE.md                # Injected Daedalus workflow section
 | `docs` | Documentation and implementation exploration |
 | `test-runner` | Generate and maintain tests |
 | `ariadne` | Parallel worker orchestration (planning, dispatch, verification) |
+| `momus` | Critic: restates a claim, names its falsifier, checks the evidence, returns a verdict |
 
 ### Theseus in Action
 

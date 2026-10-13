@@ -25,6 +25,8 @@ agents:
     description: Mind Palace MUD navigation - spatial codebase understanding
   - name: memory
     description: Project memory management across sessions
+  - name: momus
+    description: Critic - tests claims and results before they are believed or published
   - name: roadmap
     description: Project planning and work item tracking
   - name: gameplan
