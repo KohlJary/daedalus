@@ -1,17 +1,39 @@
 # Daedalus
 
-A Claude Code plugin for structured development workflows. Provides persistent memory, Mind Palace codebase navigation, and project management tools.
+**Claude Code that remembers.** Every Claude Code session normally starts from zero: no memory of yesterday's decisions, last week's architecture discussion, or what was half-finished when the context ran out. Daedalus gives your project a persistent working memory, a plan that survives context compaction, and a consistent collaborator identity, so each session picks up where the last one left off.
+
+It's a Claude Code plugin plus a small CLI. Everything it keeps is plain files in your repo.
+
+## At a glance
+
+The pieces are named after the Labyrinth myth. Here's what each one actually does:
+
+| Name | What it is | Status |
+|------|-----------|--------|
+| **Daedalus** | The collaborator identity Claude adopts, plus the memory files and workflow it follows | Core |
+| **Memory** | Session summaries, decisions, and a project map in `.daedalus/` | Core |
+| **Roadmap & Gameplan** | File-based task tracking, and a phase plan that tells a fresh session what to do next | Core |
+| **Edicts** | Design decisions handed to Daedalus as reviewed docs in `docs/edicts/` ([how they work](docs/edicts/README.md)) | New |
+| **Mind Palace** (Labyrinth) | Maps your codebase as navigable rooms for spatial-semantic navigation | Available |
+| **Theseus** | Code-health analysis that hunts complexity hot spots | Available |
+| **Momus** | A critic agent that checks claims against evidence | Available |
+| **Icarus** | Parallel worker instances that each take one piece of a job | Experimental |
+| **Ariadne** | Orchestrates Icarus workers: collects diffs, detects conflicts, verifies, reviews, merges | Experimental ([assessment](docs/ariadne-assessment.md)) |
+
+If you only use the core pieces, you get most of the value.
 
 ## Installation
 
 ```bash
-pip install daedalus
+pip install daedalus-cli
 ```
 
 For Icarus parallel workers (optional):
 ```bash
-pip install daedalus[sdk]
+pip install "daedalus-cli[sdk]"
 ```
+
+Requires Python 3.10+ and [Claude Code](https://claude.com/claude-code).
 
 ## Quick Start
 
@@ -58,6 +80,8 @@ After `daedalus init`, your project gets:
   docs.md                # Documentation exploration
   test-runner.md         # Test generation
   momus.md               # Claim and result critic
+  gameplan.md            # Phase plan queries
+  ariadne.md             # Parallel worker orchestration
 
 CLAUDE.md                # Injected Daedalus workflow section
 ```
@@ -74,6 +98,7 @@ CLAUDE.md                # Injected Daedalus workflow section
 | `test-runner` | Generate and maintain tests |
 | `ariadne` | Parallel worker orchestration (planning, dispatch, verification) |
 | `momus` | Critic: restates a claim, names its falsifier, checks the evidence, returns a verdict |
+| `gameplan` | Query and update the phase plan that survives context compaction |
 
 ### Theseus in Action
 
@@ -268,4 +293,4 @@ Daedalus is named after the mythological master craftsman who built the Labyrint
 
 ## License
 
-[Hippocratic License 3.0](https://firstdonoharm.dev/) - Software that can't be used to harm people.
+[MIT](LICENSE)
