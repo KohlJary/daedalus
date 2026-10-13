@@ -75,12 +75,12 @@ def init_project(project_dir: Path, force: bool = False, hooks: bool = True):
     memory_dir = project_dir / ".daedalus"
     memory_dir.mkdir(exist_ok=True)
 
-    # Create initial memory files
+    # Create initial memory files. Optional ones (observations, lessons, warnings) appear when a
+    # project starts using them, not as empty templates (edict 0007).
     memory_files = {
         "session-summaries.md": "# Session Summaries\n\n",
         "project-map.md": "# Project Map\n\n",
         "decisions.md": "# Decisions\n\n",
-        "observations.json": "[]",
     }
 
     for filename, content in memory_files.items():
@@ -101,6 +101,7 @@ def init_project(project_dir: Path, force: bool = False, hooks: bool = True):
 
     if gp.ensure_gameplan(project_dir, force=force):
         click.echo("  Created roadmap/gameplan.json")
+    _ensure_gameplan_tracked(project_dir)
 
     # Copy agents
     agents_dir = project_dir / ".claude" / "agents"
@@ -189,6 +190,46 @@ def hydrate_project(
             click.echo("Updated CLAUDE.md template")
         else:
             click.echo("Warning: Could not update CLAUDE.md template", err=True)
+
+
+GITIGNORE_GAMEPLAN_BLOCK = """
+# Daedalus: commit the gameplan, keep the rest of .daedalus/ local (edict 0007)
+!.daedalus/
+.daedalus/*
+!.daedalus/roadmap/
+.daedalus/roadmap/*
+!.daedalus/roadmap/gameplan.json
+"""
+
+
+def _ensure_gameplan_tracked(project_dir: Path):
+    """If git ignores the gameplan, append negations to .gitignore so it can be committed."""
+    import subprocess
+
+    from . import gameplan as gp
+
+    rel = str(gp.GameplanPaths.for_project(project_dir).gameplan_file.relative_to(project_dir))
+
+    def ignored() -> bool:
+        try:
+            return subprocess.run(
+                ["git", "check-ignore", "-q", rel], cwd=project_dir, capture_output=True
+            ).returncode == 0
+        except FileNotFoundError:
+            return False
+
+    if not ignored():
+        return
+    gitignore = project_dir / ".gitignore"
+    text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
+    if GITIGNORE_GAMEPLAN_BLOCK.strip() not in text:
+        sep = "" if not text or text.endswith("\n") else "\n"
+        gitignore.write_text(text + sep + GITIGNORE_GAMEPLAN_BLOCK, encoding="utf-8")
+    if ignored():
+        click.echo(f"  Warning: {rel} is still ignored by git (a rule outside .gitignore?). "
+                   f"See `git check-ignore -v {rel}`.", err=True)
+    else:
+        click.echo(f"  Un-ignored {rel} in .gitignore so the gameplan can be committed")
 
 
 def _register_hooks(project_dir: Path, dry_run: bool = False):

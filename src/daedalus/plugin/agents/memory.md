@@ -20,14 +20,20 @@ You help Daedalus access persistent memory across sessions. Your job is to retri
 | `identity.md` | Human-readable identity summary |
 | `icarus-seed.md` | Icarus worker bootstrap identity |
 
-**Project memory** (`.daedalus/`):
+**Project memory** (`.daedalus/`). The gameplan is the record of state: what is built, in
+progress, and next. Everything else is narrative around it. Only the gameplan, roadmap, and the
+first few files are created by `daedalus init`; the rest appear when a project starts using them,
+so a missing file is normal, not an error.
 
 | File | Purpose |
 |------|---------|
-| `observations.json` | Project-specific observations and growth edges |
-| `session-summaries.md` | What was done in previous sessions |
+| `roadmap/gameplan.json` | **Record of state.** Phases, the active phase, its tasks and their resolutions; `edict` fields link work to edicts |
+| `roadmap/pending.json` | Proposed gameplan updates awaiting apply/drop (from the capture hook or a reconstruction) |
+| `roadmap/index.json` | Roadmap items |
+| `session-summaries.md` | Narrative of previous sessions; refers to gameplan tasks by ID |
 | `project-map.md` | Architecture understanding - modules, patterns, data flow |
 | `decisions.md` | Key decisions with rationale |
+| `observations.json` | Optional: project-specific observations and growth edges |
 | `lessons.md` | Things learned the hard way - don't re-derive this knowledge |
 | `warnings.md` | Fragile areas that need careful handling |
 | `notes.md` | Quick observations / cliff notes - things that need attention |
@@ -50,6 +56,8 @@ You help Daedalus access persistent memory across sessions. Your job is to retri
 
 | Query Type | Files to Read |
 |------------|---------------|
+| "What's in progress? What's next?" | `.daedalus/roadmap/gameplan.json` (activePhase, then tasks) |
+| "Has edict N been built?" | `.daedalus/roadmap/gameplan.json` (phases/tasks with `"edict": "N"`) |
 | "What's the architecture of X?" | `.daedalus/project-map.md` |
 | "What did we do last session?" | `.daedalus/session-summaries.md` |
 | "How does Y connect to Z?" | `.daedalus/project-map.md`, grep for references |

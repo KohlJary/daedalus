@@ -1,5 +1,5 @@
 ---
-allowed-tools: Read, Write, Bash(git status:*), Bash(git log:*), Bash(git branch:*)
+allowed-tools: Read, Write, Bash(git status:*), Bash(git log:*), Bash(git branch:*), Bash(daedalus gameplan show:*), Bash(daedalus doctor:*)
 description: View and update Daedalus memory - session state, observations, project knowledge, identity
 ---
 
@@ -14,11 +14,14 @@ View current session context and memory state. Optionally update observations or
 - `identity.md` - Human-readable identity
 - `icarus-seed.md` - Icarus worker bootstrap
 
-**Project memory** (`.daedalus/`):
-- `observations.json` - Project-specific observations
-- `session-summaries.md` - Session history
+**Project memory** (`.daedalus/`). Files other than the gameplan may not exist yet; a missing file
+is normal. Create an optional file (observations, lessons, warnings, notes) the first time there is
+something to put in it.
+- `roadmap/gameplan.json` - Record of state: active phase, tasks, resolutions (`daedalus gameplan show`)
+- `session-summaries.md` - Session history (narrative; refers to gameplan tasks by ID)
 - `project-map.md` - Architecture
 - `decisions.md` - Key decisions
+- `observations.json` - Project-specific observations
 - `lessons.md` - Things learned the hard way
 - `warnings.md` - Fragile areas
 - `notes.md` - Quick observations
@@ -30,10 +33,11 @@ View current session context and memory state. Optionally update observations or
 ## Default Action (no args)
 
 Show current memory state:
-1. Git state (branch, recent commits, modified files)
-2. Last session summary from `session-summaries.md`
-3. Active growth edges from `observations.json`
-4. Identity summary
+1. Gameplan: active phase and next task (`daedalus gameplan show`), and drift (`daedalus doctor`)
+2. Git state (branch, recent commits, modified files)
+3. Last session summary from `session-summaries.md`
+4. Active growth edges from `observations.json`, if it exists
+5. Identity summary
 
 ## Usage Patterns
 
