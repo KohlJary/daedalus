@@ -1,0 +1,134 @@
+{
+  "verdict": "edited",
+  "packages": [
+    {
+      "id": "p1",
+      "title": "Add priority field to Task model",
+      "files": ["src/todo/models.py"],
+      "description": "In the Task dataclass in src/todo/models.py, add a field `priority: str = \"normal\"` as the LAST field (after `tags`), so existing positional/keyword constructions like Task(1, \"a\", done=True, tags=[\"x\"]) keep working. Allowed values are exactly \"low\", \"normal\", \"high\". Add a `__post_init__` that raises ValueError if priority is not one of those three (so both Task(...) and Task.from_dict(...) with a bad priority raise ValueError). to_dict must include the key \"priority\" (dict becomes {\"id\", \"title\", \"done\", \"tags\", \"priority\"}). from_dict must read priority with d.get(\"priority\", \"normal\"), so a dict with no \"priority\" key (files saved before this change) loads with priority \"normal\".",
+      "tests": {
+        "file": "tests/test_models.py",
+        "must_cover": [
+          "Task created without priority has priority 'normal'",
+          "Task can be created with priority 'low', 'normal', and 'high'",
+          "Task(1, 'a', priority='urgent') raises ValueError",
+          "Task.to_dict includes 'priority'",
+          "Task.from_dict of a dict without a 'priority' key gives priority 'normal'",
+          "Task.from_dict with an invalid priority raises ValueError",
+          "Roundtrip to_dict/from_dict preserves priority 'high'"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": []
+    },
+    {
+      "id": "p2",
+      "title": "Update TodoService to handle task priorities",
+      "files": ["src/todo/service.py"],
+      "description": "Change TodoService.add in src/todo/service.py to the signature add(self, title, tags=(), priority=\"normal\") and pass priority=priority when constructing the new Task (Task already has a `priority` field that validates and raises ValueError for values other than \"low\"/\"normal\"/\"high\"). The task is saved via the existing storage.save call; Task.to_dict already includes priority, so no storage changes are needed. Keep all other behavior (title stripping, empty-title ValueError) unchanged.",
+      "tests": {
+        "file": "tests/test_service.py",
+        "must_cover": [
+          "svc.add('a') returns a task with priority 'normal'",
+          "svc.add('a', priority='high') returns a task with priority 'high'",
+          "After add with priority='high', svc.list() (reloaded from storage) shows priority 'high'"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": ["p1"]
+    },
+    {
+      "id": "p3",
+      "title": "Add sort_tasks to query module",
+      "files": ["src/todo/query.py"],
+      "description": "Add a function sort_tasks(tasks, by=\"id\") to src/todo/query.py (keep filter_tasks unchanged). It returns a NEW sorted list (use sorted(); never modify the input list). by=\"priority\": high first, then normal, then low, ties broken by id ascending (e.g. key = (rank[t.priority], t.id) with rank = {\"high\": 0, \"normal\": 1, \"low\": 2}). by=\"title\": sort by t.title. by=\"id\": sort by t.id. Any other value of `by` raises ValueError. Tasks have attributes id (int), title (str), priority (one of \"low\", \"normal\", \"high\").",
+      "tests": {
+        "file": "tests/test_query.py",
+        "must_cover": [
+          "by='priority' orders high, normal, low with ties broken by id ascending",
+          "by='title' sorts by title",
+          "by='id' (and the default) sorts by id",
+          "the input list is not modified and a new list is returned",
+          "an invalid `by` value raises ValueError"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": ["p1"]
+    },
+    {
+      "id": "p4",
+      "title": "Mark high-priority tasks in format_task",
+      "files": ["src/todo/formatting.py"],
+      "description": "In format_task in src/todo/formatting.py, when task.priority == \"high\", put \"!\" immediately before the title, e.g. Task(1, \"Buy milk\", priority=\"high\") formats as \"  1 [ ] !Buy milk\" (tags still follow as before, e.g. \"  1 [ ] !a #x\"). Tasks with priority \"normal\" or \"low\" format exactly as before. Do not change format_list.",
+      "tests": {
+        "file": "tests/test_formatting.py",
+        "must_cover": [
+          "format_task(Task(1, 'Buy milk', priority='high')) == '  1 [ ] !Buy milk'",
+          "a high-priority task with tags keeps the tags after the title",
+          "normal and low priority tasks format without '!' (e.g. '  1 [ ] a #x')"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": ["p1"]
+    },
+    {
+      "id": "p5",
+      "title": "Add priority column to CSV export",
+      "files": ["src/todo/export.py"],
+      "description": "In to_csv in src/todo/export.py, add a priority column right after title. The header row becomes exactly \"id,title,priority,done,tags\" and each row writes [t.id, t.title, t.priority, t.done, \";\".join(t.tags)]. Example: to_csv([Task(1, \"a\", tags=[\"x\", \"y\"])]) == \"id,title,priority,done,tags\\n1,a,normal,False,x;y\\n\". Do not change to_markdown.",
+      "tests": {
+        "file": "tests/test_export.py",
+        "must_cover": [
+          "header is 'id,title,priority,done,tags'",
+          "a default task row contains 'normal' in the priority column right after title",
+          "a high-priority task row contains 'high' in the priority column"
+        ],
+        "existing_tests_to_update": ["test_export"]
+      },
+      "depends_on": ["p1"]
+    },
+    {
+      "id": "p6",
+      "title": "Add counts_by_priority to stats",
+      "files": ["src/todo/stats.py"],
+      "description": "Add counts_by_priority(tasks) to src/todo/stats.py. It returns a dict with all three keys \"high\", \"normal\", \"low\" always present, each mapped to the number of tasks with that t.priority (0 if none), e.g. {\"high\": 1, \"normal\": 2, \"low\": 0}. An empty list gives {\"high\": 0, \"normal\": 0, \"low\": 0}. Leave existing functions unchanged.",
+      "tests": {
+        "file": "tests/test_stats.py",
+        "must_cover": [
+          "counts tasks correctly per priority, e.g. one high and two normal gives {'high': 1, 'normal': 2, 'low': 0}",
+          "unused priorities are present with 0",
+          "empty list gives all three keys with 0"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": ["p1"]
+    },
+    {
+      "id": "p7",
+      "title": "Add --priority and --sort to the CLI",
+      "files": ["src/todo/cli.py"],
+      "description": "In src/todo/cli.py build_parser: the `add` subparser gets `--priority` with choices=[\"low\", \"normal\", \"high\"], default \"normal\"; the `list` subparser gets `--sort` with choices=[\"id\", \"priority\", \"title\"], default \"id\". In main: for add call svc.add(args.title, tags=args.tag, priority=args.priority); for list return format_list(sort_tasks(svc.list(tag=args.tag, include_done=not args.pending), by=args.sort)), importing sort_tasks from todo.query (signature sort_tasks(tasks, by=\"id\"), returns a new sorted list; \"priority\" orders high, normal, low, ties by id). Note format_task prefixes the title of high-priority tasks with \"!\" (e.g. \"  1 [ ] !milk\"). Keep everything else unchanged.",
+      "tests": {
+        "file": "tests/test_cli.py",
+        "must_cover": [
+          "add with --priority high then list shows '  1 [ ] !milk'",
+          "add without --priority gives a normal task (no '!')",
+          "list --sort priority orders high before normal before low",
+          "list --sort title orders by title; list without --sort orders by id",
+          "an invalid --priority value makes argparse exit (SystemExit)"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": ["p1", "p2", "p3", "p4", "p5", "p6"]
+    }
+  ],
+  "notes": [
+    "p1: specified priority must be the last dataclass field with default 'normal' (keeps positional Task(...) calls working), validation in __post_init__ so from_dict also raises, and from_dict uses d.get('priority', 'normal'); added must_cover for constructor ValueError and the missing-key default; removed test_roundtrip from existing_tests_to_update (it won't break).",
+    "p2: spelled out passing priority=priority to Task and that storage needs no change; removed test_add_complete from existing_tests_to_update (it won't break).",
+    "p3: added sort key guidance and a must_cover for not mutating the input.",
+    "p4: clarified '!' placement with tags and that format_list is unchanged; removed test_format from existing_tests_to_update (it won't break).",
+    "p5: gave exact row layout and expected CSV string; test_export is correctly listed as breaking.",
+    "p6: stated empty-list result and that all three keys are always present.",
+    "p7: gave exact argparse choices/defaults, how main wires priority into svc.add and sort_tasks into list, and the sort_tasks signature; expanded must_cover; removed test_add_list from existing_tests_to_update (it won't break)."
+  ]
+}

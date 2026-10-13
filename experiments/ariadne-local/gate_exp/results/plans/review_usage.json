@@ -1,0 +1,57 @@
+{
+  "shop": {
+    "subagent_tokens": 48906,
+    "tool_uses": 4,
+    "secs": 40.6
+  },
+  "todo_priority": {
+    "subagent_tokens": 54872,
+    "tool_uses": 4,
+    "secs": 52.0
+  },
+  "todo_due": {
+    "subagent_tokens": 54353,
+    "tool_uses": 4,
+    "secs": 61.5
+  },
+  "_lean": {
+    "shop": {
+      "subagent_tokens": 47599,
+      "tool_uses": 2,
+      "secs": 27.6
+    },
+    "todo_priority": {
+      "subagent_tokens": 51908,
+      "tool_uses": 2,
+      "secs": 31.5
+    },
+    "todo_due": {
+      "subagent_tokens": 52759,
+      "tool_uses": 2,
+      "secs": 39.6
+    }
+  },
+  "_claude_solo": {
+    "shop": {
+      "subagent_tokens": 46733,
+      "tool_uses": 4,
+      "secs": 26.8,
+      "oracle_pass": true,
+      "oracle": "4/4"
+    },
+    "todo_priority": {
+      "subagent_tokens": 50525,
+      "tool_uses": 5,
+      "secs": 38.5,
+      "oracle_pass": true,
+      "oracle": "8/8"
+    },
+    "todo_due": {
+      "subagent_tokens": 51148,
+      "tool_uses": 6,
+      "secs": 48.7,
+      "oracle_pass": true,
+      "oracle": "7/7"
+    }
+  }
+}

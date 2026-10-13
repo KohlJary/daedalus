@@ -1,0 +1,147 @@
+{
+  "raw": [
+    {
+      "id": "p1",
+      "title": "Add dates parsing module",
+      "files": [
+        "src/todo/dates.py"
+      ],
+      "description": "Add a new module `src/todo/dates.py` with function `parse_due(text, today)` that parses due date strings. It accepts 'YYYY-MM-DD', 'today', 'tomorrow', and '+Nd' (N days after today, N a positive integer). Anything else raises ValueError. The function signature is parse_due(text: str, today: datetime.date) -> datetime.date.",
+      "tests": {
+        "file": "tests/test_dates.py",
+        "must_cover": [
+          "parse_due with YYYY-MM-DD format",
+          "parse_due with 'today'",
+          "parse_due with 'tomorrow'",
+          "parse_due with '+Nd' format",
+          "parse_due with invalid input raises ValueError"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": []
+    },
+    {
+      "id": "p2",
+      "title": "Add due date to Task model",
+      "files": [
+        "src/todo/models.py"
+      ],
+      "description": "Modify `src/todo/models.py` to add a `due` field to the Task class. The field is a datetime.date or None, defaulting to None. The `to_dict()` method stores it as an ISO 'YYYY-MM-DD' string or None; `from_dict()` turns it back into a date, and a dict with no 'due' key loads as None. Add `Task.is_overdue(today)` method that returns True only if the task is not done, has a due date, and the due date is before today. The method signature is is_overdue(self, today: datetime.date) -> bool.",
+      "tests": {
+        "file": "tests/test_models.py",
+        "must_cover": [
+          "Task with due date field",
+          "Task.to_dict() stores due date as ISO string",
+          "Task.from_dict() loads due date from ISO string",
+          "Task.from_dict() loads None when no 'due' key",
+          "Task.is_overdue() returns True when task is overdue",
+          "Task.is_overdue() returns False when task is not overdue"
+        ],
+        "existing_tests_to_update": [
+          "test_roundtrip() must be updated to include due field"
+        ]
+      },
+      "depends_on": [
+        "p1"
+      ]
+    },
+    {
+      "id": "p3",
+      "title": "Update service to handle due dates",
+      "files": [
+        "src/todo/service.py"
+      ],
+      "description": "Modify `src/todo/service.py` to support due dates in the `TodoService.add()` method. The method signature is `add(self, title, tags=(), due=None, today=None)`. When `due` is provided, it should be parsed with `parse_due()` (today defaults to `datetime.date.today()`). The parsed date is saved on the task. The `due` parameter is a string that gets parsed with `parse_due()`.",
+      "tests": {
+        "file": "tests/test_service.py",
+        "must_cover": [
+          "TodoService.add() with due date parameter",
+          "TodoService.add() with due date parsed correctly",
+          "TodoService.add() with due=None defaults to None"
+        ],
+        "existing_tests_to_update": [
+          "test_add_complete() must be updated to handle due dates"
+        ]
+      },
+      "depends_on": [
+        "p1",
+        "p2"
+      ]
+    },
+    {
+      "id": "p4",
+      "title": "Add overdue query functionality",
+      "files": [
+        "src/todo/query.py"
+      ],
+      "description": "Add a new function `overdue(tasks, today)` to `src/todo/query.py` that returns overdue tasks sorted by due date, with ties broken by id. The function signature is `overdue(tasks: list, today: datetime.date) -> list`. Overdue tasks are those that are not done, have a due date, and the due date is before today.",
+      "tests": {
+        "file": "tests/test_query.py",
+        "must_cover": [
+          "overdue() returns only overdue tasks",
+          "overdue() sorts by due date first, then by id",
+          "overdue() returns empty list when no tasks are overdue"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": [
+        "p2"
+      ]
+    },
+    {
+      "id": "p5",
+      "title": "Update formatting to show overdue tasks",
+      "files": [
+        "src/todo/formatting.py"
+      ],
+      "description": "Modify `src/todo/formatting.py` to update `format_task(task, today=None)` function. When `today` is given and the task is overdue, append ' (overdue)' to the line. Without `today`, output is unchanged. The function signature is `format_task(task, today=None) -> str`.",
+      "tests": {
+        "file": "tests/test_formatting.py",
+        "must_cover": [
+          "format_task() without today parameter unchanged",
+          "format_task() with today parameter and overdue task shows '(overdue)'",
+          "format_task() with today parameter and non-overdue task unchanged"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": [
+        "p2"
+      ]
+    },
+    {
+      "id": "p6",
+      "title": "Update CLI to support due dates and overdue listing",
+      "files": [
+        "src/todo/cli.py"
+      ],
+      "description": "Modify `src/todo/cli.py` to support due dates in the 'add' command and overdue filtering in the 'list' command. The 'add' command accepts `--due TEXT` parameter which is parsed with `parse_due()`. The 'list' command accepts `--overdue` flag which shows only tasks overdue as of today, formatted with the overdue marker. The 'add' command signature is `add --due TEXT` and 'list' command signature is `list --overdue`.",
+      "tests": {
+        "file": "tests/test_cli.py",
+        "must_cover": [
+          "CLI 'add' command with --due parameter",
+          "CLI 'list' command with --overdue flag",
+          "CLI 'list' command without --overdue flag works normally"
+        ],
+        "existing_tests_to_update": [
+          "test_add_list() must be updated to test due dates"
+        ]
+      },
+      "depends_on": [
+        "p1",
+        "p2",
+        "p3",
+        "p4",
+        "p5"
+      ]
+    }
+  ],
+  "fixups": [],
+  "planner_secs": 110.0,
+  "usage": {
+    "calls": 1,
+    "prompt_eval": 2437,
+    "completion": 1453,
+    "sent_chars": 10192,
+    "recv_chars": 5881
+  }
+}

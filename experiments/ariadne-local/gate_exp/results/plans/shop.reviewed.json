@@ -1,0 +1,86 @@
+{
+  "verdict": "edited",
+  "packages": [
+    {
+      "id": "p1",
+      "title": "Add discount code functionality",
+      "files": ["src/shop/pricing/discounts.py"],
+      "description": "In src/shop/pricing/discounts.py add a module-level function apply_discount(total, code) next to the existing subtotal function (leave subtotal unchanged). total is a number; code is a str or None. Behavior: code None -> return total unchanged. code \"SAVE10\" -> return total * 0.9 (10% off). code \"FLAT5\" -> return max(total - 5, 0) (5 off, never below 0). Any other code (including other strings) -> raise ValueError.",
+      "tests": {
+        "file": "tests/test_pricing.py",
+        "must_cover": [
+          "Keep existing test_subtotal; change the import to `from shop.pricing.discounts import subtotal, apply_discount`",
+          "apply_discount(100.0, \"SAVE10\") == pytest.approx(90.0)",
+          "apply_discount(20.0, \"FLAT5\") == 15.0",
+          "apply_discount(3.0, \"FLAT5\") == 0 (never below 0)",
+          "apply_discount(42.0, None) == 42.0",
+          "apply_discount(10.0, \"BOGUS\") raises ValueError (use pytest.raises)"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": []
+    },
+    {
+      "id": "p2",
+      "title": "Update order to use discount codes",
+      "files": ["src/shop/orders/order.py"],
+      "description": "In src/shop/orders/order.py: change Order.__init__ to Order.__init__(self, items, discount_code=None) and store it as self.discount_code. Change Order.total() to return apply_discount(subtotal(self.items), self.discount_code). Import it with `from shop.pricing.discounts import subtotal, apply_discount`. apply_discount(total, code) already exists: code None returns total unchanged, \"SAVE10\" takes 10% off, \"FLAT5\" takes 5 off (min 0), any other code raises ValueError (so Order.total() raises ValueError for an unknown code). Do not change place_order.",
+      "tests": {
+        "file": "tests/test_orders.py",
+        "must_cover": [
+          "Keep existing test_total and test_place_order unchanged",
+          "Order([(\"a\", 2.0, 3)], discount_code=None).total() == 6.0",
+          "Order([(\"a\", 10.0, 2)], discount_code=\"SAVE10\").total() == pytest.approx(18.0)",
+          "Order([(\"a\", 2.0, 1)], discount_code=\"FLAT5\").total() == 0",
+          "Order([(\"a\", 2.0, 3)], discount_code=\"BOGUS\").total() raises ValueError"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": ["p1"]
+    },
+    {
+      "id": "p3",
+      "title": "Add stock checking to order placement",
+      "files": ["src/shop/orders/order.py"],
+      "description": "In src/shop/orders/order.py, rewrite the existing function place_order(order, stock) (do not touch the Order class). order.items is a list of (name, unit_price, qty) tuples; stock is a shop.inventory.stock.Stock with methods available(name) -> int and take(name, qty) (take raises ValueError if fewer than qty are available). place_order must check every line before taking anything: first total the requested qty per item name across all lines, and if for any name stock.available(name) is less than the requested total, raise ValueError without calling take at all, so the stock is left unchanged. Only if every line can be fulfilled, call stock.take(name, qty) for each line.",
+      "tests": {
+        "file": "tests/test_orders.py",
+        "must_cover": [
+          "Keep existing tests (test_total, test_place_order, and any discount tests) unchanged",
+          "place_order with sufficient stock for two lines reduces both levels",
+          "place_order where the first line is fulfillable but the second is not raises ValueError and leaves both levels unchanged (e.g. Stock({\"a\": 5, \"b\": 1}), lines a qty 2 and b qty 3)",
+          "place_order for an item not in stock raises ValueError"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": ["p2", "p4"]
+    },
+    {
+      "id": "p4",
+      "title": "Update stock to prevent over-allocation",
+      "files": ["src/shop/inventory/stock.py"],
+      "description": "In src/shop/inventory/stock.py, change Stock.take(self, name, qty) so that if self.available(name) < qty it raises ValueError and does not modify self.levels. Otherwise it subtracts qty as it does now. Leave __init__ and available unchanged.",
+      "tests": {
+        "file": "tests/test_inventory.py",
+        "must_cover": [
+          "Keep existing test_take unchanged",
+          "take of exactly the available amount leaves 0",
+          "take of more than available raises ValueError (pytest.raises) and available() is unchanged afterwards",
+          "take of an unknown item name with qty > 0 raises ValueError"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": []
+    }
+  ],
+  "notes": [
+    "p3: removed the duplicated Order/discount_code work (already p2's job) and made it depend on p2; both edit src/shop/orders/order.py and tests/test_orders.py, so they couldn't run in parallel.",
+    "p3: dropped the 'place_order with discount code' test, which feature.md doesn't ask for; added a test where an early line fits and a later one doesn't, to check that stock is left unchanged.",
+    "p3: said to total qty per item name before taking anything, so stock really is left unchanged when the same item appears on more than one line; also spelled out the Stock interface.",
+    "p2: gave the exact signature Order(items, discount_code=None), the import line, and total() = apply_discount(subtotal(items), discount_code); said an unknown code raises ValueError from total(); told the worker not to touch place_order.",
+    "p1/p2: changed the code type to str or None (was str), and gave the exact formulas (total*0.9, max(total-5, 0)) plus concrete test values.",
+    "p1: told the worker to keep test_subtotal and add apply_discount to its import.",
+    "All packages: cleared existing_tests_to_update. test_total, test_place_order and test_take still pass with the new defaults and behavior, so they don't break.",
+    "p4: added tests for an exact take and an unknown item, and a check that the level is unchanged after a failed take."
+  ]
+}

@@ -1,0 +1,168 @@
+{
+  "raw": [
+    {
+      "id": "p1",
+      "title": "Add priority field to Task model",
+      "files": [
+        "src/todo/models.py"
+      ],
+      "description": "Add a priority field to the Task model. The priority field must be one of 'low', 'normal', 'high', with default 'normal'. Creating a Task with any other priority raises ValueError. to_dict/from_dict include priority, and from_dict of a dict with no 'priority' key gives 'normal' (files saved before this change must still load).",
+      "tests": {
+        "file": "tests/test_models.py",
+        "must_cover": [
+          "Task with priority field is created correctly",
+          "Task.from_dict handles missing priority key by defaulting to 'normal'",
+          "Task.from_dict raises ValueError for invalid priority values",
+          "Task.to_dict includes priority field",
+          "Roundtrip serialization preserves priority"
+        ],
+        "existing_tests_to_update": [
+          "test_roundtrip"
+        ]
+      },
+      "depends_on": []
+    },
+    {
+      "id": "p2",
+      "title": "Update TodoService to handle task priorities",
+      "files": [
+        "src/todo/service.py"
+      ],
+      "description": "TodoService.add(title, tags=(), priority='normal') passes the priority to the new Task (and it is saved).",
+      "tests": {
+        "file": "tests/test_service.py",
+        "must_cover": [
+          "TodoService.add creates Task with correct priority",
+          "Priority is saved and loaded correctly"
+        ],
+        "existing_tests_to_update": [
+          "test_add_complete"
+        ]
+      },
+      "depends_on": [
+        "p1"
+      ]
+    },
+    {
+      "id": "p3",
+      "title": "Add sorting functionality for tasks by priority",
+      "files": [
+        "src/todo/query.py"
+      ],
+      "description": "Add sort_tasks(tasks, by='id') returning a new sorted list without changing the input. by='priority' sorts high, then normal, then low, ties broken by id ascending; by='title' sorts by title; by='id' by id. Any other `by` raises ValueError.",
+      "tests": {
+        "file": "tests/test_query.py",
+        "must_cover": [
+          "sort_tasks with by='priority' sorts correctly by priority then id",
+          "sort_tasks with by='title' sorts by title",
+          "sort_tasks with by='id' sorts by id",
+          "sort_tasks with invalid by parameter raises ValueError"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": [
+        "p1"
+      ]
+    },
+    {
+      "id": "p4",
+      "title": "Update task formatting for high priority tasks",
+      "files": [
+        "src/todo/formatting.py"
+      ],
+      "description": "format_task puts '!' immediately before the title of a high-priority task, e.g. '  1 [ ] !Buy milk'. Other tasks format exactly as before.",
+      "tests": {
+        "file": "tests/test_formatting.py",
+        "must_cover": [
+          "format_task formats high priority tasks with '!' prefix",
+          "format_task formats normal and low priority tasks without '!' prefix",
+          "format_task preserves existing formatting for other priority levels"
+        ],
+        "existing_tests_to_update": [
+          "test_format"
+        ]
+      },
+      "depends_on": [
+        "p1"
+      ]
+    },
+    {
+      "id": "p5",
+      "title": "Update CSV export to include priority column",
+      "files": [
+        "src/todo/export.py"
+      ],
+      "description": "to_csv gets a priority column right after title; the header becomes 'id,title,priority,done,tags'.",
+      "tests": {
+        "file": "tests/test_export.py",
+        "must_cover": [
+          "to_csv includes priority column in correct position",
+          "to_csv header includes priority column",
+          "to_csv preserves existing functionality for other columns"
+        ],
+        "existing_tests_to_update": [
+          "test_export"
+        ]
+      },
+      "depends_on": [
+        "p1"
+      ]
+    },
+    {
+      "id": "p6",
+      "title": "Add priority statistics function",
+      "files": [
+        "src/todo/stats.py"
+      ],
+      "description": "Add counts_by_priority(tasks) returning a dict with all three keys, e.g. {'high': 1, 'normal': 2, 'low': 0}.",
+      "tests": {
+        "file": "tests/test_stats.py",
+        "must_cover": [
+          "counts_by_priority returns dict with all three keys",
+          "counts_by_priority correctly counts tasks by priority",
+          "counts_by_priority returns 0 for unused priority levels"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": [
+        "p1"
+      ]
+    },
+    {
+      "id": "p7",
+      "title": "Update CLI to support task priorities",
+      "files": [
+        "src/todo/cli.py"
+      ],
+      "description": "`add` accepts `--priority {low,normal,high}` (default normal), and `list` accepts `--sort {id,priority,title}` (default id).",
+      "tests": {
+        "file": "tests/test_cli.py",
+        "must_cover": [
+          "CLI add command accepts --priority flag",
+          "CLI list command accepts --sort flag",
+          "Default values work correctly for both commands"
+        ],
+        "existing_tests_to_update": [
+          "test_add_list"
+        ]
+      },
+      "depends_on": [
+        "p1",
+        "p2",
+        "p3",
+        "p4",
+        "p5",
+        "p6"
+      ]
+    }
+  ],
+  "fixups": [],
+  "planner_secs": 96.9,
+  "usage": {
+    "calls": 1,
+    "prompt_eval": 2455,
+    "completion": 1272,
+    "sent_chars": 10216,
+    "recv_chars": 5331
+  }
+}

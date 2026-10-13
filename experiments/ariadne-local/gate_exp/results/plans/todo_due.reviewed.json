@@ -1,0 +1,116 @@
+{
+  "verdict": "edited",
+  "packages": [
+    {
+      "id": "p1",
+      "title": "Add dates parsing module",
+      "files": ["src/todo/dates.py"],
+      "description": "Create a new module `src/todo/dates.py` (it does not exist yet) containing `parse_due(text, today)`, where `text` is a str and `today` is a `datetime.date`; it returns a `datetime.date`. Accepted inputs: (1) 'YYYY-MM-DD' exactly (four-digit year, two-digit month, two-digit day, e.g. '2024-03-05'; check the shape with a regex like r'\\d{4}-\\d{2}-\\d{2}' using re.fullmatch, then build the date with datetime.date.fromisoformat; an impossible date such as '2024-02-30' must raise ValueError); (2) 'today' -> returns `today`; (3) 'tomorrow' -> returns `today + timedelta(days=1)`; (4) '+Nd' where N is a positive integer (digits only, N >= 1), e.g. '+3d' -> `today + timedelta(days=3)`. Anything else raises ValueError, including '+0d', '+-1d', '+d', '+3', 'yesterday', '' and '2024/03/05'. Import only the standard library (datetime, re).",
+      "tests": {
+        "file": "tests/test_dates.py",
+        "must_cover": [
+          "parse_due('2024-03-05', today) returns date(2024, 3, 5)",
+          "parse_due('today', date(2024, 1, 31)) returns date(2024, 1, 31)",
+          "parse_due('tomorrow', date(2024, 1, 31)) returns date(2024, 2, 1)",
+          "parse_due('+3d', date(2024, 1, 30)) returns date(2024, 2, 2)",
+          "invalid inputs raise ValueError: 'yesterday', '', '+0d', '+-1d', '+xd', '2024-02-30', '2024/03/05'"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": []
+    },
+    {
+      "id": "p2",
+      "title": "Add due date to Task model",
+      "files": ["src/todo/models.py"],
+      "description": "In `src/todo/models.py`, add a field `due` to the `Task` dataclass, declared AFTER `tags` (so existing positional calls like Task(1, 'a') still work), typed as a `datetime.date` or None with default None (`due: Optional[datetime.date] = None`; add `import datetime`). `to_dict()` must always include a 'due' key: `self.due.isoformat()` (an 'YYYY-MM-DD' string) when due is set, otherwise None. `from_dict(d)` must turn d['due'] back into a date with `datetime.date.fromisoformat`; if the key is missing or its value is None, `due` is None. Add method `is_overdue(self, today)` (today is a datetime.date) returning a bool: True only if the task is not done AND `self.due` is not None AND `self.due < today`; otherwise False (a task due today is not overdue).",
+      "tests": {
+        "file": "tests/test_models.py",
+        "must_cover": [
+          "Task(1, 'a', due=date(2024, 1, 2)).to_dict()['due'] == '2024-01-02'",
+          "Task(1, 'a').to_dict()['due'] is None",
+          "roundtrip Task.from_dict(t.to_dict()) == t for a task with a due date",
+          "Task.from_dict({'id': 1, 'title': 'a'}) has due None",
+          "is_overdue(today) True when not done and due < today",
+          "is_overdue(today) False when due == today, due > today, due is None, or task is done"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": []
+    },
+    {
+      "id": "p3",
+      "title": "Update service to handle due dates",
+      "files": ["src/todo/service.py"],
+      "description": "In `src/todo/service.py`, change `TodoService.add` to `add(self, title, tags=(), due=None, today=None)`. Add `import datetime` and `from todo.dates import parse_due` (parse_due(text, today) returns a datetime.date and raises ValueError on bad input). Keep the existing empty-title check first. If `due` is not None it is a string: if `today` is None use `datetime.date.today()`, then compute `parse_due(due, today)` before loading/saving anything (so a bad due string raises ValueError and nothing is saved). Create the Task with `due=<the parsed date>` (Task now has a keyword field `due`, a datetime.date or None). If `due` is None the task's due stays None. Everything else in add (id, stripped title, tags, saving, returning the task) is unchanged.",
+      "tests": {
+        "file": "tests/test_service.py",
+        "must_cover": [
+          "add('a', due='+2d', today=date(2024, 1, 1)) returns a task with due == date(2024, 1, 3)",
+          "add('a', due='2024-05-06') sets due == date(2024, 5, 6) and it persists (svc.list()[0].due == date(2024, 5, 6))",
+          "add('a') without due gives due None",
+          "add('a', due='bogus') raises ValueError and saves no task"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": ["p1", "p2"]
+    },
+    {
+      "id": "p4",
+      "title": "Add overdue query functionality",
+      "files": ["src/todo/query.py"],
+      "description": "Add a function `overdue(tasks, today)` to `src/todo/query.py` (keep `filter_tasks` unchanged). `tasks` is a list of Task, `today` a datetime.date. Return a new list of the tasks for which `t.is_overdue(today)` is True (Task.is_overdue(today) already exists: not done, due not None, due < today), sorted by `(t.due, t.id)` — earliest due date first, ties broken by ascending id.",
+      "tests": {
+        "file": "tests/test_query.py",
+        "must_cover": [
+          "overdue() excludes done tasks, tasks without due, and tasks due today or later",
+          "overdue() sorts by due date, ties by id (pass tasks in unsorted order)",
+          "overdue() returns [] when no tasks are overdue"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": ["p2"]
+    },
+    {
+      "id": "p5",
+      "title": "Update formatting to show overdue tasks",
+      "files": ["src/todo/formatting.py"],
+      "description": "In `src/todo/formatting.py`, change `format_task(task)` to `format_task(task, today=None)`. Build the line exactly as now (`f\"{task.id:>3} {box} {task.title}{tags}\"`); then, if `today` is not None and `task.is_overdue(today)` is True (Task.is_overdue(today) already exists), append the string ' (overdue)' to the end of the line (after the tags). When today is None the output is exactly as before. Leave `format_list` unchanged.",
+      "tests": {
+        "file": "tests/test_formatting.py",
+        "must_cover": [
+          "format_task(Task(1, 'a', tags=['x'], due=date(2024, 1, 1)), today=date(2024, 1, 2)) == '  1 [ ] a #x (overdue)'",
+          "same overdue task without today gives '  1 [ ] a #x'",
+          "with today given but task not overdue (due today/later, no due, or done) output has no ' (overdue)'"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": ["p2"]
+    },
+    {
+      "id": "p6",
+      "title": "Update CLI to support due dates and overdue listing",
+      "files": ["src/todo/cli.py"],
+      "description": "In `src/todo/cli.py`: (1) add to the 'add' subparser `a.add_argument(\"--due\")` (string, default None) and pass it through: `svc.add(args.title, tags=args.tag, due=args.due)` (TodoService.add(title, tags=(), due=None, today=None) parses the string itself; do not call parse_due in the CLI). The add output stays `format_task(task)` with no today. (2) add to the 'list' subparser `ls.add_argument(\"--overdue\", action=\"store_true\")`. When args.overdue is set: `today = datetime.date.today()`, `tasks = overdue(svc.list(tag=args.tag, include_done=not args.pending), today)` using `from todo.query import overdue` (overdue(tasks, today) returns overdue tasks sorted by due then id), and return `\"No tasks.\"` if tasks is empty, else `\"\\n\".join(format_task(t, today) for t in tasks)` (format_task(task, today=None) appends ' (overdue)' to overdue tasks). Without --overdue, list behaves exactly as now. Add `import datetime`.",
+      "tests": {
+        "file": "tests/test_cli.py",
+        "must_cover": [
+          "main([... 'add', 'milk', '--due', '2000-01-01']) returns '  1 [ ] milk' and the task is saved with that due date",
+          "list --overdue shows only overdue tasks with ' (overdue)' suffix (e.g. a task due '2000-01-01' shown as '  1 [ ] milk (overdue)', a task with no due or due '2999-01-01' omitted)",
+          "list --overdue with no overdue tasks returns 'No tasks.'",
+          "list without --overdue still returns the plain format (existing test_add_list)"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": ["p3", "p4", "p5"]
+    }
+  ],
+  "notes": [
+    "p1: pinned strict YYYY-MM-DD shape and listed concrete invalid cases ('+0d', impossible dates, etc.) so ValueError behaviour is unambiguous.",
+    "p2: removed bogus depends_on p1 (models doesn't use dates); required `due` declared after `tags` so positional Task(...) calls keep working; to_dict always emits 'due'; due == today is not overdue; existing test_roundtrip doesn't break, so cleared existing_tests_to_update.",
+    "p3: stated the parse_due import/signature, that parsing happens before save, and that bad strings raise ValueError; test_add_complete doesn't break, so cleared existing_tests_to_update.",
+    "p4: told worker to filter with Task.is_overdue and sort by (due, id).",
+    "p5: specified where ' (overdue)' goes (after tags) and that format_list stays unchanged, with an exact expected string.",
+    "p6: format_list can't pass today, so specified the CLI joins format_task(t, today) itself ('No tasks.' when empty); --due passes through to svc.add rather than calling parse_due; tests use fixed past/future dates since the CLI uses real today; test_add_list doesn't break, so cleared it; trimmed redundant deps p1/p2 (covered transitively)."
+  ]
+}

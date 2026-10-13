@@ -1,0 +1,5 @@
+__pycache__/
+mature/base/
+mature/claude/solo/
+mature/claude/review/
+*.log

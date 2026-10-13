@@ -1,0 +1,96 @@
+{
+  "raw": [
+    {
+      "id": "p1",
+      "title": "Add discount code functionality",
+      "files": [
+        "src/shop/pricing/discounts.py"
+      ],
+      "description": "Add apply_discount function to src/shop/pricing/discounts.py. It takes total (float) and code (str), returning the discounted total. 'SAVE10' takes 10% off. 'FLAT5' takes 5 off but never goes below 0. code=None returns the total unchanged. Any other code raises ValueError.",
+      "tests": {
+        "file": "tests/test_pricing.py",
+        "must_cover": [
+          "apply_discount with SAVE10 code",
+          "apply_discount with FLAT5 code",
+          "apply_discount with None code",
+          "apply_discount with invalid code"
+        ],
+        "existing_tests_to_update": []
+      },
+      "depends_on": []
+    },
+    {
+      "id": "p2",
+      "title": "Update order to use discount codes",
+      "files": [
+        "src/shop/orders/order.py"
+      ],
+      "description": "Modify src/shop/orders/order.py to add discount_code parameter to Order.__init__ (default None). Update Order.total() to apply discount using apply_discount function from discounts module. The function apply_discount(total, code) is used with signature apply_discount(float, str).",
+      "tests": {
+        "file": "tests/test_orders.py",
+        "must_cover": [
+          "Order with discount_code=None",
+          "Order with valid discount_code",
+          "Order with invalid discount_code"
+        ],
+        "existing_tests_to_update": [
+          "test_total"
+        ]
+      },
+      "depends_on": [
+        "p1"
+      ]
+    },
+    {
+      "id": "p3",
+      "title": "Add stock checking to order placement",
+      "files": [
+        "src/shop/orders/order.py"
+      ],
+      "description": "Modify src/shop/orders/order.py to add discount_code parameter to Order.__init__ (default None). Update Order.total() to apply discount using apply_discount function from discounts module. The function apply_discount(total, code) is used with signature apply_discount(float, str). Add place_order(order, stock) function that checks stock availability before taking items. It checks every line before taking anything: if any line can't be fulfilled it raises ValueError and the stock is left unchanged. The stock parameter is of type Stock from src/shop/inventory/stock.py.",
+      "tests": {
+        "file": "tests/test_orders.py",
+        "must_cover": [
+          "place_order with sufficient stock",
+          "place_order with insufficient stock",
+          "place_order with discount code"
+        ],
+        "existing_tests_to_update": [
+          "test_place_order"
+        ]
+      },
+      "depends_on": [
+        "p1",
+        "p4"
+      ]
+    },
+    {
+      "id": "p4",
+      "title": "Update stock to prevent over-allocation",
+      "files": [
+        "src/shop/inventory/stock.py"
+      ],
+      "description": "Modify src/shop/inventory/stock.py to update Stock.take(name, qty) method to raise ValueError if fewer than qty are available, leaving the level unchanged. The method signature is Stock.take(str, int).",
+      "tests": {
+        "file": "tests/test_inventory.py",
+        "must_cover": [
+          "Stock.take with sufficient quantity",
+          "Stock.take with insufficient quantity"
+        ],
+        "existing_tests_to_update": [
+          "test_take"
+        ]
+      },
+      "depends_on": []
+    }
+  ],
+  "fixups": [],
+  "planner_secs": 49.5,
+  "usage": {
+    "calls": 1,
+    "prompt_eval": 979,
+    "completion": 776,
+    "sent_chars": 4577,
+    "recv_chars": 3401
+  }
+}
