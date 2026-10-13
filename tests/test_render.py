@@ -172,6 +172,7 @@ def test_config_project_set_and_show(tmp_path, monkeypatch):
     assert shown == {
         "git": {"authorship": "user"},
         "sections": {"squash": False, "versioning": True},
+        "edicts": {"enabled": False},
         "doctor": {"stale_commits": 10, "stale_task_days": 14},
         "hooks": {"session_start": True, "capture": False},
     }

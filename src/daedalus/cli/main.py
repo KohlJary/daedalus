@@ -31,7 +31,8 @@ def main():
 @main.command()
 @click.option("--force", is_flag=True, help="Overwrite existing files")
 @click.option("--hooks/--no-hooks", default=True, help="Register Claude Code hooks in .claude/settings.json")
-def init(force: bool, hooks: bool):
+@click.option("--edicts", is_flag=True, help="Use edicts in this project: enable them and create docs/edicts/")
+def init(force: bool, hooks: bool, edicts: bool):
     """Initialize Daedalus in the current project.
 
     Creates:
@@ -41,7 +42,7 @@ def init(force: bool, hooks: bool):
     """
     from .commands import init_project
 
-    init_project(Path.cwd(), force=force, hooks=hooks)
+    init_project(Path.cwd(), force=force, hooks=hooks, edicts=edicts)
 
 
 @main.command()
@@ -218,6 +219,29 @@ def reconstruct_check(proposal: str):
         click.echo("Coverage: every commit in the window is cited.")
     click.echo("OK" if not result.errors else f"{len(result.errors)} error(s)")
     raise SystemExit(1 if result.errors else 0)
+
+
+@main.group("edict")
+def edict():
+    """Edicts: design decisions in docs/edicts/ (edicts 0001, 0005)."""
+    pass
+
+
+@edict.command("list")
+def edict_list():
+    """Every edict, its status, and where the gameplan tracks it."""
+    from .commands import list_edicts
+
+    list_edicts(Path.cwd())
+
+
+@edict.command("show")
+@click.argument("number")
+def edict_show(number: str):
+    """Print an edict and the gameplan entries that reference it."""
+    from .commands import show_edict
+
+    show_edict(Path.cwd(), number)
 
 
 @main.command("doctor")

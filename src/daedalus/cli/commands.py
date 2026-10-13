@@ -64,7 +64,7 @@ def _ensure_global_identity():
         identity_json.write_text(GLOBAL_IDENTITY_JSON, encoding="utf-8")
 
 
-def init_project(project_dir: Path, force: bool = False, hooks: bool = True):
+def init_project(project_dir: Path, force: bool = False, hooks: bool = True, edicts: bool = False):
     """Initialize Daedalus in a project."""
     click.echo(f"Initializing Daedalus in {project_dir}")
 
@@ -113,6 +113,9 @@ def init_project(project_dir: Path, force: bool = False, hooks: bool = True):
 
     if hooks:
         _register_hooks(project_dir)
+
+    if edicts:
+        _enable_edicts(project_dir)
 
     # Inject CLAUDE.md template
     from ..templates.injector import inject_claude_template
@@ -230,6 +233,24 @@ def _ensure_gameplan_tracked(project_dir: Path):
                    f"See `git check-ignore -v {rel}`.", err=True)
     else:
         click.echo(f"  Un-ignored {rel} in .gitignore so the gameplan can be committed")
+
+
+def _enable_edicts(project_dir: Path):
+    """Turn edicts on for this project and scaffold docs/edicts/ (edict 0005)."""
+    from ..config import set_project_value
+    from ..plugin import PLUGIN_ROOT
+
+    set_project_value(project_dir, "edicts.enabled", "true")
+    folder = project_dir / "docs" / "edicts"
+    (folder / "dissents").mkdir(parents=True, exist_ok=True)
+    keep = folder / "dissents" / ".gitkeep"
+    if not keep.exists():
+        keep.write_text("", encoding="utf-8")
+    readme = folder / "README.md"
+    if not readme.exists():
+        shutil.copy2(PLUGIN_ROOT / "templates" / "EDICTS_README.md", readme)
+        click.echo("  Created docs/edicts/README.md and docs/edicts/dissents/")
+    click.echo("  Edicts enabled for this project (edicts.enabled = true)")
 
 
 def _register_hooks(project_dir: Path, dry_run: bool = False):
@@ -655,3 +676,66 @@ def import_reconstruction(project_dir: Path, proposal_file: Path):
     if result.uncited:
         click.echo(f"Note: {len(result.uncited)} commits in the window are cited by no entry.")
     click.echo("Review with `daedalus gameplan pending`; apply or drop each one.")
+
+
+# ---------- edicts ----------
+
+
+def _edict_title(path: Path) -> str:
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("# "):
+            return line[2:].split(":", 1)[-1].strip()
+    return path.stem
+
+
+def _gameplan_refs(project_dir: Path) -> dict:
+    """{edict number: [(where, status)]} from the gameplan's phases and tasks."""
+    from . import gameplan as gp
+
+    try:
+        data = gp.load_gameplan(project_dir)
+    except (gp.GameplanError, json.JSONDecodeError):
+        return {}
+    refs: dict = {}
+
+    def add(entry, where):
+        if entry.get("edict"):
+            refs.setdefault(str(entry["edict"]).zfill(4), []).append((where, entry.get("status", "?")))
+
+    for phase in data.get("phases", []):
+        add(phase, f"phase {phase.get('id')}")
+    active = data.get("activePhase") or {}
+    for task in active.get("tasks", []):
+        add(task, f"task {task.get('id')}")
+    return refs
+
+
+def list_edicts(project_dir: Path):
+    from ..doctor import edicts_dir, load_edicts
+
+    edicts = load_edicts(project_dir)
+    if not edicts:
+        click.echo("No edicts in docs/edicts/.")
+        return
+    refs = _gameplan_refs(project_dir)
+    for e in edicts:
+        title = _edict_title(edicts_dir(project_dir) / e["file"])
+        tracked = refs.get(e["number"], [])
+        where = "; ".join(f"{w} [{s}]" for w, s in tracked) if tracked else "not in the gameplan"
+        click.echo(f"{e['number']}  {(e['status'] or '?'):<9} {title}  ({where})")
+
+
+def show_edict(project_dir: Path, number: str):
+    from ..doctor import edicts_dir, load_edicts
+
+    number = number.zfill(4)
+    matches = [e for e in load_edicts(project_dir) if e["number"] == number]
+    if not matches:
+        click.echo(f"No edict {number} in docs/edicts/.", err=True)
+        raise SystemExit(1)
+    for i, e in enumerate(matches):
+        if i:
+            click.echo("\n" + "-" * 72 + "\n")
+        click.echo((edicts_dir(project_dir) / e["file"]).read_text(encoding="utf-8"))
+    refs = _gameplan_refs(project_dir).get(number, [])
+    click.echo("Gameplan: " + ("; ".join(f"{w} [{s}]" for w, s in refs) if refs else "not referenced"))

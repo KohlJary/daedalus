@@ -60,6 +60,12 @@ class SectionsConfig:
 
 
 @dataclass
+class EdictsConfig:
+    """Edicts: design decisions handed to Daedalus as docs (edict 0005). Off unless a project opts in."""
+    enabled: bool = False
+
+
+@dataclass
 class DoctorConfig:
     """Thresholds for `daedalus doctor` (edict 0007)."""
     stale_commits: int = 10    # commits after the gameplan's last update before it counts as behind
@@ -92,7 +98,7 @@ SETTING_CHOICES = {
 }
 
 # Top-level config groups that template conditionals can read (and that project config may override)
-TEMPLATE_SETTING_GROUPS = ("git", "sections")
+TEMPLATE_SETTING_GROUPS = ("git", "sections", "edicts")
 
 # Groups a project may override in .daedalus/config.json
 PROJECT_SETTING_GROUPS = TEMPLATE_SETTING_GROUPS + ("doctor", "hooks", "reconstruct")
@@ -106,6 +112,7 @@ class DaedalusConfig:
     ariadne: AriadneConfig = field(default_factory=AriadneConfig)
     git: GitConfig = field(default_factory=GitConfig)
     sections: SectionsConfig = field(default_factory=SectionsConfig)
+    edicts: EdictsConfig = field(default_factory=EdictsConfig)
     doctor: DoctorConfig = field(default_factory=DoctorConfig)
     hooks: HooksConfig = field(default_factory=HooksConfig)
     reconstruct: ReconstructConfig = field(default_factory=ReconstructConfig)
@@ -176,6 +183,7 @@ def load_config() -> DaedalusConfig:
             ariadne=AriadneConfig(**data.get("ariadne", {})),
             git=GitConfig(**data.get("git", {})),
             sections=SectionsConfig(**data.get("sections", {})),
+            edicts=EdictsConfig(**data.get("edicts", {})),
             doctor=DoctorConfig(**data.get("doctor", {})),
             hooks=HooksConfig(**data.get("hooks", {})),
             reconstruct=ReconstructConfig(**data.get("reconstruct", {})),
@@ -196,6 +204,7 @@ def save_config(config: DaedalusConfig) -> None:
         "ariadne": asdict(config.ariadne),
         "git": asdict(config.git),
         "sections": asdict(config.sections),
+        "edicts": asdict(config.edicts),
         "doctor": asdict(config.doctor),
         "hooks": asdict(config.hooks),
         "reconstruct": asdict(config.reconstruct),
@@ -329,7 +338,34 @@ def get_template_settings(project_dir: Path, config: Optional[DaedalusConfig] = 
     base = {group: asdict(getattr(config, group)) for group in TEMPLATE_SETTING_GROUPS}
     overrides = {k: v for k, v in load_project_overrides(project_dir).items() if k in TEMPLATE_SETTING_GROUPS}
     merged = _deep_merge(base, overrides)
-    return {group: {k: v for k, v in merged[group].items() if k in base[group]} for group in base}
+    settings = {group: {k: v for k, v in merged[group].items() if k in base[group]} for group in base}
+    settings["edicts"]["enabled"], _ = edicts_setting(project_dir)
+    return settings
+
+
+def _global_config_raw() -> dict:
+    try:
+        data = json.loads(get_config_file().read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def edicts_setting(project_dir: Path) -> tuple[bool, str]:
+    """
+    Whether edicts are on for this project, and why: "project" or "global" when edicts.enabled is
+    set there, "detected" when it is set nowhere but docs/edicts/ exists (so an upgrade never
+    silently drops edicts from a project already using them), "default" otherwise (off).
+    """
+    project = load_project_overrides(project_dir).get("edicts", {})
+    if isinstance(project, dict) and "enabled" in project:
+        return bool(project["enabled"]), "project"
+    glob = _global_config_raw().get("edicts", {})
+    if isinstance(glob, dict) and "enabled" in glob:
+        return bool(glob["enabled"]), "global"
+    if (Path(project_dir) / "docs" / "edicts").is_dir():
+        return True, "detected"
+    return False, "default"
 
 
 def get_project_settings(project_dir: Path, group: str, config: Optional[DaedalusConfig] = None) -> dict:

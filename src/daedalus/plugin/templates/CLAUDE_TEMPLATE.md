@@ -188,7 +188,7 @@ The gameplan at `.daedalus/roadmap/gameplan.json` is the record of state: what i
 daedalus gameplan show                          # current phase + tasks
 daedalus gameplan phase list                    # all phases
 daedalus gameplan phase activate <id> --goal "..." --sequencing "..."
-daedalus gameplan task add <task_id> "Title" --details "..." [--edict NNNN]
+daedalus gameplan task add <task_id> "Title" --details "..."
 daedalus gameplan task status <task_id> done --resolution "..."
 daedalus gameplan pending                       # proposed updates; apply or drop each
 daedalus doctor                                 # has the plan fallen behind the code?
@@ -196,6 +196,7 @@ daedalus doctor                                 # has the plan fallen behind the
 
 Use the `gameplan` subagent for detailed queries. When a task ships, record the resolution - future sessions read it instead of re-deriving from git. Hooks and reconstructions never write the gameplan; they leave proposals in `daedalus gameplan pending` for you to apply or drop.
 
+<!-- DAEDALUS_IF edicts.enabled -->
 ## Edicts
 
 Design decisions from {{USER_NAME}} arrive as edicts in `docs/edicts/NNNN-slug.md` (format and lifecycle in `docs/edicts/README.md`, if the project has one). An edict says what to build and why; its acceptance criteria are what your work is judged against.
@@ -206,9 +207,12 @@ Design decisions from {{USER_NAME}} arrive as edicts in `docs/edicts/NNNN-slug.m
 - **Reference the edict in your PRs.** Open a PR per piece of work with `Implements edict NNNN` in the body, and make sure CI passes.
 - **If an edict seems mistaken, harmful, or underspecified, dissent.** Write `docs/edicts/dissents/NNNN-daedalus.md` stating what you object to, why, and what you'd do instead. Stop work on that edict and tell {{USER_NAME}}. Don't quietly drift from the spec or route around it.
 
-### Status handoff
+With edicts, `docs/status.md` also lists open dissents, and edicts carry the designs: the gameplan records which are built.
+<!-- /DAEDALUS_IF -->
 
-Each fact lives in one place: edicts carry designs, the gameplan carries progress, and `docs/status.md` carries the narrative. At the end of each working session, update and commit `docs/status.md` as a short note: what happened, open dissents, and anything the gameplan can't say. Don't restate phases, tasks, or which edicts are built; the committed gameplan already says that. Read it at session start along with the gameplan.
+## Status handoff
+
+Each fact lives in one place: the gameplan carries progress, and `docs/status.md` carries the narrative. At the end of each working session, update and commit `docs/status.md` as a short note: what happened, anything waiting on someone, and anything the gameplan can't say. Don't restate phases or tasks; the committed gameplan already says that. Read it at session start along with the gameplan.
 
 <!-- DAEDALUS_LOCAL end -->
 <!-- /DAEDALUS_LOCAL -->

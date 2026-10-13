@@ -141,11 +141,10 @@ def edicts_dir(project_dir: Path) -> Path:
 
 
 def edicts_enabled(project_dir: Path) -> bool:
-    """Project config `edicts.enabled` when set (edict 0005), otherwise whether docs/edicts/ exists."""
-    setting = load_project_overrides(project_dir).get("edicts", {})
-    if isinstance(setting, dict) and "enabled" in setting:
-        return bool(setting["enabled"])
-    return edicts_dir(project_dir).is_dir()
+    """edicts.enabled (edict 0005): project, then global config, else whether docs/edicts/ exists."""
+    from .config import edicts_setting
+
+    return edicts_setting(project_dir)[0]
 
 
 def load_edicts(project_dir: Path) -> list[dict]:

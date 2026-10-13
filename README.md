@@ -18,7 +18,7 @@ The pieces are named after the Labyrinth myth. Here's what each one actually doe
 | **Daedalus** | The collaborator identity Claude adopts, plus the workflow it follows (including the `exhale`/`inhale` session rituals) | Core |
 | **Memory** | Session summaries, decisions, and a project map in `.daedalus/`: the narrative around the gameplan | Core |
 | **Roadmap** | File-based task tracking that gameplan phases group into | Core |
-| **Edicts** | Design decisions handed to Daedalus as reviewed docs in `docs/edicts/` ([how they work](docs/edicts/README.md)) | New |
+| **Edicts** | Design decisions handed to Daedalus as reviewed docs in `docs/edicts/` ([how they work](docs/edicts/README.md)). Opt-in: `daedalus init --edicts` | Optional |
 | **Mind Palace** (Labyrinth) | Maps your codebase as navigable rooms for spatial-semantic navigation | Available |
 | **Theseus** | Code-health analysis that hunts complexity hot spots | Available |
 | **Momus** | A critic agent that checks claims against evidence | Available |
@@ -196,6 +196,18 @@ including `exhale` and `inhale`, the session rituals behind Context as Breath (e
 preserves the session's work before a breakpoint or `/compact`, inhale picks it back up. Projects add
 their own steps in CLAUDE.md, in a paragraph beginning "In this repo, exhaling cleanly means".
 
+### Edicts (opt-in)
+
+```bash
+daedalus init --edicts        # turn edicts on here; creates docs/edicts/README.md and dissents/
+daedalus edict list           # every edict, its status, and where the gameplan tracks it
+daedalus edict show 7         # one edict, plus the gameplan entries that cite it
+```
+
+Edicts are off by default, so CLAUDE.md doesn't tell Daedalus to wait for them in projects whose
+designs live in tickets or issues. A project that already has `docs/edicts/` keeps them (hydrate
+says so and suggests setting `edicts.enabled`).
+
 ### Gameplan and drift
 
 ```bash
@@ -278,6 +290,7 @@ Config is stored in platform-appropriate location:
 | `git.authorship` | `daedalus`: commits authored as Daedalus (`--author`). `user`: authored as your git identity, with a `- Daedalus` sign-off in the body | daedalus |
 | `sections.squash` | Include the Squash for Merge section in CLAUDE.md | true |
 | `sections.versioning` | Include the Versioning section in CLAUDE.md | true |
+| `edicts.enabled` | Use edicts: include the Edicts section in CLAUDE.md and track edicts in `doctor` (unset: on if `docs/edicts/` exists) | false |
 | `doctor.stale_commits` | Commits after the gameplan's last update before `doctor` reports it | 10 |
 | `doctor.stale_task_days` | Days a task may stay in progress before `doctor` reports it | 14 |
 | `hooks.session_start` | Register the session-start brief hook | true |
@@ -287,7 +300,7 @@ Config is stored in platform-appropriate location:
 | `reconstruct.diff_cap` | Max characters of patch per commit in the bundle | 8000 |
 | `reconstruct.evidence_paths` | Paths outside git to list as evidence (set in `.daedalus/config.json`) | none |
 
-The `git`, `sections`, `doctor`, `hooks`, and `reconstruct` settings can be overridden per project in
+The `git`, `sections`, `edicts`, `doctor`, `hooks`, and `reconstruct` settings can be overridden per project in
 `.daedalus/config.json` (`daedalus config --project KEY VALUE`), deep-merged over the global config.
 A work repo and a personal repo usually want different authorship.
 
