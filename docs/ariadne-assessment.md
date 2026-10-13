@@ -133,3 +133,61 @@ real-sized repo) hasn't been attempted. Keep both feature flags default-off
 until a dogfood period covers the dispatch/worker side too; this assessment is
 evidence the foundation is solid enough to be worth that next step, not a
 signal to flip the flags on yet.
+
+## Addendum (Workstream D): the gap this assessment didn't check for
+
+This assessment's verdict above was specifically about *mechanical*
+correctness — does the merged diff type-check, lint clean, pass tests. It
+deliberately didn't ask the harder question: does the diff actually implement
+what was asked? A confidently wrong implementation (right syntax, wrong
+business logic) would sail through every check above and land in a real
+commit with no one — human or model — ever having looked at whether it was
+*correct*, only whether it was *safe to merge*.
+
+Investigating that gap also surfaced a second, unrelated finding:
+`tracker.py`'s `RoadmapItem.status` has always had a `"review"` state and
+`complete_feature()` sets it, but nothing ever called `complete_feature()`
+(the orchestrator never wired into the tracker), and there was no way to
+resolve a feature back out of `"review"` at all. It was dead code from the
+start, not a regression.
+
+**What was added** (`src/daedalus/ariadne/semantic_review.py`,
+`diff_bus.py`'s new `NEEDS_REVIEW` status, and a new gate phase in
+`orchestrator.py`'s `process_pending()`/`resolve_and_commit()`):
+
+- A `SemanticReviewer` gate runs between conflict resolution and commit.
+  Default implementation (`LLMJudge`) is a single headless, tool-free model
+  call that judges a diff against its stated intent and returns
+  APPROVED/NEEDS_HUMAN/REJECTED.
+- **The judge can only unilaterally say yes.** APPROVED commits the diff;
+  anything else — including an explicit REJECTED verdict — routes to a new
+  `NEEDS_REVIEW` bus bucket for a human to resolve, never straight to a
+  terminal rejection. There's no revert/rollback machinery in Ariadne, so this
+  is a hard gate before commit, not a post-commit review.
+- Autonomy-mode policy reuses `Planner`'s existing three modes: `full` is
+  judge-gated only; `supervised` always queues for human review regardless of
+  verdict; `hybrid` is judge-gated plus a tag-based override
+  (`diff.metadata["tags"]` against a configurable `require_approval_tags`
+  list), mirroring `Planner._check_requires_approval`'s tag rule without
+  requiring full `Planner` integration.
+- `tracker.py` got the missing `approve_review()`/`reject_review()` transition
+  methods, and the orchestrator now actually calls into the tracker: diffs
+  routed to human review move their roadmap item to `"review"`; diffs that
+  clear the gate and commit move it all the way to `"done"`.
+- The human-review resolution path is deliberately just a CLI surface
+  (`ariadne review list|show|approve|reject`), not a UI. The intended UX is
+  conversational: the agent that spawned the worker runs `ariadne review
+  list --json`, shows the diff and the judge's reasoning inline in whatever
+  conversation it's already having with the human, states its own take and a
+  recommendation, and calls `approve`/`reject` once the human responds.
+- Tests (`tests/test_semantic_review_gate.py`, 14 new) cover the full
+  autonomy-mode policy table with a scripted (non-LLM) reviewer, the bus's
+  approve/reject resolution paths, the tracker wiring, and `LLMJudge`'s
+  fail-closed behavior when `claude-agent-sdk` isn't installed (this
+  environment) — never silently approving when the backend is unavailable.
+
+This doesn't change the Beta-in-spirit verdict above, but it closes the one
+gap in the pipeline that mechanical verification was never going to close:
+until this change, "verified" and "actually correct" were being treated as
+the same thing, and they aren't.
+

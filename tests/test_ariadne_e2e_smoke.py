@@ -28,6 +28,7 @@ import pytest
 
 from daedalus.ariadne.diff_bus import AriadneBus, Diff
 from daedalus.ariadne.orchestrator import AriadneOrchestrator
+from daedalus.ariadne.semantic_review import ReviewVerdict, SemanticReviewResult
 from daedalus.ariadne.verification import CausalSliceVerifier
 
 
@@ -75,6 +76,23 @@ def _noop_verifier(repo_path: Path) -> CausalSliceVerifier:
     )
 
 
+class _ApproveAllReviewer:
+    """
+    Stub SemanticReviewer for tests that only exercise the mechanical
+    verify/conflict/commit pipeline -- no real LLM calls. Approves everything
+    so those tests aren't incidentally exercising the semantic review gate
+    (that gate gets its own dedicated tests).
+    """
+
+    def review(self, diff, intent, verification=None) -> SemanticReviewResult:
+        return SemanticReviewResult(
+            diff_id=diff.id,
+            verdict=ReviewVerdict.APPROVED,
+            reasoning="stub reviewer: always approves",
+            reviewer="stub-approve-all",
+        )
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     repo_dir = tmp_path / "repo"
@@ -102,7 +120,7 @@ def test_non_overlapping_diffs_are_verified_merged_and_committed(repo, bus):
     bus.submit_diff(Diff.from_git_diff("work-a", "worker-1", diff_a, "Update a()"))
     bus.submit_diff(Diff.from_git_diff("work-b", "worker-2", diff_b, "Update b()"))
 
-    orchestrator = AriadneOrchestrator(repo, bus=bus, auto_commit=True)
+    orchestrator = AriadneOrchestrator(repo, bus=bus, auto_commit=True, semantic_reviewer=_ApproveAllReviewer())
     orchestrator.verifier = _noop_verifier(repo)
 
     result = orchestrator.process_pending()
@@ -147,7 +165,7 @@ def test_conflicting_diffs_are_blocked_from_auto_commit(repo, bus):
     bus.submit_diff(Diff.from_git_diff("work-a", "worker-1", diff_a, "Worker 1 edits a()"))
     bus.submit_diff(Diff.from_git_diff("work-b", "worker-2", diff_b, "Worker 2 edits a()"))
 
-    orchestrator = AriadneOrchestrator(repo, bus=bus, auto_commit=True)
+    orchestrator = AriadneOrchestrator(repo, bus=bus, auto_commit=True, semantic_reviewer=_ApproveAllReviewer())
     orchestrator.verifier = _noop_verifier(repo)
 
     result = orchestrator.process_pending()
@@ -177,7 +195,7 @@ def test_rejected_diff_is_excluded_from_the_commit(repo, bus, monkeypatch):
     bus.submit_diff(diff_obj_a)
     bus.submit_diff(diff_obj_b)
 
-    orchestrator = AriadneOrchestrator(repo, bus=bus, auto_commit=True)
+    orchestrator = AriadneOrchestrator(repo, bus=bus, auto_commit=True, semantic_reviewer=_ApproveAllReviewer())
     orchestrator.verifier = _noop_verifier(repo)
 
     real_verify = orchestrator.verifier.verify
@@ -200,3 +218,4 @@ def test_rejected_diff_is_excluded_from_the_commit(repo, bus, monkeypatch):
     assert "return 999" in (repo / "file_a.py").read_text(encoding="utf-8")
     # The rejected diff's change must not have been applied.
     assert "return 999" not in (repo / "file_b.py").read_text(encoding="utf-8")
+

@@ -48,6 +48,7 @@ class DiffStatus(str, Enum):
     VERIFIED = "verified"        # Passed causal slice check
     REJECTED = "rejected"        # Failed verification
     CONFLICTED = "conflicted"    # Has conflicts with other diffs
+    NEEDS_REVIEW = "needs_review"  # Mechanically sound, pending semantic review
     MERGED = "merged"            # Successfully merged into atomic commit
 
 
@@ -130,6 +131,9 @@ class Diff:
     # Verification results
     verification_result: Optional[Dict] = None
     verification_error: Optional[str] = None
+
+    # Semantic review results (judge's take + human resolution, if any)
+    semantic_review: Optional[Dict] = None
 
     # Timestamps
     submitted_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -288,6 +292,7 @@ class AriadneBus:
             "verified": root / "diffs" / "verified",
             "rejected": root / "diffs" / "rejected",
             "merged": root / "diffs" / "merged",
+            "needs_review": root / "diffs" / "needs_review",
             "conflicts": root / "conflicts",
             "merges": root / "merges",
             "commits": root / "commits",
@@ -328,7 +333,7 @@ class AriadneBus:
 
     def get_diff(self, diff_id: str) -> Optional[Diff]:
         """Get a diff by ID, checking all directories."""
-        for dir_name in ["pending", "verified", "rejected", "merged"]:
+        for dir_name in ["pending", "verified", "rejected", "merged", "needs_review"]:
             diff_file = self.dirs[dir_name] / f"{diff_id}.json"
             if diff_file.exists():
                 data = json.loads(diff_file.read_text(encoding="utf-8"))
@@ -354,12 +359,26 @@ class AriadneBus:
             diffs.append(Diff(**data))
         return sorted(diffs, key=lambda d: d.verified_at or d.submitted_at)
 
+    def list_needs_review_diffs(self) -> List[Diff]:
+        """
+        List diffs that passed mechanical verification but are waiting on
+        semantic review (judge flagged it, or autonomy mode requires a human)
+        before they can be merged.
+        """
+        diffs = []
+        for f in self.dirs["needs_review"].glob("*.json"):
+            data = json.loads(f.read_text(encoding="utf-8"))
+            data["status"] = DiffStatus(data["status"])
+            diffs.append(Diff(**data))
+        return sorted(diffs, key=lambda d: d.verified_at or d.submitted_at)
+
     def update_diff_status(
         self,
         diff_id: str,
         new_status: DiffStatus,
         verification_result: Optional[Dict] = None,
         error: Optional[str] = None,
+        semantic_review: Optional[Dict] = None,
     ) -> bool:
         """
         Update a diff's status, moving it to the appropriate directory.
@@ -371,7 +390,7 @@ class AriadneBus:
             return False
 
         # Remove from current location
-        for dir_name in ["pending", "verified", "rejected", "merged"]:
+        for dir_name in ["pending", "verified", "rejected", "merged", "needs_review"]:
             old_file = self.dirs[dir_name] / f"{diff_id}.json"
             if old_file.exists():
                 old_file.unlink()
@@ -383,6 +402,8 @@ class AriadneBus:
             diff.verification_result = verification_result
         if error:
             diff.verification_error = error
+        if semantic_review:
+            diff.semantic_review = semantic_review
         if new_status == DiffStatus.VERIFIED:
             diff.verified_at = datetime.now(timezone.utc).isoformat()
         if new_status == DiffStatus.MERGED:
@@ -395,6 +416,8 @@ class AriadneBus:
             target_dir = self.dirs["verified"]
         elif new_status == DiffStatus.MERGED:
             target_dir = self.dirs["merged"]
+        elif new_status == DiffStatus.NEEDS_REVIEW:
+            target_dir = self.dirs["needs_review"]
         else:
             target_dir = self.dirs["rejected"]
 
@@ -404,6 +427,48 @@ class AriadneBus:
             encoding="utf-8",
         )
         return True
+
+    # ========== Semantic Review Resolution ==========
+
+    def approve_review(self, diff_id: str, approved_by: str = "human") -> bool:
+        """
+        Resolve a NEEDS_REVIEW diff as approved.
+
+        Moves it back to VERIFIED so the next orchestration cycle includes it
+        in a commit. Used when a human (via the spawning agent's conversation)
+        signs off on a diff the judge flagged or that autonomy policy queued.
+        """
+        diff = self.get_diff(diff_id)
+        if not diff or diff.status != DiffStatus.NEEDS_REVIEW:
+            return False
+
+        review = dict(diff.semantic_review or {})
+        review["resolution"] = "approved"
+        review["resolved_by"] = approved_by
+        review["resolved_at"] = datetime.now(timezone.utc).isoformat()
+
+        return self.update_diff_status(
+            diff_id, DiffStatus.VERIFIED, semantic_review=review
+        )
+
+    def reject_review(self, diff_id: str, reason: str, rejected_by: str = "human") -> bool:
+        """Resolve a NEEDS_REVIEW diff as rejected. Moves it to REJECTED."""
+        diff = self.get_diff(diff_id)
+        if not diff or diff.status != DiffStatus.NEEDS_REVIEW:
+            return False
+
+        review = dict(diff.semantic_review or {})
+        review["resolution"] = "rejected"
+        review["resolved_by"] = rejected_by
+        review["resolution_reason"] = reason
+        review["resolved_at"] = datetime.now(timezone.utc).isoformat()
+
+        return self.update_diff_status(
+            diff_id,
+            DiffStatus.REJECTED,
+            error=reason,
+            semantic_review=review,
+        )
 
     # ========== Conflict Detection ==========
 
@@ -629,6 +694,7 @@ class AriadneBus:
                 "verified": len(list(self.dirs["verified"].glob("*.json"))),
                 "rejected": len(list(self.dirs["rejected"].glob("*.json"))),
                 "merged": len(list(self.dirs["merged"].glob("*.json"))),
+                "needs_review": len(list(self.dirs["needs_review"].glob("*.json"))),
             },
             "conflicts": {
                 "total": len(list(self.dirs["conflicts"].glob("*.json"))),
