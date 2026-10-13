@@ -1,7 +1,7 @@
 ---
 name: ariadne
 description: "Orchestration layer for parallel workers. Plan features, dispatch work packages, track progress, coordinate diffs, detect conflicts, verify changes."
-tools: Read, Bash, Glob
+tools: Read, Write, Edit, Bash, Glob, Grep
 model: haiku
 ---
 

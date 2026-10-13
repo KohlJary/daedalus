@@ -54,7 +54,6 @@ import json
 import yaml
 import uuid
 import os
-import fcntl
 
 
 class PackageStatus(str, Enum):

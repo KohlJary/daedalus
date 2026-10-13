@@ -209,7 +209,7 @@ class CausalSliceVerifier:
 
             # Apply diff
             diff_file = workspace / "changes.diff"
-            diff_file.write_text(diff.content)
+            diff_file.write_text(diff.content, encoding="utf-8")
 
             result = subprocess.run(
                 ["git", "apply", "--check", str(diff_file)],

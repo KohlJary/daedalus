@@ -88,13 +88,13 @@ def load_gameplan(project_dir: Path) -> dict[str, Any]:
         raise GameplanError(
             f"No gameplan found at {paths.gameplan_file}. Run: daedalus init"
         )
-    return json.loads(paths.gameplan_file.read_text())
+    return json.loads(paths.gameplan_file.read_text(encoding="utf-8"))
 
 
 def save_gameplan(project_dir: Path, data: dict[str, Any]) -> None:
     paths = GameplanPaths.for_project(project_dir)
     paths.roadmap_dir.mkdir(parents=True, exist_ok=True)
-    paths.gameplan_file.write_text(json.dumps(data, indent=2) + "\n")
+    paths.gameplan_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 def ensure_gameplan(project_dir: Path, force: bool = False) -> bool:

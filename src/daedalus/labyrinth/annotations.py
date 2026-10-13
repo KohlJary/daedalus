@@ -217,7 +217,7 @@ def scan_directory(
                 continue
 
             try:
-                content = file_path.read_text()
+                content = file_path.read_text(encoding="utf-8")
                 relative = str(file_path.relative_to(project_root))
 
                 annotated = parse_annotations(content, relative)

@@ -287,7 +287,7 @@ class Tracker:
         """Get a specific roadmap item."""
         item_file = self.items_path / f"{item_id}.json"
         if item_file.exists():
-            data = json.loads(item_file.read_text())
+            data = json.loads(item_file.read_text(encoding="utf-8"))
             return RoadmapItem.from_dict(data)
         return None
 
@@ -315,7 +315,7 @@ class Tracker:
     def _save_item(self, item: RoadmapItem) -> None:
         """Save an item to disk."""
         item_file = self.items_path / f"{item.id}.json"
-        item_file.write_text(json.dumps(item.to_dict(), indent=2))
+        item_file.write_text(json.dumps(item.to_dict(), indent=2), encoding="utf-8")
         self._update_index(item)
 
     def _update_index(self, item: RoadmapItem) -> None:
@@ -352,18 +352,18 @@ class Tracker:
     def _load_index(self) -> List[Dict]:
         """Load the index."""
         if self.index_path.exists():
-            return json.loads(self.index_path.read_text())
+            return json.loads(self.index_path.read_text(encoding="utf-8"))
         return []
 
     def _save_index(self, index: List[Dict]) -> None:
         """Save the index."""
-        self.index_path.write_text(json.dumps(index, indent=2))
+        self.index_path.write_text(json.dumps(index, indent=2), encoding="utf-8")
 
     def _load_all_items(self) -> List[RoadmapItem]:
         """Load all items from disk."""
         items = []
         for item_file in self.items_path.glob("*.json"):
-            data = json.loads(item_file.read_text())
+            data = json.loads(item_file.read_text(encoding="utf-8"))
             items.append(RoadmapItem.from_dict(data))
         return items
 

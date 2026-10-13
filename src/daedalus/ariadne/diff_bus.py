@@ -28,7 +28,6 @@ Directory structure:
 
 import json
 import os
-import fcntl
 import hashlib
 import subprocess
 from pathlib import Path
@@ -304,7 +303,7 @@ class AriadneBus:
             "version": "1.0",
             "orchestrator_pid": os.getpid(),
         }
-        (self.root / "manifest.json").write_text(json.dumps(manifest, indent=2))
+        (self.root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     def is_initialized(self) -> bool:
         """Check if bus is initialized."""
@@ -323,7 +322,7 @@ class AriadneBus:
         # Convert to dict, handling CausalChain if present
         diff_dict = asdict(diff)
 
-        diff_file.write_text(json.dumps(diff_dict, indent=2, default=str))
+        diff_file.write_text(json.dumps(diff_dict, indent=2, default=str), encoding="utf-8")
         return diff.id
 
     def get_diff(self, diff_id: str) -> Optional[Diff]:
@@ -331,7 +330,7 @@ class AriadneBus:
         for dir_name in ["pending", "verified", "rejected"]:
             diff_file = self.dirs[dir_name] / f"{diff_id}.json"
             if diff_file.exists():
-                data = json.loads(diff_file.read_text())
+                data = json.loads(diff_file.read_text(encoding="utf-8"))
                 data["status"] = DiffStatus(data["status"])
                 return Diff(**data)
         return None
@@ -340,7 +339,7 @@ class AriadneBus:
         """List all pending diffs."""
         diffs = []
         for f in self.dirs["pending"].glob("*.json"):
-            data = json.loads(f.read_text())
+            data = json.loads(f.read_text(encoding="utf-8"))
             data["status"] = DiffStatus(data["status"])
             diffs.append(Diff(**data))
         return sorted(diffs, key=lambda d: d.submitted_at)
@@ -349,7 +348,7 @@ class AriadneBus:
         """List all verified diffs ready for merge."""
         diffs = []
         for f in self.dirs["verified"].glob("*.json"):
-            data = json.loads(f.read_text())
+            data = json.loads(f.read_text(encoding="utf-8"))
             data["status"] = DiffStatus(data["status"])
             diffs.append(Diff(**data))
         return sorted(diffs, key=lambda d: d.verified_at or d.submitted_at)
@@ -396,7 +395,8 @@ class AriadneBus:
 
         diff_dict = asdict(diff)
         (target_dir / f"{diff_id}.json").write_text(
-            json.dumps(diff_dict, indent=2, default=str)
+            json.dumps(diff_dict, indent=2, default=str),
+            encoding="utf-8",
         )
         return True
 
@@ -475,13 +475,13 @@ class AriadneBus:
         conflict_dict = asdict(conflict)
         conflict_dict["conflict_type"] = conflict.conflict_type.value
         conflict_dict["suggested_strategy"] = conflict.suggested_strategy.value
-        conflict_file.write_text(json.dumps(conflict_dict, indent=2))
+        conflict_file.write_text(json.dumps(conflict_dict, indent=2), encoding="utf-8")
 
     def list_conflicts(self, resolved: Optional[bool] = None) -> List[Conflict]:
         """List conflicts, optionally filtered by resolved status."""
         conflicts = []
         for f in self.dirs["conflicts"].glob("*.json"):
-            data = json.loads(f.read_text())
+            data = json.loads(f.read_text(encoding="utf-8"))
             data["conflict_type"] = ConflictType(data["conflict_type"])
             data["suggested_strategy"] = MergeStrategy(data["suggested_strategy"])
             conflict = Conflict(**data)
@@ -502,13 +502,13 @@ class AriadneBus:
         if not conflict_file.exists():
             return False
 
-        data = json.loads(conflict_file.read_text())
+        data = json.loads(conflict_file.read_text(encoding="utf-8"))
         data["resolved"] = True
         data["resolution"] = resolution
         data["suggested_strategy"] = strategy.value
         data["resolved_at"] = datetime.now(timezone.utc).isoformat()
 
-        conflict_file.write_text(json.dumps(data, indent=2))
+        conflict_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
         return True
 
     # ========== Merge Operations ==========
@@ -564,7 +564,7 @@ class AriadneBus:
 
         # Save merge result
         merge_file = self.dirs["merges"] / f"{merge_id}.json"
-        merge_file.write_text(json.dumps(asdict(result), indent=2))
+        merge_file.write_text(json.dumps(asdict(result), indent=2), encoding="utf-8")
 
         return result
 
@@ -572,7 +572,7 @@ class AriadneBus:
         """Get a merge result by ID."""
         merge_file = self.dirs["merges"] / f"{merge_id}.json"
         if merge_file.exists():
-            data = json.loads(merge_file.read_text())
+            data = json.loads(merge_file.read_text(encoding="utf-8"))
             return MergeResult(**data)
         return None
 
@@ -593,13 +593,13 @@ class AriadneBus:
         commit_dir.mkdir(parents=True, exist_ok=True)
 
         # Write combined diff
-        (commit_dir / "combined.diff").write_text(merge_result.combined_diff)
+        (commit_dir / "combined.diff").write_text(merge_result.combined_diff, encoding="utf-8")
 
         # Write commit message
         full_message = f"{merge_result.commit_message}\n\nMerged diffs:\n"
         for diff_id in merge_result.diff_ids:
             full_message += f"  - {diff_id}\n"
-        (commit_dir / "message.md").write_text(full_message)
+        (commit_dir / "message.md").write_text(full_message, encoding="utf-8")
 
         # Write verification info
         verification = {
@@ -609,7 +609,7 @@ class AriadneBus:
             "repo_path": str(repo_path),
             "verification_passed": merge_result.verification_passed,
         }
-        (commit_dir / "verification.json").write_text(json.dumps(verification, indent=2))
+        (commit_dir / "verification.json").write_text(json.dumps(verification, indent=2), encoding="utf-8")
 
         return commit_dir
 
@@ -690,7 +690,7 @@ def main():
                 print(f"{d.id}: {d.description[:50]} (verified: {d.verified_at})")
         elif args.action == "rejected":
             for f in bus.dirs["rejected"].glob("*.json"):
-                data = json.loads(f.read_text())
+                data = json.loads(f.read_text(encoding="utf-8"))
                 print(f"{data['id']}: {data.get('verification_error', 'unknown error')}")
 
     elif args.command == "conflicts":

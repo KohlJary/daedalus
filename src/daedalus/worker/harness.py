@@ -33,7 +33,7 @@ def load_icarus_identity() -> str:
         # Load from package
         files = importlib.resources.files("daedalus.identity.data.agents")
         identity_file = files.joinpath("icarus.md")
-        return identity_file.read_text()
+        return identity_file.read_text(encoding="utf-8")
     except Exception as e:
         # Fallback to minimal identity
         return """# Icarus

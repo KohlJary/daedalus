@@ -57,11 +57,11 @@ def _ensure_global_identity():
 
     identity_md = config_dir / "identity.md"
     if not identity_md.exists():
-        identity_md.write_text(GLOBAL_IDENTITY_MD)
+        identity_md.write_text(GLOBAL_IDENTITY_MD, encoding="utf-8")
 
     identity_json = config_dir / "identity.json"
     if not identity_json.exists():
-        identity_json.write_text(GLOBAL_IDENTITY_JSON)
+        identity_json.write_text(GLOBAL_IDENTITY_JSON, encoding="utf-8")
 
 
 def init_project(project_dir: Path, force: bool = False):
@@ -86,7 +86,7 @@ def init_project(project_dir: Path, force: bool = False):
     for filename, content in memory_files.items():
         file_path = memory_dir / filename
         if not file_path.exists() or force:
-            file_path.write_text(content)
+            file_path.write_text(content, encoding="utf-8")
             click.echo(f"  Created {filename}")
 
     # Create roadmap directory
@@ -94,7 +94,7 @@ def init_project(project_dir: Path, force: bool = False):
     roadmap_dir.mkdir(exist_ok=True)
     index_file = roadmap_dir / "index.json"
     if not index_file.exists() or force:
-        index_file.write_text('{"items": [], "version": 1}')
+        index_file.write_text('{"items": [], "version": 1}', encoding="utf-8")
         click.echo("  Created roadmap/index.json")
 
     from . import gameplan as gp
@@ -222,7 +222,7 @@ def list_roadmap_items(
         click.echo("No roadmap found. Run: daedalus init")
         return
 
-    data = json.loads(roadmap_file.read_text())
+    data = json.loads(roadmap_file.read_text(encoding="utf-8"))
     items = data.get("items", [])
 
     # Filter
@@ -269,7 +269,7 @@ def add_roadmap_item(
         click.echo("No roadmap found. Run: daedalus init")
         return
 
-    data = json.loads(roadmap_file.read_text())
+    data = json.loads(roadmap_file.read_text(encoding="utf-8"))
 
     new_item = {
         "id": str(uuid.uuid4()),
@@ -283,7 +283,7 @@ def add_roadmap_item(
     }
 
     data["items"].append(new_item)
-    roadmap_file.write_text(json.dumps(data, indent=2))
+    roadmap_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     click.echo(f"Added: {title} ({new_item['id'][:8]})")
 

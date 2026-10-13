@@ -121,7 +121,7 @@ def load_session() -> SessionStats:
     """Load current session from disk, or create new."""
     if SESSION_FILE.exists():
         try:
-            data = json.loads(SESSION_FILE.read_text())
+            data = json.loads(SESSION_FILE.read_text(encoding="utf-8"))
             stats = SessionStats(
                 session_id=data.get("session_id", "unknown"),
                 started_at=data.get("started_at", datetime.now().isoformat()),
@@ -142,7 +142,7 @@ def load_session() -> SessionStats:
 def save_session(stats: SessionStats) -> None:
     """Persist session to disk."""
     SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SESSION_FILE.write_text(json.dumps(asdict(stats), indent=2))
+    SESSION_FILE.write_text(json.dumps(asdict(stats), indent=2), encoding="utf-8")
 
 
 def record_operation(
@@ -282,7 +282,7 @@ def main():
         if args.stdin:
             content = sys.stdin.read()
         elif args.file:
-            content = Path(args.file).read_text()
+            content = Path(args.file).read_text(encoding="utf-8")
         elif args.content:
             content = args.content
         else:
@@ -318,7 +318,7 @@ def main():
         if args.stdin:
             content = sys.stdin.read()
         elif args.file:
-            content = Path(args.file).read_text()
+            content = Path(args.file).read_text(encoding="utf-8")
         elif args.content:
             content = args.content
         else:

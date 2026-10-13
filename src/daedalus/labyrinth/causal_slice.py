@@ -270,7 +270,7 @@ class SliceBundle:
                 continue
 
             try:
-                content = full_path.read_text()
+                content = full_path.read_text(encoding="utf-8")
                 file_lines = content.splitlines()
 
                 # Find dataclass patterns
