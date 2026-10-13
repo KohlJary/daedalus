@@ -29,5 +29,13 @@ be cast: `LLMJudge()` is constructed with no model and the worker harness's
 
 ## Non-goals
 - No per-task or per-complexity routing yet. One model per role.
-- No non-Anthropic backends.
+- No backends other than the Claude Agent SDK in this edict. Local and other
+  backends are a separate edict (proposal: #16); model casting should not
+  rule them out.
 - No automatic escalation from worker model to judge model.
+
+## Amendments
+- 2026-10-13: the non-goal "No non-Anthropic backends" narrowed to "none in
+  this edict". As written it ruled out local models for workers and judge,
+  which the cheap-workers bet needs. Requested by Kohl in conversation; local
+  backends get their own edict.

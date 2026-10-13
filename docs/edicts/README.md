@@ -28,6 +28,9 @@ Checkable statements. This is what the judge reviews against.
 
 ## Non-goals
 What this deliberately does not do.
+
+## Amendments
+(Only once amended.) Date, what changed, why.
 ```
 
 ## Lifecycle
@@ -57,6 +60,22 @@ The full loop:
 4. That PR can be reviewed against the edict's acceptance criteria from chat
    before Kohl merges.
 5. When everything for the edict has merged, its status moves to `done`.
+
+## Amendments
+
+An accepted or proposed edict can change, but only the way it was made:
+
+- **Kohl initiates, Daedalus may draft.** Daedalus changes an edict's text
+  only when Kohl asks for it in conversation. The PR quotes the request and
+  changes only what was asked.
+- **Merging is acceptance**, as for a new edict.
+- **The edict records its history** in an `Amendments` section: date, what
+  changed, and why. The judge grades against the current text; the log says
+  when the criteria moved.
+- **Daedalus's own objections are dissents, not amendments.** If Daedalus
+  thinks an edict is wrong, it writes a dissent and stops. Daedalus never
+  edits criteria it will be graded against on its own initiative.
+- The only status change Daedalus makes is `accepted` to `done`.
 
 ## Status handoff
 
