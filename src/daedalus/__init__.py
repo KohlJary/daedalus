@@ -7,7 +7,13 @@ A plugin ecosystem for Claude Code workflows, including:
 - Identity framework: Worker instances with soul
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version as _version
+
+# Single source of truth is pyproject.toml; this was hardcoded and drifted twice
+try:
+    __version__ = _version("daedalus-cli")
+except PackageNotFoundError:  # running from a source tree that isn't installed
+    __version__ = "0.0.0+unknown"
 
 # Re-export key labyrinth components
 from .labyrinth import (
