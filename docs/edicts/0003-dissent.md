@@ -1,5 +1,5 @@
 # Edict 0003: Dissent
-Status: proposed
+Status: accepted
 
 ## Intent
 Any agent working an edict (Daedalus, an Icarus worker, the semantic judge) may

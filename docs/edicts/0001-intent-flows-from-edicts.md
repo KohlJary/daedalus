@@ -1,5 +1,5 @@
 # Edict 0001: Intent flows from edicts
-Status: proposed
+Status: acccepted
 Depends on: Ariadne semantic review gate (`feat/semantic-review-gate`, currently
 merged into `feat/local-slots-config`, not yet on `main`)
 
