@@ -82,7 +82,7 @@ def fake_sdk(monkeypatch):
         yield types.SimpleNamespace(type="result", result="done")
 
     monkeypatch.setattr(harness, "HAS_AGENT_SDK", True)
-    monkeypatch.setattr(harness, "query", fake_query)
+    monkeypatch.setattr(harness, "query", fake_query, raising=False)  # absent without the SDK
     monkeypatch.setattr(harness, "ClaudeAgentOptions", lambda **kw: types.SimpleNamespace(**kw))
     monkeypatch.setattr(harness, "HookMatcher", lambda **kw: types.SimpleNamespace(**kw))
     return types.SimpleNamespace(scripts=scripts, calls=calls)
