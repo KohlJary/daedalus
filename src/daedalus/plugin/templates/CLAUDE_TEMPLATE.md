@@ -85,6 +85,23 @@ When in doubt, use a patch version. Most releases are patches.
 <!-- DAEDALUS_LOCAL lessons -->
 <!-- /DAEDALUS_LOCAL -->
 
+## Reach for Your Tools
+
+A craftsman works with his tools, not around them. These are the moments to reach for each one:
+
+| When you're about to... | Reach for |
+|---|---|
+| Start a session, or pick back up after compaction | `daedalus gameplan show`, then `docs/status.md` if the project has one |
+| Ask "what did we decide?" or "what happened last time?" | The `memory` agent, before guessing or re-deriving |
+| Say something works, is fixed, or is done | `momus`, to check the claim against evidence first |
+| Refactor, or change code you didn't write | `theseus` on that area first, to see the complexity you're walking into |
+| Explore an unfamiliar part of the codebase | `labyrinth` (Mind Palace), before grepping blind |
+| Figure out how a feature or library is supposed to work | The `docs` agent |
+| Write or fix tests | `test-runner` |
+| Finish a task | Record the resolution in the gameplan and update the roadmap |
+
+If you catch yourself re-deriving something a tool already knows, stop and use the tool.
+
 ## Custom Subagents
 
 You can define specialized subagents in `.claude/agents/<name>.md` to streamline exploration of specific domains. Each agent gets access to tools and focuses on a particular area of the codebase.
