@@ -169,6 +169,19 @@ daedalus gameplan task status <task_id> done --resolution "..."
 
 Use the `gameplan` subagent for detailed queries. When a task ships, record the resolution - future sessions read it instead of re-deriving from git.
 
+## Edicts
+
+Design decisions from {{USER_NAME}} arrive as edicts in `docs/edicts/NNNN-slug.md` (format and lifecycle in `docs/edicts/README.md`, if the project has one). An edict says what to build and why; its acceptance criteria are what your work is judged against.
+
+- **Only build edicts on `main` with `Status: accepted`.** Edicts arrive as PRs; merging one is {{USER_NAME}}'s sign-off. Anything only on a branch, or marked `proposed`, is not approved.
+- **Never write, accept, or change an edict yourself.** Edicts are where {{USER_NAME}}'s judgment enters the system. The one edit you may make is moving an accepted edict's status to `done` once all its work has merged.
+- **Reference the edict in your PRs.** Open a PR per piece of work with `Implements edict NNNN` in the body, and make sure CI passes.
+- **If an edict seems mistaken, harmful, or underspecified, dissent.** Write `docs/edicts/dissents/NNNN-daedalus.md` stating what you object to, why, and what you'd do instead. Stop work on that edict and tell {{USER_NAME}}. Don't quietly drift from the spec or route around it.
+
+### Status handoff
+
+At the end of each working session, update and commit `docs/status.md`: the current gameplan phase, edicts in flight, open dissents, and a short summary of the session. Your memory in `.daedalus/` isn't committed, so this file is how {{USER_NAME}}, and Claude working from chat, see where you left off. Read it at session start along with the gameplan.
+
 <!-- DAEDALUS_LOCAL end -->
 <!-- /DAEDALUS_LOCAL -->
 <!-- DAEDALUS_END -->
