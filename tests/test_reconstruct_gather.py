@@ -171,3 +171,15 @@ def test_bundle_names_do_not_collide(repo, monkeypatch):
     a = write_bundle(repo, gather(repo))
     b = write_bundle(repo, gather(repo, author="t"))
     assert a != b and a.exists() and b.exists()
+
+
+
+def test_dated_and_author_windows_keep_roadmap_history(repo):
+    commit(repo, "Mark the detector done on the roadmap", {".daedalus/roadmap/index.json": json.dumps(
+        {"items": [{"id": "r1", "title": "Detector", "status": "done"}]})})
+    today = subprocess.run(["git", "log", "-1", "--format=%as"], cwd=repo, capture_output=True,
+                           text=True).stdout.strip()
+    dated = gather(repo, since=today)
+    assert '"status": "done"' in dated.roadmap_diff["committed"]
+    assert gather(repo, author="nobody-by-this-name") is None
+    assert '"status": "done"' in gather(repo, author="t").roadmap_diff["committed"]

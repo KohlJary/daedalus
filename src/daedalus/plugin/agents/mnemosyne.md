@@ -22,7 +22,8 @@ checked it.
 A bundle at `.daedalus/reconstruction/bundle-*.json` (schema `daedalus.reconstruction-bundle/1`):
 
 - `window`: the period (`from`, `from_date`, `to`, and maybe `until`, `author`). Copy it into the
-  proposal unchanged.
+  proposal unchanged, and put the bundle's path in the proposal's `bundle` field: the check takes
+  the window from the bundle, not from you.
 - `commits`: every non-merge commit in the window, oldest first, with `subject`, `body`,
   `author`, `files`, `lines_changed`, and a `score` of how much the message says. Commits with a
   low score carry their `diff`, because their message can't be trusted to describe them. A few
@@ -47,6 +48,7 @@ window has one), in schema `daedalus.reconstruction/1`:
 ```json
 {
   "schema": "daedalus.reconstruction/1",
+  "bundle": ".daedalus/reconstruction/bundle-....json",
   "window": {"...": "copied from the bundle"},
   "evidence_scope": "git",
   "updates": [
@@ -65,6 +67,7 @@ window has one), in schema `daedalus.reconstruction/1`:
     {"item": "<roadmap id>", "current_status": "backlog", "proposed_status": "done",
      "confidence": "shown", "basis": "messages", "commits": ["<sha>"]}
   ],
+  "roadmap_unchanged": ["<every other open roadmap item id>"],
   "conflicts": [{"about": "...", "sources": ["<sha>", "<sha or path:line>"]}],
   "context_commits": [],
   "files": []
@@ -94,18 +97,23 @@ These come from the first reconstruction, which got every hash right and still m
    `cheapest_check`: the smallest concrete step that would settle it (a test to run, a log to
    read, a person to ask).
 7. **Check the roadmap item by item.** Go through every entry in `open_roadmap_items` and compare
-   it with the commits. Don't stop at the ones you happen to notice. Propose a status change only
-   where a commit shows it.
+   it with the commits. Each one ends up either in `roadmap` (a change the evidence shows) or in
+   `roadmap_unchanged` (checked, no change shown); the check fails if any is missing. Propose
+   `done` for a roadmap item only on `shown` evidence.
 8. **Account for every commit.** Each commit in the window should be cited by some entry. A
    commit that belongs to no task still belongs somewhere: a phase's `commits`, or a small
    housekeeping task. `daedalus reconstruct check` lists the ones you missed.
 9. **Name what you couldn't see.** If `evidence_scope` is `git` and the work clearly produced
    things outside git (pilot runs, deployments, data), say so in the relevant notes rather than
    calling it silent.
-10. **Group by what the work was, not by release.** A release can bundle unrelated work. Phase
+10. **New phases get new ids.** A task inside a proposed phase must not reuse the id of a task
+    already in the gameplan; a change to an existing task belongs in `updates`, where the `done`
+    rule applies.
+11. **Group by what the work was, not by release.** A release can bundle unrelated work. Phase
     names you invent are fine, but say so in the phase notes ("name inferred"); use the
     project's own names where commits use them.
-11. **Files you reference must exist.** Put them in `files` and double-check the paths.
+12. **Files you reference must exist.** Put them in `files` and double-check the paths. A
+    hex-looking word in prose (like `deadbeef1`) is read as a commit hash; rephrase it.
 
 ## Process
 

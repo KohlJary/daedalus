@@ -15,7 +15,7 @@ from click.testing import CliRunner
 from daedalus import config as config_module
 from daedalus.cli import gameplan as gp
 from daedalus.cli.main import main
-from daedalus.reconstruct import PROPOSAL_SCHEMA, check_proposal
+from daedalus.reconstruct import PROPOSAL_SCHEMA, check_proposal, gather, write_bundle
 
 ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
        "GIT_COMMITTER_EMAIL": "t@t", "PATH": os.environ["PATH"]}
@@ -49,18 +49,25 @@ def repo(tmp_path):
     gp.add_task(data, "T-a1", "Trace milestone deletion")
     gp.add_task(data, "T-a6", "Coherence review")
     gp.save_gameplan(tmp_path, data)
+    (tmp_path / ".daedalus/roadmap/index.json").write_text(json.dumps(
+        {"items": [{"id": "r1", "title": "Release", "status": "backlog"},
+                   {"id": "r2", "title": "Something else", "status": "backlog"}]}))
     shas["gameplan"] = commit(tmp_path, "gameplan")
     shas["fix"] = commit(tmp_path, "fix(agent): decision filter must not delete milestone files",
                          {"src/agent.py": "x = 1\n", "analyses/048.md": "# 048\n"})
     shas["release"] = commit(tmp_path, "release 0.12.1")
     shas["diagrams"] = commit(tmp_path, "feat(diagrams): registry")
+    bundle = gather(tmp_path)
+    shas["_bundle"] = str(write_bundle(tmp_path, bundle).relative_to(tmp_path))
+    shas["_window"] = bundle.window
     return tmp_path, shas
 
 
 def proposal(shas, **overrides):
     base = {
         "schema": PROPOSAL_SCHEMA,
-        "window": {"from": shas["gameplan"], "from_date": "2026-05-18", "to": shas["diagrams"]},
+        "bundle": shas["_bundle"],
+        "window": dict(shas["_window"]),
         "evidence_scope": "git",
         "updates": [{
             "task": "T-a1", "proposed_status": "needs-confirmation", "confidence": "inferred", "basis": "both",
@@ -75,6 +82,7 @@ def proposal(shas, **overrides):
         }],
         "roadmap": [{"item": "r1", "current_status": "backlog", "proposed_status": "done",
                      "confidence": "shown", "basis": "messages", "commits": [shas["release"]]}],
+        "roadmap_unchanged": ["r2"],
         "conflicts": [],
         "context_commits": [],
         "files": [],
@@ -97,7 +105,7 @@ def test_valid_proposal_passes_with_full_coverage(repo):
 
 def test_uncited_commits_are_reported_by_hash(repo):
     path, shas = repo
-    p = proposal(shas, roadmap=[])
+    p = proposal(shas, roadmap=[], roadmap_unchanged=["r1", "r2"])
     result = check_proposal(path, p)
     assert result.errors == [] and result.uncited == [shas["release"]]
 
@@ -182,3 +190,89 @@ def test_cli_exit_codes(repo, monkeypatch, tmp_path_factory):
     good.write_text(json.dumps(bad))
     result = CliRunner().invoke(main, ["reconstruct", "check", str(good)])
     assert result.exit_code == 1 and "1 error(s)" in result.output
+
+
+
+# ---------- holes Momus found in the first build ----------
+
+
+def test_window_comes_from_the_bundle(repo):
+    path, shas = repo
+    p = proposal(shas)
+    p["window"] = {"from": None, "from_date": "2000-01-01", "to": shas["diagrams"]}   # widened by hand
+    p["roadmap"][0]["commits"] = [shas["before"]]
+    errs = errors(path, p)
+    assert any("window does not match the bundle" in e for e in errs)
+    assert any("outside the window" in e for e in errs)
+
+    p = proposal(shas, bundle=".daedalus/reconstruction/nope.json")
+    assert any("is missing or not a gather bundle" in e for e in errors(path, p))
+
+
+def test_phase_task_cannot_reuse_an_existing_task_id(repo):
+    path, shas = repo
+    p = proposal(shas)
+    p["phases"][0]["tasks"].append({"id": "T-a1", "title": "sneaky", "status": "done",
+                                    "confidence": "inferred", "basis": "both", "commits": [shas["fix"]]})
+    assert any("task id 'T-a1' already exists" in e for e in errors(path, p))
+
+
+def test_roadmap_done_needs_shown_and_an_existing_item(repo):
+    path, shas = repo
+    p = proposal(shas)
+    p["roadmap"][0]["confidence"] = "inferred"
+    assert any("roadmap[0] (r1): proposes done on 'inferred'" in e for e in errors(path, p))
+    p = proposal(shas)
+    p["roadmap"].append({"item": "r9", "current_status": "backlog", "proposed_status": "ready",
+                         "confidence": "shown", "basis": "messages", "commits": [shas["fix"]]})
+    assert any("roadmap item 'r9' is not in the roadmap" in e for e in errors(path, p))
+
+
+def test_every_open_roadmap_item_is_accounted_for(repo):
+    path, shas = repo
+    p = proposal(shas, roadmap_unchanged=[])
+    assert any("1 open roadmap item(s) in the bundle are neither" in e and "r2" in e for e in errors(path, p))
+
+
+def test_conflict_hashes_are_validated_and_not_coverage(repo):
+    path, shas = repo
+    p = proposal(shas, roadmap=[], roadmap_unchanged=["r1", "r2"],
+                 conflicts=[{"about": "x", "sources": ["deadbee1234", shas["release"]]}])
+    result = check_proposal(path, p)
+    assert any("conflicts[0]: deadbee1234 is not a commit" in e for e in result.errors)
+    assert shas["release"] in result.uncited
+
+
+def test_shown_phase_needs_commits_somewhere(repo):
+    path, shas = repo
+    p = proposal(shas)
+    p["phases"][0]["commits"] = []
+    p["phases"][0]["tasks"][0].update(confidence="unknown", commits=[], resolution=None)
+    assert any("neither the phase nor its tasks cite a commit" in e for e in errors(path, p))
+
+
+def test_no_false_alarm_for_paths_with_spaces(repo):
+    path, shas = repo
+    (path / "docs").mkdir()
+    (path / "docs/my notes.md").write_text("x")
+    git(path, "add", "-A")
+    p = proposal(shas, description="Background in docs/my notes.md.")
+    assert errors(path, p) == []
+
+
+def test_malformed_entries_are_errors_not_crashes(repo):
+    path, shas = repo
+    p = proposal(shas, updates=["x"], phases=[{"id": "p", "title": "t", "confidence": "unknown", "tasks": "no"}])
+    errs = errors(path, p)
+    assert "updates must be a list of objects" in errs
+    assert "phases[0].tasks must be a list of objects" in errs
+    assert errors(path, ["not", "a", "dict"]) == ["the proposal must be a JSON object"]
+
+
+def test_stale_bundle_is_detected(repo):
+    path, shas = repo
+    bundle_file = path / shas["_bundle"]
+    data = json.loads(bundle_file.read_text())
+    data["commits"] = data["commits"][1:]
+    bundle_file.write_text(json.dumps(data))
+    assert any("no longer match the repository" in e for e in errors(path, proposal(shas)))

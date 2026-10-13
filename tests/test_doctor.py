@@ -112,6 +112,7 @@ def test_wonderland_like(wonderland_like):
     assert names(findings) == ["commits-after-gameplan", "stale-task"]
     by_name = {f.name: f.message for f in findings}
     assert by_name["commits-after-gameplan"].startswith("12 commits since the gameplan was last updated")
+    assert "run /reconstruct" in by_name["commits-after-gameplan"]
     assert "T-a1" in by_name["stale-task"] and "148 days" in by_name["stale-task"]
     assert hints == []
 

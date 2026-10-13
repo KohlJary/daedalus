@@ -20,10 +20,7 @@ def run(path, monkeypatch, *args, code=0):
 
 @pytest.fixture
 def with_roadmap(repo):
-    path, shas = repo
-    (path / ".daedalus/roadmap/index.json").write_text(json.dumps(
-        {"items": [{"id": "r1", "title": "Release", "status": "backlog"}]}))
-    return path, shas
+    return repo
 
 
 def test_import_apply_all_kinds(with_roadmap, monkeypatch, tmp_path_factory):
@@ -75,12 +72,12 @@ def test_reimport_is_idempotent_and_drop_works(with_roadmap, monkeypatch, tmp_pa
     assert gp.find_phase(gp.load_gameplan(path), "p21-diagrams") is None
 
 
-def test_roadmap_item_missing_fails_cleanly(repo, monkeypatch, tmp_path_factory):
+def test_roadmap_item_removed_after_import_fails_cleanly(repo, monkeypatch, tmp_path_factory):
     path, shas = repo
-    (path / ".daedalus/roadmap/index.json").write_text(json.dumps({"items": []}))
     f = tmp_path_factory.mktemp("p") / "proposal.json"
     f.write_text(json.dumps(proposal(shas, phases=[], updates=[])))
     run(path, monkeypatch, "gameplan", "pending", "import", str(f))
+    (path / ".daedalus/roadmap/index.json").write_text(json.dumps({"items": []}))
     out = run(path, monkeypatch, "gameplan", "pending", "apply", "all")
     assert "Roadmap item 'r1' not found" in out
     assert len(gp.load_pending(path)) == 1                     # nothing applied, nothing lost
