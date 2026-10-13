@@ -216,3 +216,23 @@ def test_worker_model_reaches_the_sdk(project, buses, fake_sdk):
     asyncio.run(run_work(project, buses, "anything", model="haiku"))
 
     assert fake_sdk.calls[0].model == "haiku"
+
+
+def test_verifier_still_applies_the_diff_when_temp_is_inside_another_repo(project, buses, fake_sdk, tmp_path, monkeypatch):
+    """
+    If the temp directory sits inside some other git repository (a dotfiles repo in the home directory,
+    say), 'git apply' in the verification copy used to resolve the patch against that outer repository,
+    skip every file and exit 0, so the unchanged code was tested and a breaking change passed.
+    """
+    import tempfile
+
+    outer = tmp_path / "outer"
+    (outer / "tmp").mkdir(parents=True)
+    git(outer, "init", "-q")
+    monkeypatch.setattr(tempfile, "tempdir", str(outer / "tmp"))
+
+    fake_sdk.scripts.append(edit("calc.py", "return a + b", "return a - b"))
+    asyncio.run(run_work(project, buses, "Refactor add"))
+    result = process(project, buses[1])
+
+    assert result.diffs_rejected == 1 and result.commits_created == 0, result
