@@ -160,6 +160,21 @@ class PalaceStorage:
                                                     # Use add_room to index by both slug and name
                                                     palace.add_room(room)
 
+                        # Room files placed directly under the region (no containing
+                        # building) don't fit the storage schema: the mapper and the
+                        # loader must agree on where rooms live. Rather than silently
+                        # dropping them from Palace.rooms/navigation, warn clearly so
+                        # misplaced mapper output is visible instead of invisible.
+                        region_rooms_dir = region_dir / "rooms"
+                        if region_rooms_dir.exists():
+                            for room_file in region_rooms_dir.glob("*.yaml"):
+                                logger.warning(
+                                    f"Ignoring room file {room_file}: rooms must be nested "
+                                    f"under a building (regions/{region_dir.name}/buildings/"
+                                    f"<building>/rooms/), not directly under a region. It will "
+                                    "not appear in Palace.rooms or navigation until moved."
+                                )
+
         # Load entities
         entities_dir = self.palace_dir / "entities"
         if entities_dir.exists():
@@ -203,7 +218,7 @@ class PalaceStorage:
 
         # Save rooms
         for room in palace.rooms.values():
-            self._save_room(room)
+            self._save_room(room, palace)
 
         # Save entities
         for entity in palace.entities.values():
@@ -464,18 +479,58 @@ class PalaceStorage:
         with open(building_file, "w") as f:
             yaml.dump(building.to_dict(), f, default_flow_style=False, sort_keys=False)
 
-    def _save_room(self, room: Room) -> None:
-        """Save a room to disk."""
+    def _save_room(self, room: Room, palace: Optional[Palace] = None) -> None:
+        """
+        Save a room to disk, nested under its building's region.
+
+        Looks up the building's region directly from the in-memory Palace when one is
+        given -- authoritative, and avoids depending on disk write order. Falls back to
+        searching already-saved building directories (for callers that only have a
+        Room), and as a last resort files truly orphaned rooms (no matching building
+        at all) under a dedicated 'unmapped' region. That fallback used to create a
+        bare directory with no region.yaml; load() requires region.yaml to load
+        anything nested under a region, so those rooms were written to disk and then
+        silently never loaded again. Writing region.yaml for 'unmapped' up front keeps
+        the room visible instead.
+        """
         building = room.building
-        # Find the region for this building
         region = None
-        for r_name, r in self._find_region_for_building(building):
-            region = r_name
-            break
+
+        if palace is not None:
+            building_slug = palace._buildings_by_name.get(building)
+            building_obj = palace.buildings.get(building_slug) if building_slug else None
+            if building_obj is None:
+                building_obj = palace.buildings.get(building)
+            if building_obj is not None:
+                region = building_obj.region
+
+        if region is None:
+            # Find the region for this building by searching already-saved directories
+            for r_name, r in self._find_region_for_building(building):
+                region = r_name
+                break
 
         if not region:
             # Default to a generic region
             region = "unmapped"
+            region_dir = self.palace_dir / "regions" / self._safe_name(region)
+            if not (region_dir / "region.yaml").exists():
+                self._save_region(Region(
+                    name=region,
+                    description="Rooms whose building could not be matched to a known region.",
+                ))
+
+            # The room references a building we don't have an object for, so no
+            # building.yaml exists either -- load() requires one to descend into a
+            # building's rooms/ dir, same as it requires region.yaml. Write a stub so
+            # the room isn't silently dropped on the next load.
+            building_dir = region_dir / "buildings" / self._safe_name(building)
+            if not (building_dir / "building.yaml").exists():
+                self._save_building(Building(
+                    name=building,
+                    region=region,
+                    purpose="Auto-created placeholder: original building record was unavailable when its room was saved.",
+                ))
 
         rooms_dir = (
             self.palace_dir / "regions" / self._safe_name(region) /
@@ -522,7 +577,7 @@ class PalaceStorage:
     def add_room(self, palace: Palace, room: Room) -> None:
         """Add a room to the palace and save it."""
         palace.add_room(room)  # Indexes by slug and name
-        self._save_room(room)
+        self._save_room(room, palace)
 
     def add_entity(self, palace: Palace, entity: Entity) -> None:
         """Add an entity to the palace and save it."""

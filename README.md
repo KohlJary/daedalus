@@ -142,6 +142,9 @@ daedalus init
 
 # Update templates and agents (after plugin updates)
 daedalus hydrate
+
+# See what hydrate would change, without writing anything
+daedalus hydrate --dry-run
 ```
 
 ### Configuration
@@ -156,6 +159,11 @@ daedalus config user.name
 # Set value
 daedalus config user.name "Your Name"
 daedalus config user.communication_style "Direct, technical"
+
+# Template settings for this project only (.daedalus/config.json)
+daedalus config --project                         # settings in effect here
+daedalus config --project git.authorship user
+daedalus config --project sections.squash false
 ```
 
 ### Roadmap
@@ -197,6 +205,13 @@ Config is stored in platform-appropriate location:
 | `user.email` | Email for git commits | git config user.email |
 | `icarus.enabled` | Enable parallel workers | false |
 | `ariadne.enabled` | Enable Ariadne orchestration | false |
+| `git.authorship` | `daedalus`: commits authored as Daedalus (`--author`). `user`: authored as your git identity, with a `- Daedalus` sign-off in the body | daedalus |
+| `sections.squash` | Include the Squash for Merge section in CLAUDE.md | true |
+| `sections.versioning` | Include the Versioning section in CLAUDE.md | true |
+
+The `git` and `sections` settings can be overridden per project in `.daedalus/config.json`
+(`daedalus config --project KEY VALUE`), deep-merged over the global config. A work repo and a
+personal repo usually want different authorship.
 
 ## Template Variables
 
@@ -207,6 +222,40 @@ The `CLAUDE.md` template supports these variables:
 | `{{USER_NAME}}` | `user.name` config |
 | `{{USER_COMMUNICATION_STYLE}}` | `user.communication_style` config |
 | `{{DAEDALUS_EMAIL}}` | `user.email` config or git user.email |
+| `{{COMMIT_COMMAND}}` | `git commit --author="Daedalus <...>"`, or `git commit` with `git.authorship user` |
+
+### Conditional sections
+
+Optional parts of the template are wrapped in conditionals on the settings above:
+
+```markdown
+<!-- DAEDALUS_IF sections.squash -->
+...kept when sections.squash is true...
+<!-- /DAEDALUS_IF -->
+<!-- DAEDALUS_IF git.authorship=user -->
+...kept when git.authorship is "user"...
+<!-- /DAEDALUS_IF -->
+```
+
+A condition on a setting that doesn't exist fails hydrate instead of reading as false. Blocks don't nest.
+
+### Local slots: project additions that survive hydrate
+
+`hydrate` replaces the managed section between `DAEDALUS_BEGIN` and `DAEDALUS_END`. Project-specific
+additions go inside the named `DAEDALUS_LOCAL` slots, which hydrate carries over by name:
+
+```markdown
+## Context as Breath
+...
+<!-- DAEDALUS_LOCAL breath -->
+In this repo, exhaling cleanly means: commits pushed with reasoning in the body, ...
+<!-- /DAEDALUS_LOCAL -->
+```
+
+Slots: `identity`, `breath`, `working-with`, `git`, `lessons`, `end`. If a template update removes a
+slot, its contents move to `end` (under a comment naming the old slot) rather than being dropped.
+Anything below `DAEDALUS_END` is never touched. Use `daedalus hydrate --dry-run` to check before moving
+existing customizations into slots.
 
 ## Philosophy
 

@@ -36,6 +36,27 @@ from .diff_bus import (
 )
 from .conflict_detector import ConflictDetector, ConflictAnalysis, ConflictSeverity
 from .verification import CausalSliceVerifier, VerificationResult, extract_causal_chain
+from .semantic_review import LLMJudge, ReviewVerdict, SemanticReviewer, SemanticReviewResult
+from .tracker import Tracker
+from ..config import get_daedalus_email, load_config
+
+
+def _commit_args(message: str) -> List[str]:
+    """
+    Build the `git commit` argument list honoring the configured git.authorship.
+
+    daedalus (default): authored as Daedalus via --author, matching what the CLAUDE.md
+    template tells Claude to type by hand.
+    user: no --author (commits as the configured git identity), with a '- Daedalus'
+    sign-off appended to the body, matching the template's `git.authorship=user` text.
+    """
+    config = load_config()
+    if config.git.authorship == "user":
+        signed_message = message.rstrip("\n") + "\n\n- Daedalus\n"
+        return ["git", "commit", "-a", "-m", signed_message]
+
+    email = get_daedalus_email(config)
+    return ["git", "commit", "-a", f"--author=Daedalus <{email}>", "-m", message]
 
 
 @dataclass
@@ -44,6 +65,7 @@ class OrchestrationResult:
     diffs_processed: int = 0
     diffs_verified: int = 0
     diffs_rejected: int = 0
+    diffs_needs_review: int = 0
     conflicts_detected: int = 0
     conflicts_resolved: int = 0
     commits_created: int = 0
@@ -69,6 +91,10 @@ class AriadneOrchestrator:
         on_verification_complete: Optional[Callable[[Diff, VerificationResult], None]] = None,
         on_commit: Optional[Callable[[MergeResult], None]] = None,
         auto_commit: bool = False,
+        autonomy: str = "hybrid",
+        semantic_reviewer: Optional[SemanticReviewer] = None,
+        require_approval_tags: Optional[List[str]] = None,
+        tracker: Optional[Tracker] = None,
     ):
         """
         Initialize orchestrator.
@@ -80,11 +106,33 @@ class AriadneOrchestrator:
             on_verification_complete: Callback after verification
             on_commit: Callback after successful commit
             auto_commit: Whether to automatically commit verified diffs
+            autonomy: "supervised" (every diff needs a human, regardless of the
+                judge's verdict), "full" (judge-gated only), or "hybrid"
+                (judge-gated, plus a human is always required for diffs tagged
+                with anything in require_approval_tags)
+            semantic_reviewer: Checks whether a diff actually does what it
+                claims to, on top of CausalSliceVerifier's mechanical checks
+                (type/lint/test). Defaults to LLMJudge, which fails closed to
+                NEEDS_HUMAN if the LLM backend isn't available.
+            require_approval_tags: Tags (read from diff.metadata.get("tags"))
+                that force human review in "hybrid" mode even if the judge
+                approves -- mirrors Planner.AriadneConfig.require_approval_for.
+            tracker: Optional roadmap Tracker. If given, commits/review-queue
+                transitions are reflected on the feature's roadmap item
+                (plan_id read from diff.metadata.get("plan_id") or
+                diff.work_id), fixing the "review" status being a dead end
+                that nothing ever resolved out of.
         """
         self.repo_path = Path(repo_path)
         self.bus = bus or AriadneBus()
         self.conflict_detector = ConflictDetector()
         self.verifier = CausalSliceVerifier(repo_path)
+        self.autonomy = autonomy
+        self.semantic_reviewer = semantic_reviewer or LLMJudge()
+        self.require_approval_tags = require_approval_tags or [
+            "breaking_change", "security", "architecture", "database",
+        ]
+        self.tracker = tracker
 
         self.on_conflict = on_conflict or self._default_conflict_handler
         self.on_verification_complete = on_verification_complete
@@ -104,6 +152,64 @@ class AriadneOrchestrator:
         if analysis.auto_resolvable and analysis.severity == ConflictSeverity.LOW:
             return analysis.suggested_strategy
         return MergeStrategy.ESCALATE
+
+    def _diff_intent(self, diff: Diff) -> str:
+        """Best available statement of what a diff is supposed to do."""
+        return diff.metadata.get("intent") or diff.description
+
+    def _plan_id_for_diff(self, diff: Diff) -> str:
+        """
+        Roadmap plan_id a diff's tracker item lives under, if any. Falls back
+        to work_id since that's the closest thing a Diff always carries;
+        callers that want precise tracker linkage should set
+        diff.metadata["plan_id"] explicitly when submitting the diff.
+        """
+        return diff.metadata.get("plan_id") or diff.work_id
+
+    def _passes_semantic_review(
+        self,
+        diff: Diff,
+        verification: VerificationResult,
+    ) -> bool:
+        """
+        Run the semantic review gate for a single diff and update its status
+        accordingly. Returns True if the diff may proceed to the commit batch
+        this cycle.
+
+        Never lets the judge alone move a diff to a terminal REJECTED state --
+        anything other than a confident APPROVED is routed to NEEDS_REVIEW so
+        a human (via the spawning agent's conversation) makes the final call,
+        matching the "fail closed" principle: the judge can only unilaterally
+        say yes, never unilaterally say no.
+        """
+        # Already resolved by a human via bus.approve_review() -- don't let
+        # the judge re-litigate a human's decision on a later cycle.
+        existing = diff.semantic_review or {}
+        if existing.get("resolution") == "approved":
+            return True
+
+        review = self.semantic_reviewer.review(diff, self._diff_intent(diff), verification)
+
+        if self.autonomy == "supervised":
+            self.bus.update_diff_status(
+                diff.id, DiffStatus.NEEDS_REVIEW, semantic_review=review.to_dict()
+            )
+            if self.tracker:
+                self.tracker.complete_feature(self._plan_id_for_diff(diff))
+            return False
+
+        tags = set(diff.metadata.get("tags", []))
+        tag_flagged = self.autonomy == "hybrid" and tags & set(self.require_approval_tags)
+
+        if review.verdict == ReviewVerdict.APPROVED and not tag_flagged:
+            return True
+
+        self.bus.update_diff_status(
+            diff.id, DiffStatus.NEEDS_REVIEW, semantic_review=review.to_dict()
+        )
+        if self.tracker:
+            self.tracker.complete_feature(self._plan_id_for_diff(diff))
+        return False
 
     # ========== One-Shot Processing ==========
 
@@ -125,15 +231,21 @@ class AriadneOrchestrator:
         pending = self.bus.list_pending_diffs()
         result.diffs_processed = len(pending)
 
-        if not pending:
+        # Only early-return if there's also nothing already VERIFIED waiting
+        # to be committed (e.g. a diff a human just approved out of
+        # NEEDS_REVIEW) -- otherwise a cycle with zero new pending diffs
+        # would never pick those up.
+        if not pending and not self.bus.list_verified_diffs():
             result.completed_at = datetime.now(timezone.utc).isoformat()
             result.duration_seconds = time.time() - start_time
             return result
 
         # Phase 1: Verify each diff
         verified_diffs = []
+        verifications_by_id: Dict[str, VerificationResult] = {}
         for diff in pending:
             verification = self._verify_diff(diff)
+            verifications_by_id[diff.id] = verification
 
             if verification.passed:
                 self.bus.update_diff_status(
@@ -171,21 +283,65 @@ class AriadneOrchestrator:
                     )
                     result.conflicts_resolved += 1
 
-        # Phase 3: Merge and commit if auto_commit enabled
-        if self.auto_commit and verified_diffs:
-            # Only merge if no unresolved conflicts
+        # Phase 3: Semantic review gate, then merge and commit if auto_commit enabled
+        #
+        # Deliberately re-reads the bus's full VERIFIED set rather than just
+        # this cycle's `verified_diffs` -- otherwise a diff a human approved
+        # out of NEEDS_REVIEW via bus.approve_review() (which moves it back
+        # to VERIFIED, not PENDING) would never get picked up again, since
+        # it won't appear in list_pending_diffs() on a later cycle. Found by
+        # manually smoke-testing the review -> approve -> process loop.
+        commit_candidates = self.bus.list_verified_diffs()
+        if self.auto_commit and commit_candidates:
+            # Only proceed if no unresolved conflicts
             unresolved = self.bus.list_conflicts(resolved=False)
             if not unresolved:
-                merge_result = self._create_atomic_commit(verified_diffs)
-                if merge_result.success:
-                    result.commits_created += 1
-                else:
-                    result.errors.append(merge_result.error or "Unknown merge error")
+                approved_for_commit = []
+                for diff in commit_candidates:
+                    verification = verifications_by_id.get(diff.id)
+                    if self._passes_semantic_review(diff, verification):
+                        approved_for_commit.append(diff)
+                    else:
+                        result.diffs_needs_review += 1
+
+                if approved_for_commit:
+                    merge_result = self._create_atomic_commit(approved_for_commit)
+                    if merge_result.success:
+                        result.commits_created += 1
+                        self._mark_committed_in_tracker(approved_for_commit, merge_result)
+                    else:
+                        result.errors.append(merge_result.error or "Unknown merge error")
 
         result.completed_at = datetime.now(timezone.utc).isoformat()
         result.duration_seconds = time.time() - start_time
 
         return result
+
+    def _mark_committed_in_tracker(self, diffs: List[Diff], merge_result: MergeResult) -> None:
+        """
+        Reflect a successful commit on each diff's roadmap item: complete the
+        feature (-> 'review') then immediately approve it (-> 'done'), since
+        these diffs already cleared whatever review the autonomy policy
+        required before reaching commit. No-op if no tracker was configured.
+        """
+        if not self.tracker:
+            return
+        commit_hash = None
+        try:
+            rev = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+            )
+            if rev.returncode == 0:
+                commit_hash = rev.stdout.strip()
+        except Exception:
+            pass
+        for diff in diffs:
+            plan_id = self._plan_id_for_diff(diff)
+            self.tracker.complete_feature(plan_id, commit_hash=commit_hash)
+            self.tracker.approve_review(plan_id, commit_hash=commit_hash)
 
     def _verify_diff(self, diff: Diff) -> VerificationResult:
         """Verify a single diff using causal slice verification."""
@@ -230,7 +386,7 @@ class AriadneOrchestrator:
             message = message_file.read_text(encoding="utf-8")
 
             result = subprocess.run(
-                ["git", "commit", "-a", "--author=Daedalus <daedalus@localhost>", "-m", message],
+                _commit_args(message),
                 cwd=self.repo_path,
                 capture_output=True,
                 text=True,
@@ -340,14 +496,23 @@ class AriadneOrchestrator:
             result.completed_at = datetime.now(timezone.utc).isoformat()
             return result
 
-        # Create atomic commit
+        # Semantic review gate, then atomic commit
         verified_diffs = self.bus.list_verified_diffs()
         if verified_diffs:
-            merge_result = self._create_atomic_commit(verified_diffs)
-            if merge_result.success:
-                result.commits_created += 1
-            else:
-                result.errors.append(merge_result.error or "Unknown merge error")
+            approved_for_commit = []
+            for diff in verified_diffs:
+                if self._passes_semantic_review(diff, verification=None):
+                    approved_for_commit.append(diff)
+                else:
+                    result.diffs_needs_review += 1
+
+            if approved_for_commit:
+                merge_result = self._create_atomic_commit(approved_for_commit)
+                if merge_result.success:
+                    result.commits_created += 1
+                    self._mark_committed_in_tracker(approved_for_commit, merge_result)
+                else:
+                    result.errors.append(merge_result.error or "Unknown merge error")
 
         result.completed_at = datetime.now(timezone.utc).isoformat()
         return result
@@ -395,6 +560,28 @@ def main():
     daemon_parser.add_argument("--auto-commit", action="store_true",
                               help="Automatically commit verified diffs")
 
+    # review (semantic review gate: list/show/approve/reject diffs sitting in
+    # NEEDS_REVIEW -- meant to be driven by whatever agent spawned a worker,
+    # mid-conversation, after it has shown the diff + its own take to a human)
+    review_parser = subparsers.add_parser("review", help="Manage diffs pending semantic review")
+    review_sub = review_parser.add_subparsers(dest="review_command", help="Review commands")
+
+    review_list = review_sub.add_parser("list", help="List diffs needing review")
+    review_list.add_argument("--json", action="store_true", help="Output as JSON")
+
+    review_show = review_sub.add_parser("show", help="Show a diff pending review")
+    review_show.add_argument("diff_id")
+    review_show.add_argument("--json", action="store_true", help="Output as JSON")
+
+    review_approve = review_sub.add_parser("approve", help="Approve a diff pending review")
+    review_approve.add_argument("diff_id")
+    review_approve.add_argument("--by", default="human", help="Who approved it")
+
+    review_reject = review_sub.add_parser("reject", help="Reject a diff pending review")
+    review_reject.add_argument("diff_id")
+    review_reject.add_argument("--reason", required=True, help="Why it was rejected")
+    review_reject.add_argument("--by", default="human", help="Who rejected it")
+
     args = parser.parse_args()
     repo_path = Path(args.repo).resolve()
 
@@ -424,9 +611,68 @@ def main():
         print(f"Starting Ariadne daemon (interval: {args.interval}s)")
         asyncio.run(orchestrator.run_daemon(poll_interval=args.interval))
 
+    elif args.command == "review":
+        bus = AriadneBus()
+        tracker = Tracker()
+
+        if args.review_command == "list":
+            pending = bus.list_needs_review_diffs()
+            if args.json:
+                print(json.dumps([asdict(d) for d in pending], indent=2, default=str))
+            elif not pending:
+                print("No diffs pending review.")
+            else:
+                for d in pending:
+                    verdict = (d.semantic_review or {}).get("verdict", "unknown")
+                    print(f"{d.id}  [{verdict}]  {d.work_id}: {d.description}")
+
+        elif args.review_command == "show":
+            diff = bus.get_diff(args.diff_id)
+            if not diff:
+                print(f"No such diff: {args.diff_id}")
+                return
+            if args.json:
+                print(json.dumps(asdict(diff), indent=2, default=str))
+            else:
+                print(f"diff {diff.id} ({diff.work_id})")
+                print(f"description: {diff.description}")
+                if diff.semantic_review:
+                    print(f"judge verdict: {diff.semantic_review.get('verdict')}")
+                    print(f"judge reasoning: {diff.semantic_review.get('reasoning')}")
+                print("---")
+                print(diff.content)
+
+        elif args.review_command == "approve":
+            diff = bus.get_diff(args.diff_id)
+            if not diff:
+                print(f"No such diff: {args.diff_id}")
+                return
+            if not bus.approve_review(args.diff_id, approved_by=args.by):
+                print(f"Could not approve {args.diff_id} (not pending review?)")
+                return
+            plan_id = diff.metadata.get("plan_id") or diff.work_id
+            tracker.approve_review(plan_id)
+            print(f"Approved {args.diff_id}; it will be committed on the next process cycle.")
+
+        elif args.review_command == "reject":
+            diff = bus.get_diff(args.diff_id)
+            if not diff:
+                print(f"No such diff: {args.diff_id}")
+                return
+            if not bus.reject_review(args.diff_id, args.reason, rejected_by=args.by):
+                print(f"Could not reject {args.diff_id} (not pending review?)")
+                return
+            plan_id = diff.metadata.get("plan_id") or diff.work_id
+            tracker.reject_review(plan_id, args.reason)
+            print(f"Rejected {args.diff_id}: {args.reason}")
+
+        else:
+            review_parser.print_help()
+
     else:
         parser.print_help()
 
 
 if __name__ == "__main__":
     main()
+
