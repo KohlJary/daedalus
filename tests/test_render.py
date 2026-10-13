@@ -170,3 +170,13 @@ def test_config_project_set_and_show(tmp_path, monkeypatch):
     assert saved == {"git": {"authorship": "user"}, "sections": {"squash": False}}
     shown = json.loads(runner.invoke(main, ["config", "--project"]).output)
     assert shown == {"git": {"authorship": "user"}, "sections": {"squash": False, "versioning": True}}
+
+
+def test_dropped_sections_leave_no_blank_line_runs(tmp_path):
+    text = render_bundled(tmp_path, {"sections": {"squash": False, "versioning": False}})
+    assert "\n\n\n" not in text
+
+
+def test_bundled_template_is_ascii():
+    # Projects edit CLAUDE.md in plain editors; non-ASCII here once turned into stray 0x97 bytes
+    assert get_template_content().isascii()
