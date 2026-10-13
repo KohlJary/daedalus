@@ -27,8 +27,9 @@ description. The student is grading its own exam.
 - `_diff_intent()` no longer falls back to `diff.description`.
 - A diff with no `metadata["intent"]` is routed to `NEEDS_REVIEW` in every
   autonomy mode, regardless of the judge's verdict. It is never auto-committed.
-- `daedalus edict list | show <id> | accept <id>` exists. `accept` only flips
-  `proposed` to `accepted`.
+- `daedalus edict list | show <id>` exists and reads edicts from the current
+  checkout. Acceptance happens by merging the edict to `main` (see the README's
+  flow section), so there is no `accept` command.
 - An edict's status moves to `done` when every diff tagged with its ID has
   merged.
 - Tests cover: the fail-closed path for missing intent, intent being sourced
