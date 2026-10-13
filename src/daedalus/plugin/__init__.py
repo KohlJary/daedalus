@@ -37,3 +37,11 @@ def get_hooks_dir() -> Path:
 def get_skills_dir() -> Path:
     """Get path to bundled skills directory."""
     return PLUGIN_ROOT / "skills"
+
+
+def list_skills() -> list:
+    """Names of the skills that ship with the plugin, in plugin.yaml order (the manifest is the source of truth)."""
+    import yaml
+
+    data = yaml.safe_load((PLUGIN_ROOT / "plugin.yaml").read_text(encoding="utf-8")) or {}
+    return [entry["name"] for entry in data.get("skills") or []]
