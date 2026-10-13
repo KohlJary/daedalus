@@ -22,7 +22,7 @@ import importlib.resources
 import json
 import os
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -109,6 +109,8 @@ class IcarusWorker:
         permission_timeout: float = 300,
         stream_output: bool = True,
         use_ariadne: bool = False,
+        model: Optional[str] = None,
+        isolate: Optional[bool] = None,
     ):
         """
         Initialize worker.
@@ -121,6 +123,9 @@ class IcarusWorker:
             permission_timeout: Seconds to wait for permission responses
             stream_output: Whether to stream output to bus
             use_ariadne: Submit diffs to Ariadne instead of committing
+            model: Model for the agent (e.g. "haiku"); None uses the SDK default
+            isolate: Run each work package in its own git worktree (default: on in Ariadne mode), so
+                parallel workers never share a working tree and the project's own tree is untouched
         """
         self.work_id = work_id
         self.project_root = project_root or os.getcwd()
@@ -129,6 +134,11 @@ class IcarusWorker:
         self.permission_timeout = permission_timeout
         self.stream_output = stream_output
         self.use_ariadne = use_ariadne
+        self.model = model
+        self.isolate = use_ariadne if isolate is None else isolate
+
+        # Where the agent actually works: project_root, or a per-package worktree while isolated
+        self.work_dir: str = self.project_root
 
         # Ariadne bus for diff submission
         self.ariadne_bus: Optional["AriadneBus"] = None
@@ -162,12 +172,38 @@ class IcarusWorker:
             self.bus.unregister_instance(self.instance_id)
             self._log("Unregistered")
 
+    def _git(self, *args: str, cwd: Optional[str] = None) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", *args], cwd=cwd or self.work_dir, capture_output=True, text=True)
+
+    def _enter_worktree(self) -> None:
+        """Create a detached worktree at the project's HEAD and work there."""
+        import tempfile
+
+        path = tempfile.mkdtemp(prefix="icarus-worktree-")
+        added = self._git("worktree", "add", "--detach", path, "HEAD", cwd=self.project_root)
+        if added.returncode != 0:
+            raise RuntimeError(f"git worktree add failed: {added.stderr.strip()}")
+        self.work_dir = path
+        # Approvals are checked against the scope's project root: point it at the worktree
+        self.scope = replace(self.scope, project_root=path)
+        self._log(f"Working in isolated worktree {path}")
+
+    def _leave_worktree(self) -> None:
+        if self.work_dir == self.project_root:
+            return
+        path, self.work_dir = self.work_dir, self.project_root
+        self.scope = replace(self.scope, project_root=self.project_root)
+        removed = self._git("worktree", "remove", "--force", path, cwd=self.project_root)
+        if removed.returncode != 0:
+            self._log(f"Could not remove worktree {path}: {removed.stderr.strip()}")
+
     def submit_diff_to_ariadne(self, description: str) -> Optional[str]:
         """
         Generate a diff of current changes and submit to Ariadne.
 
-        Instead of committing, this captures the current git diff and submits
-        it to Ariadne's bus for verification and eventual atomic commit.
+        Instead of committing, this captures the working tree's changes (new files included) and
+        submits them to Ariadne's bus for verification and eventual atomic commit. The harness calls
+        this itself after each work package in Ariadne mode; the agent never needs to.
 
         Args:
             description: Description of what this diff does
@@ -184,13 +220,9 @@ class IcarusWorker:
             return None
 
         try:
-            # Generate diff
-            result = subprocess.run(
-                ["git", "diff", "HEAD"],
-                cwd=self.project_root,
-                capture_output=True,
-                text=True,
-            )
+            # Stage everything so new files are included, then diff the index against HEAD
+            self._git("add", "-A")
+            result = self._git("diff", "--cached", "HEAD")
 
             diff_content = result.stdout
             if not diff_content.strip():
@@ -206,7 +238,7 @@ class IcarusWorker:
             )
 
             # Extract causal chain for verification
-            causal_chain = extract_causal_chain(diff, Path(self.project_root))
+            causal_chain = extract_causal_chain(diff, Path(self.work_dir))
             diff.causal_chain = {
                 "diff_id": causal_chain.diff_id,
                 "affected_files": causal_chain.affected_files,
@@ -221,12 +253,10 @@ class IcarusWorker:
             self._log(f"  Files: {len(diff.all_affected_files())}")
             self._log(f"  Causal chain: {len(causal_chain.affected_functions)} functions")
 
-            # Reset working directory (Ariadne will apply the diff later)
-            subprocess.run(
-                ["git", "checkout", "."],
-                cwd=self.project_root,
-                capture_output=True,
-            )
+            # Reset the working tree (Ariadne will apply the diff later). In an isolated worktree this
+            # is moot (the worktree is removed next), but it keeps a non-isolated worker's tree clean.
+            self._git("reset", "-q", "--hard", "HEAD")
+            self._git("clean", "-q", "-fd")
 
             return diff_id
 
@@ -473,14 +503,17 @@ class IcarusWorker:
             )
 
             # Build options using SDK types
-            options = ClaudeAgentOptions(
+            option_args = dict(
                 permission_mode=permission_mode,
-                cwd=self.project_root,
+                cwd=self.work_dir,
                 system_prompt=system_prompt,
                 hooks={
                     "PreToolUse": [pre_tool_hook],
                 },
             )
+            if self.model:
+                option_args["model"] = self.model
+            options = ClaudeAgentOptions(**option_args)
 
             # Hooks require streaming mode - wrap prompt in async generator
             async def prompt_stream():
@@ -564,11 +597,24 @@ class IcarusWorker:
 
         prompt = "\n".join(prompt_parts)
 
-        # Execute
-        result = await self.execute(
-            prompt=prompt,
-            system_prompt=work.inputs.get("system_prompt"),
-        )
+        if work.inputs.get("model"):
+            self.model = work.inputs["model"]
+
+        # Execute, in an isolated worktree when enabled; in Ariadne mode the harness hands the
+        # changes to Ariadne itself (the agent has no way to call submit_diff_to_ariadne)
+        if self.isolate:
+            self._enter_worktree()
+        try:
+            result = await self.execute(
+                prompt=prompt,
+                system_prompt=work.inputs.get("system_prompt"),
+            )
+            if self.use_ariadne and result.get("success"):
+                title = work.description.strip().splitlines()[0] if work.description.strip() else work.id
+                result["diff_id"] = self.submit_diff_to_ariadne(description=title.lstrip("# "))
+        finally:
+            if self.isolate:
+                self._leave_worktree()
 
         # Submit result to bus
         self.bus.submit_result(
@@ -586,6 +632,7 @@ async def run_worker(
     prompt: Optional[str] = None,
     claim_from_queue: bool = False,
     use_ariadne: bool = False,
+    model: Optional[str] = None,
 ):
     """
     Run an Icarus worker.
@@ -596,6 +643,7 @@ async def run_worker(
         prompt: Direct prompt to execute (if not using work package)
         claim_from_queue: Whether to claim work from the queue
         use_ariadne: Submit diffs to Ariadne instead of committing
+        model: Model for the agent (e.g. "haiku")
     """
     bus = IcarusBus()
 
@@ -608,6 +656,7 @@ async def run_worker(
         project_root=project_root,
         bus=bus,
         use_ariadne=use_ariadne,
+        model=model,
     )
 
     await worker.register()
@@ -655,6 +704,7 @@ def main():
     parser.add_argument("--claim", action="store_true", help="Claim work from queue")
     parser.add_argument("--ariadne", action="store_true",
                        help="Submit diffs to Ariadne instead of committing")
+    parser.add_argument("--model", help="Model for the agent, e.g. haiku (default: the SDK's default)")
 
     args = parser.parse_args()
 
@@ -664,6 +714,7 @@ def main():
         prompt=args.prompt,
         claim_from_queue=args.claim,
         use_ariadne=args.ariadne,
+        model=args.model,
     ))
 
 

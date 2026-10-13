@@ -276,8 +276,8 @@ class Dispatcher:
         if self.use_ariadne:
             lines.extend([
                 "## Ariadne Mode",
-                "Submit your changes as a diff to Ariadne instead of committing directly.",
-                "Use `submit_diff_to_ariadne()` after completing your work.",
+                "Do not commit. Leave your changes in the working tree: when you finish, they are",
+                "collected and submitted to Ariadne for verification and merging automatically.",
                 "",
             ])
 
