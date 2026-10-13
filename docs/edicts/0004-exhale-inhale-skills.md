@@ -37,9 +37,9 @@ only what is specific to it.
   section. That text is Kohl's.
 - Inhale defers to a project's own day-start ritual when one exists, rather
   than duplicating it.
-- Inhale supersedes `src/daedalus/plugin/hooks/session-start.sh`, which no
-  code installs (`get_hooks_dir()` has no callers). Retiring the hook is a
-  separate change.
+- Inhale complements `src/daedalus/plugin/hooks/session-start.sh` rather
+  than superseding it. The hook is the short, always-on brief; inhale is the
+  full pickup. Edict 0007 wires and rewrites the hook.
 
 ## Acceptance criteria
 - Exhale, in order: checks repo state (git status, worktrees) before trusting
@@ -76,3 +76,12 @@ only what is specific to it.
 - No day-level rituals (good morning, end of day); those stay per project.
 - No edit detection for skills here; that arrives with #6 for agents and
   skills together.
+
+## Amendments
+- 2026-10-13, requested by Kohl: the session-start hook is kept and wired
+  (0007), not retired, so inhale complements it instead of superseding it.
+  0007 also puts the gameplan at the center: exhale records gameplan task
+  status and resolutions before writing its summary, the summary refers to
+  tasks by ID, and inhale reads the gameplan first and uses `doctor` to judge
+  whether the last session exhaled. Where those ordering rules differ from
+  the steps above, 0007 governs.

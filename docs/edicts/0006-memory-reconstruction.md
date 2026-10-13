@@ -1,9 +1,9 @@
 # Edict 0006: Memory reconstruction
 Status: accepted
-Depends on: Edict 0004 (memory backbone: `doctor`, pending proposals)
+Depends on: Edict 0007 (memory backbone: `doctor`, pending proposals)
 
 ## Intent
-0004 makes memory drift visible. This edict recovers what was lost. When the
+0007 makes memory drift visible. This edict recovers what was lost. When the
 gameplan has fallen behind the code, Daedalus rebuilds the missing period from
 the evidence (commits, release notes, analyses, roadmap changes) as proposed
 gameplan entries, has Momus check them, and hands them to a human to apply.
@@ -17,7 +17,7 @@ items were still marked `backlog`.
 Memory tools remember what they are told. This one recovers what nobody wrote
 down, and says which parts it can prove.
 
-0004's non-goal "no model-written resolutions" is lifted here, and only here:
+0007's non-goal "no model-written resolutions" is lifted here, and only here:
 model-written content is always a proposal, always cites evidence, and is
 always checked by Momus before anyone sees it.
 
@@ -26,7 +26,7 @@ committed to `main` directly at his instruction.
 
 ## Constraints
 - Reconstruction runs inside a Claude Code session, on request (a command and
-  agent), never from a hook. 0004's rule that hooks make no model calls stands.
+  agent), never from a hook. 0007's rule that hooks make no model calls stands.
 - `daedalus reconstruct gather` is deterministic and makes no model calls. It
   finds the gap (last gameplan commit to HEAD) and writes an evidence bundle:
   commits with subjects and bodies, release commits, files added under docs and
@@ -61,7 +61,7 @@ committed to `main` directly at his instruction.
 - Momus reviews every proposal before it is presented, and writes per-entry
   verdicts next to it. Entries Momus marks `contradicted` are dropped or
   corrected before presentation.
-- Proposals are applied only through 0004's pending mechanism. Nothing writes
+- Proposals are applied only through 0007's pending mechanism. Nothing writes
   to the gameplan or roadmap directly.
 
 ## Acceptance criteria
@@ -77,11 +77,11 @@ committed to `main` directly at his instruction.
   Bare commits ("fix stuff") get diffs in the bundle; rich ones don't, except
   for the sample.
 - `daedalus gameplan pending import <proposal>` loads the proposal as pending
-  items, and 0004's `apply` / `drop` resolve them one at a time.
+  items, and 0007's `apply` / `drop` resolve them one at a time.
 - The `mnemosyne` agent and a `/reconstruct` command ship with the plugin.
   The command runs gather, the agent, check, and Momus in order, and ends by
   showing the proposal with its verdicts.
-- When `doctor` (0004) reports commits after the gameplan's last update, it
+- When `doctor` (0007) reports commits after the gameplan's last update, it
   suggests `/reconstruct`.
 - The wonderland-ai reconstruction from 2026-10-13 is kept as a reference
   example in `docs/examples/wonderland-reconstruction/` (Kohl approved

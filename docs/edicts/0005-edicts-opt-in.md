@@ -46,6 +46,6 @@ committed to `main` directly at his instruction.
   intent-source interface, the `github-issue` source, `intent_source`
   metadata, and the override of 0001's dispatch rule; 0001 stands unchanged.
   Dropped the dependency on 0001 and the edict line in the status handoff
-  (0004 now makes `status.md` a session note). Why: the pluggable sources
-  were designed for enterprise teams that don't exist yet, and they added a
-  second layer over the gameplan.
+  (0007, then numbered 0004, makes `status.md` a session note). Why: the
+  pluggable sources were designed for enterprise teams that don't exist yet,
+  and they added a second layer over the gameplan.

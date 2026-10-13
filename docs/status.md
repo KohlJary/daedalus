@@ -11,7 +11,7 @@ Gameplan (`.daedalus/roadmap/gameplan.json`, local) created this session:
 - **p1-edicts-ariadne** (active): build edicts 0001, 0002, 0003, 0005; verifier
   fails closed and gains an import/build check (#15); bugs #13, #14; local
   backends + live tier (#16) blocked on an edict.
-- **p2-memory-backbone** (planned): edict 0004.
+- **p2-memory-backbone** (planned): edict 0007 (builds on 0004 exhale/inhale, already shipped).
 - **p2b-reconstruction** (planned): edict 0006.
 - **p3-theseus-index** (planned): index, status, and linkage for Theseus reports.
 - **p4-evidence** (planned): resume benchmark against plain Claude Code, with
@@ -23,11 +23,12 @@ Gameplan (`.daedalus/roadmap/gameplan.json`, local) created this session:
 | 0001 Intent flows from edicts | accepted | no | Build first; its edict CLI is shared with 0003 and 0005. |
 | 0002 Model casting | accepted | no | Non-goal narrowed by 2026-10-13 amendment; local backends still need their own edict (#16). |
 | 0003 Dissent | accepted | no | Depends on 0001's edict CLI. |
-| 0004 Memory backbone | accepted | no | Amended 2026-10-13: gameplan committed and sole tracker of edict build state; this table goes away when 0004 lands. |
+| 0004 Exhale and inhale skills | accepted | yes | Built by another session (`48a0e08`, PR #19). Amended 2026-10-13: hook kept, gameplan first (see 0007). |
 | 0005 Edicts opt-in | accepted | no | Amended 2026-10-13: cut to opt-in only (`edicts.enabled`, default off). |
-| 0006 Memory reconstruction | accepted | no | Rebuild missing gameplan periods from git, with commit-message scoring, diffs for weak messages, and a Momus check. Depends on 0004. |
+| 0006 Memory reconstruction | accepted | no | Rebuild missing gameplan periods from git, with commit-message scoring, diffs for weak messages, and a Momus check. Depends on 0007. |
+| 0007 Memory backbone | accepted | no | Renumbered from 0004 after a collision. Gameplan at the center, committed and sole tracker of edict build state; session-start hook wired; `doctor`; capture hook off by default. This table goes away when 0007 lands. |
 
-0004 and 0005 were drafted by Daedalus at Kohl's request and committed to
+0005, 0006, and 0007 were drafted by Daedalus at Kohl's request and committed to
 `main` directly at his instruction.
 
 ## Open dissents
@@ -45,15 +46,15 @@ Surveyed real Daedalus usage to pick the next value-add:
   updated after 2026-05-18 while work ran to 2026-06-23; session summaries never
   written. LLM review passed code that failed at import.
 - Conclusion: structured, task-shaped memory gets written; free-form memory
-  doesn't; both go stale unless drift is surfaced. Led to edicts 0004 and 0005.
+  doesn't; both go stale unless drift is surfaced. Led to edicts 0005 and 0007 (first numbered 0004).
 - Ran a reconstruction of wonderland-ai's missing gameplan period by hand
   (95 commits, 2026-05-18 to 2026-06-23) and had Momus check it. Led to 0006.
 
 Found: the session-start hook reads `data/roadmap/index.json` (a cass-vessel
-path), not `.daedalus/roadmap/` (covered by 0004).
+path), not `.daedalus/roadmap/` (covered by 0007).
 
 **Guardrail:** never run live model calls (workers, judge, the live tier) on
 an employer's account or machine. The hermetic tier needs no model.
 
 **Next, in order:** T-e1, then T-e7 and T-e2, T-e3, T-e4; then activate p2 for
-edict 0004.
+edict 0007.
