@@ -11,6 +11,7 @@ Gameplan: T-e5 (local backends), T-e10 (planner), T-e11 (CLI loop). Results writ
 | `gate_exp/exp.py` | Gate experiment: worker runs, Ariadne's real verifier + hidden oracle, local judges, retry arm, report |
 | `gate_exp/feature.py`, `todo_app.py` | Multi-part features through Ariadne's real planner/dispatcher/harness/orchestrator; 5 conditions incl. an LLM planner and Claude plan review |
 | `gate_exp/results/` | Raw JSONL: every diff, gate decision, oracle result, token usage |
+| `gate_exp/mutate.py` | Mutation test of the judge: oracle-verified bugs injected into correct diffs, for large-n catch and false-reject rates |
 | `mature/` | Same conditions on this repo itself, with three real gameplan tasks; `RUNBOOK.md` has the Claude steps |
 
 Ground truth is always hidden oracle tests that neither workers nor the gate see. Each oracle is validated
