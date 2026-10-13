@@ -16,7 +16,8 @@ Schema:
         "title": "...",
         "status": "planned" | "in_progress" | "done",
         "roadmapItems": ["<item_id>", ...],   # references by id
-        "notes": "..."
+        "notes": "...",
+        "edict": "NNNN"                        # optional: the edict this phase implements
       }
     ],
     "activePhase": {
@@ -31,6 +32,7 @@ Schema:
           "title": "...",
           "status": "pending" | "in_progress" | "done",
           "details": "...",
+          "edict": "NNNN",      # optional: the edict this task implements
           "resolution": "..."   # only when done
         }
       ],
@@ -124,6 +126,7 @@ def add_phase(
     roadmap_items: Optional[list[str]] = None,
     notes: str = "",
     status: str = "planned",
+    edict: str = "",
 ) -> dict[str, Any]:
     if status not in PHASE_STATUSES:
         raise GameplanError(f"Invalid phase status: {status}. Use one of {PHASE_STATUSES}")
@@ -136,6 +139,8 @@ def add_phase(
         "roadmapItems": roadmap_items or [],
         "notes": notes,
     }
+    if edict:
+        phase["edict"] = edict
     data.setdefault("phases", []).append(phase)
     return phase
 
@@ -170,6 +175,8 @@ def activate_phase(
         "tasks": [],
         "deferred": [],
     }
+    if phase.get("edict"):
+        data["activePhase"]["edict"] = phase["edict"]
     return data["activePhase"]
 
 
@@ -203,6 +210,7 @@ def add_task(
     title: str,
     details: str = "",
     status: str = "pending",
+    edict: str = "",
 ) -> dict[str, Any]:
     if status not in TASK_STATUSES:
         raise GameplanError(f"Invalid task status: {status}. Use one of {TASK_STATUSES}")
@@ -215,6 +223,8 @@ def add_task(
         "status": status,
         "details": details,
     }
+    if edict:
+        task["edict"] = edict
     active.setdefault("tasks", []).append(task)
     return task
 

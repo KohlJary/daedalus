@@ -252,7 +252,8 @@ def gameplan_phase_list():
 @click.option("--items", "-i", multiple=True, help="Roadmap item id(s) to include")
 @click.option("--notes", "-n", default="", help="Phase notes")
 @click.option("--status", "-s", default="planned", help="planned | in_progress | done")
-def gameplan_phase_add(phase_id: str, title: str, items: tuple, notes: str, status: str):
+@click.option("--edict", "-e", default="", help="Edict this phase implements (e.g. 0007)")
+def gameplan_phase_add(phase_id: str, title: str, items: tuple, notes: str, status: str, edict: str):
     """Add a phase referencing roadmap item ids."""
     from .commands import add_gameplan_phase
 
@@ -263,6 +264,7 @@ def gameplan_phase_add(phase_id: str, title: str, items: tuple, notes: str, stat
         roadmap_items=list(items),
         notes=notes,
         status=status,
+        edict=edict,
     )
 
 
@@ -302,11 +304,12 @@ def gameplan_task():
 @click.argument("task_id")
 @click.argument("title")
 @click.option("--details", "-d", default="", help="Task details")
-def gameplan_task_add(task_id: str, title: str, details: str):
+@click.option("--edict", "-e", default="", help="Edict this task implements (e.g. 0007)")
+def gameplan_task_add(task_id: str, title: str, details: str, edict: str):
     """Add a task to the active phase."""
     from .commands import add_gameplan_task
 
-    add_gameplan_task(Path.cwd(), task_id=task_id, title=title, details=details)
+    add_gameplan_task(Path.cwd(), task_id=task_id, title=title, details=details, edict=edict)
 
 
 @gameplan_task.command("status")

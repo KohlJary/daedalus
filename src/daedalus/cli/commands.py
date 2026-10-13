@@ -381,6 +381,10 @@ def _task_status_icon(status: str) -> str:
     return {"pending": "[ ]", "in_progress": "[>]", "done": "[x]"}.get(status, "[?]")
 
 
+def _edict_tag(entry: dict) -> str:
+    return f" [edict {entry['edict']}]" if entry.get("edict") else ""
+
+
 def show_gameplan(project_dir: Path, as_json: bool = False):
     """Display the full gameplan."""
     from . import gameplan as gp
@@ -400,14 +404,14 @@ def show_gameplan(project_dir: Path, as_json: bool = False):
     for phase in phases:
         icon = _phase_status_icon(phase.get("status", "planned"))
         item_count = len(phase.get("roadmapItems", []))
-        click.echo(f"  {icon} {phase.get('id')}: {phase.get('title')} ({item_count} items)")
+        click.echo(f"  {icon} {phase.get('id')}: {phase.get('title')} ({item_count} items){_edict_tag(phase)}")
 
     active = data.get("activePhase")
     if not active:
         click.echo("\nNo active phase.")
         return
 
-    click.echo(f"\nActive: {active.get('id')} — {active.get('title')}")
+    click.echo(f"\nActive: {active.get('id')} — {active.get('title')}{_edict_tag(active)}")
     if active.get("started"):
         click.echo(f"Started: {active['started']}")
     if active.get("goal"):
@@ -419,7 +423,7 @@ def show_gameplan(project_dir: Path, as_json: bool = False):
     click.echo(f"\nTasks ({len(tasks)}):")
     for task in tasks:
         icon = _task_status_icon(task.get("status", "pending"))
-        click.echo(f"  {icon} {task.get('id')}: {task.get('title')}")
+        click.echo(f"  {icon} {task.get('id')}: {task.get('title')}{_edict_tag(task)}")
 
     deferred = active.get("deferred", [])
     if deferred:
@@ -446,7 +450,7 @@ def list_gameplan_phases(project_dir: Path):
     for phase in phases:
         icon = _phase_status_icon(phase.get("status", "planned"))
         marker = " *" if phase.get("id") == active_id else ""
-        click.echo(f"{icon} {phase.get('id')}: {phase.get('title')}{marker}")
+        click.echo(f"{icon} {phase.get('id')}: {phase.get('title')}{_edict_tag(phase)}{marker}")
 
 
 def add_gameplan_phase(
@@ -456,6 +460,7 @@ def add_gameplan_phase(
     roadmap_items: list,
     notes: str,
     status: str,
+    edict: str = "",
 ):
     from . import gameplan as gp
 
@@ -467,6 +472,7 @@ def add_gameplan_phase(
             roadmap_items=roadmap_items,
             notes=notes,
             status=status,
+            edict=edict,
         )
 
     if _gameplan_run(project_dir, _add):
@@ -492,11 +498,11 @@ def activate_gameplan_phase(
         click.echo(f"Active phase: {phase_id}")
 
 
-def add_gameplan_task(project_dir: Path, task_id: str, title: str, details: str):
+def add_gameplan_task(project_dir: Path, task_id: str, title: str, details: str, edict: str = ""):
     from . import gameplan as gp
 
     if _gameplan_run(
-        project_dir, lambda d: gp.add_task(d, task_id, title, details=details)
+        project_dir, lambda d: gp.add_task(d, task_id, title, details=details, edict=edict)
     ):
         click.echo(f"Added task: {task_id}")
 
