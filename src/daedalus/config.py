@@ -59,6 +59,20 @@ class SectionsConfig:
     versioning: bool = True
 
 
+@dataclass
+class DoctorConfig:
+    """Thresholds for `daedalus doctor` (edict 0007)."""
+    stale_commits: int = 10    # commits after the gameplan's last update before it counts as behind
+    stale_task_days: int = 14  # days a task may sit in_progress before it is flagged
+
+
+@dataclass
+class HooksConfig:
+    """Claude Code hooks that init/hydrate register (edict 0007)."""
+    session_start: bool = True  # gameplan-first brief at session start
+    capture: bool = False       # SessionEnd/PreCompact: propose gameplan updates from commits
+
+
 # Allowed values for string settings that the template branches on
 SETTING_CHOICES = {
     "git.authorship": ("daedalus", "user"),
@@ -66,6 +80,9 @@ SETTING_CHOICES = {
 
 # Top-level config groups that template conditionals can read (and that project config may override)
 TEMPLATE_SETTING_GROUPS = ("git", "sections")
+
+# Groups a project may override in .daedalus/config.json
+PROJECT_SETTING_GROUPS = TEMPLATE_SETTING_GROUPS + ("doctor", "hooks")
 
 
 @dataclass
@@ -76,6 +93,8 @@ class DaedalusConfig:
     ariadne: AriadneConfig = field(default_factory=AriadneConfig)
     git: GitConfig = field(default_factory=GitConfig)
     sections: SectionsConfig = field(default_factory=SectionsConfig)
+    doctor: DoctorConfig = field(default_factory=DoctorConfig)
+    hooks: HooksConfig = field(default_factory=HooksConfig)
 
 
 def get_config_dir() -> Path:
@@ -143,6 +162,8 @@ def load_config() -> DaedalusConfig:
             ariadne=AriadneConfig(**data.get("ariadne", {})),
             git=GitConfig(**data.get("git", {})),
             sections=SectionsConfig(**data.get("sections", {})),
+            doctor=DoctorConfig(**data.get("doctor", {})),
+            hooks=HooksConfig(**data.get("hooks", {})),
         )
     except (json.JSONDecodeError, TypeError, KeyError):
         # Return defaults on any parse error
@@ -160,6 +181,8 @@ def save_config(config: DaedalusConfig) -> None:
         "ariadne": asdict(config.ariadne),
         "git": asdict(config.git),
         "sections": asdict(config.sections),
+        "doctor": asdict(config.doctor),
+        "hooks": asdict(config.hooks),
     }
 
     get_config_file().write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -211,6 +234,11 @@ def set_nested_value(config: DaedalusConfig, key: str, value: str) -> bool:
         current_value = getattr(obj, final_key)
         if isinstance(current_value, bool):
             value = value.lower() in ("true", "1", "yes", "on")
+        elif isinstance(current_value, int):
+            try:
+                value = int(value)
+            except ValueError:
+                return False
         elif key in SETTING_CHOICES and value not in SETTING_CHOICES[key]:
             return False
         setattr(obj, final_key, value)
@@ -240,11 +268,12 @@ def set_project_value(project_dir: Path, key: str, value: str) -> bool:
     """
     Set a template setting in the project config (.daedalus/config.json).
 
-    Only the groups the template reads (git, sections) can be overridden per project. The value is
+    Only PROJECT_SETTING_GROUPS (the template's git and sections, plus doctor and hooks) can be
+    overridden per project. The value is
     validated and type-converted against the global config's field. Returns False for an unknown key
     or a value outside the allowed choices.
     """
-    if key.split(".")[0] not in TEMPLATE_SETTING_GROUPS:
+    if key.split(".")[0] not in PROJECT_SETTING_GROUPS:
         return False
     probe = DaedalusConfig()
     if not set_nested_value(probe, key, value):
@@ -285,3 +314,13 @@ def get_template_settings(project_dir: Path, config: Optional[DaedalusConfig] = 
     overrides = {k: v for k, v in load_project_overrides(project_dir).items() if k in TEMPLATE_SETTING_GROUPS}
     merged = _deep_merge(base, overrides)
     return {group: {k: v for k, v in merged[group].items() if k in base[group]} for group in base}
+
+
+def get_project_settings(project_dir: Path, group: str, config: Optional[DaedalusConfig] = None) -> dict:
+    """One config group (e.g. "doctor", "hooks") with the project's overrides merged over the global value."""
+    config = config or load_config()
+    base = asdict(getattr(config, group))
+    override = load_project_overrides(project_dir).get(group, {})
+    if not isinstance(override, dict):
+        return base
+    return {k: override.get(k, v) for k, v in base.items()}

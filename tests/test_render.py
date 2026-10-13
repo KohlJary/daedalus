@@ -169,7 +169,14 @@ def test_config_project_set_and_show(tmp_path, monkeypatch):
     saved = json.loads((tmp_path / ".daedalus" / "config.json").read_text(encoding="utf-8"))
     assert saved == {"git": {"authorship": "user"}, "sections": {"squash": False}}
     shown = json.loads(runner.invoke(main, ["config", "--project"]).output)
-    assert shown == {"git": {"authorship": "user"}, "sections": {"squash": False, "versioning": True}}
+    assert shown == {
+        "git": {"authorship": "user"},
+        "sections": {"squash": False, "versioning": True},
+        "doctor": {"stale_commits": 10, "stale_task_days": 14},
+        "hooks": {"session_start": True, "capture": False},
+    }
+    assert runner.invoke(main, ["config", "--project", "doctor.stale_commits", "25"]).exit_code == 0
+    assert json.loads(runner.invoke(main, ["config", "--project"]).output)["doctor"]["stale_commits"] == 25
 
 
 def test_dropped_sections_leave_no_blank_line_runs(tmp_path):

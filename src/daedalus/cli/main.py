@@ -4,6 +4,7 @@ Daedalus CLI entry point.
 Commands:
   init      Initialize Daedalus in current project
   hydrate   Inject/update templates and agents
+  doctor    Check memory and plans for drift
   config    Manage global configuration
   palace    Mind Palace operations
 """
@@ -29,7 +30,8 @@ def main():
 
 @main.command()
 @click.option("--force", is_flag=True, help="Overwrite existing files")
-def init(force: bool):
+@click.option("--hooks/--no-hooks", default=True, help="Register Claude Code hooks in .claude/settings.json")
+def init(force: bool, hooks: bool):
     """Initialize Daedalus in the current project.
 
     Creates:
@@ -39,15 +41,16 @@ def init(force: bool):
     """
     from .commands import init_project
 
-    init_project(Path.cwd(), force=force)
+    init_project(Path.cwd(), force=force, hooks=hooks)
 
 
 @main.command()
 @click.option("--agents/--no-agents", default=True, help="Copy agents to .claude/agents/")
 @click.option("--template/--no-template", default=True, help="Inject CLAUDE.md template")
 @click.option("--skills/--no-skills", default=True, help="Install plugin skills to .claude/skills/")
-@click.option("--dry-run", is_flag=True, help="Show what would change (CLAUDE.md diff, agents and skills); write nothing")
-def hydrate(agents: bool, template: bool, skills: bool, dry_run: bool):
+@click.option("--hooks/--no-hooks", default=True, help="Register Claude Code hooks in .claude/settings.json")
+@click.option("--dry-run", is_flag=True, help="Show what would change (CLAUDE.md diff, agents, skills, hooks); write nothing")
+def hydrate(agents: bool, template: bool, skills: bool, hooks: bool, dry_run: bool):
     """Update Daedalus assets in current project.
 
     Re-injects the CLAUDE.md template and optionally updates agents. Text inside the
@@ -55,7 +58,7 @@ def hydrate(agents: bool, template: bool, skills: bool, dry_run: bool):
     """
     from .commands import hydrate_project
 
-    hydrate_project(Path.cwd(), agents=agents, template=template, dry_run=dry_run, skills=skills)
+    hydrate_project(Path.cwd(), agents=agents, template=template, dry_run=dry_run, skills=skills, hooks=hooks)
 
 
 @main.command("config")
@@ -76,10 +79,12 @@ def config_cmd(key: str, value: str, project: bool):
     import json
 
     if project:
-        from ..config import get_template_settings, set_project_value
+        from ..config import get_project_settings, get_template_settings, set_project_value
 
         if key is None or value is None:
             settings = get_template_settings(Path.cwd())
+            for group in ("doctor", "hooks"):
+                settings[group] = get_project_settings(Path.cwd(), group)
             if key is None:
                 click.echo(json.dumps(settings, indent=2))
             else:
@@ -110,6 +115,63 @@ def config_cmd(key: str, value: str, project: bool):
             click.echo(f"Set {key} = {value}")
         else:
             click.echo(f"Unknown config key: {key}", err=True)
+
+
+@main.group("hook")
+def hook():
+    """Claude Code hook entry points (registered by init/hydrate)."""
+    pass
+
+
+@hook.command("session-start")
+def hook_session_start():
+    """Print the gameplan-first session brief. Never fails the session."""
+    from ..hooks import session_start_brief
+
+    try:
+        brief = session_start_brief(Path.cwd())
+    except Exception as e:  # a broken brief must not block the session
+        brief = f"## Daedalus\n(session brief unavailable: {e}) Run /inhale."
+    if brief:
+        click.echo(brief)
+
+
+@hook.command("capture")
+def hook_capture():
+    """Propose gameplan updates from commits (SessionEnd/PreCompact). Never fails the session."""
+    from ..hooks import capture
+
+    try:
+        note = capture(Path.cwd())
+    except Exception as e:  # a failed capture must not block the session
+        note = f"Daedalus: capture hook skipped ({e})"
+    if note:
+        click.echo(note)
+
+
+@main.command("doctor")
+@click.option("--json", "as_json", is_flag=True, help="Print findings as JSON")
+def doctor(as_json: bool):
+    """Check whether the gameplan, edicts, and memory have fallen behind the code.
+
+    Exits 1 when anything is found, so it can run in CI.
+    """
+    import json
+    from dataclasses import asdict
+
+    from ..doctor import run_checks
+
+    findings, hints = run_checks(Path.cwd())
+    if as_json:
+        click.echo(json.dumps({"findings": [asdict(f) for f in findings], "hints": hints}, indent=2))
+    else:
+        for f in findings:
+            click.echo(f"{f.name}: {f.message}")
+        for h in hints:
+            click.echo(f"hint: {h}")
+        if not findings:
+            click.echo("No drift found.")
+    raise SystemExit(1 if findings else 0)
 
 
 @main.command("digest")
@@ -252,7 +314,8 @@ def gameplan_phase_list():
 @click.option("--items", "-i", multiple=True, help="Roadmap item id(s) to include")
 @click.option("--notes", "-n", default="", help="Phase notes")
 @click.option("--status", "-s", default="planned", help="planned | in_progress | done")
-def gameplan_phase_add(phase_id: str, title: str, items: tuple, notes: str, status: str):
+@click.option("--edict", "-e", default="", help="Edict this phase implements (e.g. 0007)")
+def gameplan_phase_add(phase_id: str, title: str, items: tuple, notes: str, status: str, edict: str):
     """Add a phase referencing roadmap item ids."""
     from .commands import add_gameplan_phase
 
@@ -263,6 +326,7 @@ def gameplan_phase_add(phase_id: str, title: str, items: tuple, notes: str, stat
         roadmap_items=list(items),
         notes=notes,
         status=status,
+        edict=edict,
     )
 
 
@@ -302,11 +366,12 @@ def gameplan_task():
 @click.argument("task_id")
 @click.argument("title")
 @click.option("--details", "-d", default="", help="Task details")
-def gameplan_task_add(task_id: str, title: str, details: str):
+@click.option("--edict", "-e", default="", help="Edict this task implements (e.g. 0007)")
+def gameplan_task_add(task_id: str, title: str, details: str, edict: str):
     """Add a task to the active phase."""
     from .commands import add_gameplan_task
 
-    add_gameplan_task(Path.cwd(), task_id=task_id, title=title, details=details)
+    add_gameplan_task(Path.cwd(), task_id=task_id, title=title, details=details, edict=edict)
 
 
 @gameplan_task.command("status")
@@ -330,6 +395,34 @@ def gameplan_task_defer(task_id: str, reason: str):
     from .commands import defer_gameplan_task
 
     defer_gameplan_task(Path.cwd(), task_id=task_id, reason=reason)
+
+
+@gameplan.group("pending", invoke_without_command=True)
+@click.pass_context
+def gameplan_pending(ctx):
+    """Proposed gameplan updates (from the capture hook). Lists them; apply or drop each one."""
+    if ctx.invoked_subcommand is None:
+        from .commands import list_pending
+
+        list_pending(Path.cwd())
+
+
+@gameplan_pending.command("apply")
+@click.argument("proposal_id")
+def gameplan_pending_apply(proposal_id: str):
+    """Apply a proposal (P1, P2, ... or 'all') to the gameplan."""
+    from .commands import apply_pending
+
+    apply_pending(Path.cwd(), proposal_id)
+
+
+@gameplan_pending.command("drop")
+@click.argument("proposal_id")
+def gameplan_pending_drop(proposal_id: str):
+    """Discard a proposal (P1, P2, ... or 'all')."""
+    from .commands import drop_pending
+
+    drop_pending(Path.cwd(), proposal_id)
 
 
 if __name__ == "__main__":

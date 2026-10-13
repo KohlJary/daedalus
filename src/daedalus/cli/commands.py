@@ -64,7 +64,7 @@ def _ensure_global_identity():
         identity_json.write_text(GLOBAL_IDENTITY_JSON, encoding="utf-8")
 
 
-def init_project(project_dir: Path, force: bool = False):
+def init_project(project_dir: Path, force: bool = False, hooks: bool = True):
     """Initialize Daedalus in a project."""
     click.echo(f"Initializing Daedalus in {project_dir}")
 
@@ -75,12 +75,12 @@ def init_project(project_dir: Path, force: bool = False):
     memory_dir = project_dir / ".daedalus"
     memory_dir.mkdir(exist_ok=True)
 
-    # Create initial memory files
+    # Create initial memory files. Optional ones (observations, lessons, warnings) appear when a
+    # project starts using them, not as empty templates (edict 0007).
     memory_files = {
         "session-summaries.md": "# Session Summaries\n\n",
         "project-map.md": "# Project Map\n\n",
         "decisions.md": "# Decisions\n\n",
-        "observations.json": "[]",
     }
 
     for filename, content in memory_files.items():
@@ -101,6 +101,7 @@ def init_project(project_dir: Path, force: bool = False):
 
     if gp.ensure_gameplan(project_dir, force=force):
         click.echo("  Created roadmap/gameplan.json")
+    _ensure_gameplan_tracked(project_dir)
 
     # Copy agents
     agents_dir = project_dir / ".claude" / "agents"
@@ -109,6 +110,9 @@ def init_project(project_dir: Path, force: bool = False):
 
     # Install skills
     _copy_skills(project_dir / ".claude" / "skills", force)
+
+    if hooks:
+        _register_hooks(project_dir)
 
     # Inject CLAUDE.md template
     from ..templates.injector import inject_claude_template
@@ -126,9 +130,13 @@ def init_project(project_dir: Path, force: bool = False):
 
 
 def hydrate_project(
-    project_dir: Path, agents: bool = True, template: bool = True, dry_run: bool = False, skills: bool = True
+    project_dir: Path, agents: bool = True, template: bool = True, dry_run: bool = False, skills: bool = True,
+    hooks: bool = True,
 ):
     """Update Daedalus assets in project. With dry_run, report what would change and write nothing."""
+    if hooks:
+        _register_hooks(project_dir, dry_run=dry_run)
+
     if skills:
         skills_dir = project_dir / ".claude" / "skills"
         if dry_run:
@@ -182,6 +190,69 @@ def hydrate_project(
             click.echo("Updated CLAUDE.md template")
         else:
             click.echo("Warning: Could not update CLAUDE.md template", err=True)
+
+
+GITIGNORE_GAMEPLAN_BLOCK = """
+# Daedalus: commit the gameplan, keep the rest of .daedalus/ local (edict 0007)
+!.daedalus/
+.daedalus/*
+!.daedalus/roadmap/
+.daedalus/roadmap/*
+!.daedalus/roadmap/gameplan.json
+"""
+
+
+def _ensure_gameplan_tracked(project_dir: Path):
+    """If git ignores the gameplan, append negations to .gitignore so it can be committed."""
+    import subprocess
+
+    from . import gameplan as gp
+
+    rel = str(gp.GameplanPaths.for_project(project_dir).gameplan_file.relative_to(project_dir))
+
+    def ignored() -> bool:
+        try:
+            return subprocess.run(
+                ["git", "check-ignore", "-q", rel], cwd=project_dir, capture_output=True
+            ).returncode == 0
+        except FileNotFoundError:
+            return False
+
+    if not ignored():
+        return
+    gitignore = project_dir / ".gitignore"
+    text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
+    if GITIGNORE_GAMEPLAN_BLOCK.strip() not in text:
+        sep = "" if not text or text.endswith("\n") else "\n"
+        gitignore.write_text(text + sep + GITIGNORE_GAMEPLAN_BLOCK, encoding="utf-8")
+    if ignored():
+        click.echo(f"  Warning: {rel} is still ignored by git (a rule outside .gitignore?). "
+                   f"See `git check-ignore -v {rel}`.", err=True)
+    else:
+        click.echo(f"  Un-ignored {rel} in .gitignore so the gameplan can be committed")
+
+
+def _register_hooks(project_dir: Path, dry_run: bool = False):
+    """Register the hooks enabled in config (hooks.session_start, hooks.capture) in .claude/settings.json."""
+    from ..config import get_project_settings
+    from ..hooks import register_hooks
+
+    settings = get_project_settings(project_dir, "hooks")
+    added, removed, error = register_hooks(
+        project_dir, session_start=settings["session_start"], capture=settings["capture"], dry_run=dry_run
+    )
+    if error:
+        click.echo(f"  Warning: {error}", err=True)
+        return
+    if dry_run:
+        click.echo("Hooks that would be registered: " + (", ".join(added) if added else "none"))
+        if removed:
+            click.echo("Hooks that would be removed (disabled in config): " + ", ".join(removed))
+        return
+    if added:
+        click.echo(f"  Registered hooks in .claude/settings.json: {', '.join(added)}")
+    if removed:
+        click.echo(f"  Removed disabled hooks from .claude/settings.json: {', '.join(removed)}")
 
 
 def _skill_files(name: str):
@@ -381,6 +452,10 @@ def _task_status_icon(status: str) -> str:
     return {"pending": "[ ]", "in_progress": "[>]", "done": "[x]"}.get(status, "[?]")
 
 
+def _edict_tag(entry: dict) -> str:
+    return f" [edict {entry['edict']}]" if entry.get("edict") else ""
+
+
 def show_gameplan(project_dir: Path, as_json: bool = False):
     """Display the full gameplan."""
     from . import gameplan as gp
@@ -400,14 +475,14 @@ def show_gameplan(project_dir: Path, as_json: bool = False):
     for phase in phases:
         icon = _phase_status_icon(phase.get("status", "planned"))
         item_count = len(phase.get("roadmapItems", []))
-        click.echo(f"  {icon} {phase.get('id')}: {phase.get('title')} ({item_count} items)")
+        click.echo(f"  {icon} {phase.get('id')}: {phase.get('title')} ({item_count} items){_edict_tag(phase)}")
 
     active = data.get("activePhase")
     if not active:
         click.echo("\nNo active phase.")
         return
 
-    click.echo(f"\nActive: {active.get('id')} — {active.get('title')}")
+    click.echo(f"\nActive: {active.get('id')} — {active.get('title')}{_edict_tag(active)}")
     if active.get("started"):
         click.echo(f"Started: {active['started']}")
     if active.get("goal"):
@@ -419,7 +494,7 @@ def show_gameplan(project_dir: Path, as_json: bool = False):
     click.echo(f"\nTasks ({len(tasks)}):")
     for task in tasks:
         icon = _task_status_icon(task.get("status", "pending"))
-        click.echo(f"  {icon} {task.get('id')}: {task.get('title')}")
+        click.echo(f"  {icon} {task.get('id')}: {task.get('title')}{_edict_tag(task)}")
 
     deferred = active.get("deferred", [])
     if deferred:
@@ -446,7 +521,7 @@ def list_gameplan_phases(project_dir: Path):
     for phase in phases:
         icon = _phase_status_icon(phase.get("status", "planned"))
         marker = " *" if phase.get("id") == active_id else ""
-        click.echo(f"{icon} {phase.get('id')}: {phase.get('title')}{marker}")
+        click.echo(f"{icon} {phase.get('id')}: {phase.get('title')}{_edict_tag(phase)}{marker}")
 
 
 def add_gameplan_phase(
@@ -456,6 +531,7 @@ def add_gameplan_phase(
     roadmap_items: list,
     notes: str,
     status: str,
+    edict: str = "",
 ):
     from . import gameplan as gp
 
@@ -467,6 +543,7 @@ def add_gameplan_phase(
             roadmap_items=roadmap_items,
             notes=notes,
             status=status,
+            edict=edict,
         )
 
     if _gameplan_run(project_dir, _add):
@@ -492,11 +569,11 @@ def activate_gameplan_phase(
         click.echo(f"Active phase: {phase_id}")
 
 
-def add_gameplan_task(project_dir: Path, task_id: str, title: str, details: str):
+def add_gameplan_task(project_dir: Path, task_id: str, title: str, details: str, edict: str = ""):
     from . import gameplan as gp
 
     if _gameplan_run(
-        project_dir, lambda d: gp.add_task(d, task_id, title, details=details)
+        project_dir, lambda d: gp.add_task(d, task_id, title, details=details, edict=edict)
     ):
         click.echo(f"Added task: {task_id}")
 
@@ -518,3 +595,36 @@ def defer_gameplan_task(project_dir: Path, task_id: str, reason: str):
 
     if _gameplan_run(project_dir, lambda d: gp.defer_task(d, task_id, reason=reason)):
         click.echo(f"Deferred task: {task_id}")
+
+
+def list_pending(project_dir: Path):
+    from . import gameplan as gp
+
+    proposals = gp.load_pending(project_dir)
+    if not proposals:
+        click.echo("No pending gameplan updates.")
+        return
+    for p in proposals:
+        click.echo(f"{p['id']}: {p['task']} -> {p['status']}  ({p.get('source', '')}, {p.get('created', '')})")
+        if p.get("resolution"):
+            click.echo(f"    {p['resolution']}")
+
+
+def apply_pending(project_dir: Path, which: str):
+    from . import gameplan as gp
+
+    applied = _gameplan_run(project_dir, lambda d: gp.apply_pending(project_dir, d, which))
+    for p in applied or []:
+        click.echo(f"Applied {p['id']}: {p['task']} -> {p['status']}")
+
+
+def drop_pending(project_dir: Path, which: str):
+    from . import gameplan as gp
+
+    try:
+        dropped = gp.drop_pending(project_dir, which)
+    except gp.GameplanError as e:
+        click.echo(str(e), err=True)
+        return
+    for p in dropped:
+        click.echo(f"Dropped {p['id']}: {p['task']}")

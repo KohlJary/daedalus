@@ -16,7 +16,8 @@ Schema:
         "title": "...",
         "status": "planned" | "in_progress" | "done",
         "roadmapItems": ["<item_id>", ...],   # references by id
-        "notes": "..."
+        "notes": "...",
+        "edict": "NNNN"                        # optional: the edict this phase implements
       }
     ],
     "activePhase": {
@@ -31,6 +32,8 @@ Schema:
           "title": "...",
           "status": "pending" | "in_progress" | "done",
           "details": "...",
+          "edict": "NNNN",      # optional: the edict this task implements
+          "updated": "YYYY-MM-DD",  # last status change
           "resolution": "..."   # only when done
         }
       ],
@@ -124,6 +127,7 @@ def add_phase(
     roadmap_items: Optional[list[str]] = None,
     notes: str = "",
     status: str = "planned",
+    edict: str = "",
 ) -> dict[str, Any]:
     if status not in PHASE_STATUSES:
         raise GameplanError(f"Invalid phase status: {status}. Use one of {PHASE_STATUSES}")
@@ -136,6 +140,8 @@ def add_phase(
         "roadmapItems": roadmap_items or [],
         "notes": notes,
     }
+    if edict:
+        phase["edict"] = edict
     data.setdefault("phases", []).append(phase)
     return phase
 
@@ -170,6 +176,8 @@ def activate_phase(
         "tasks": [],
         "deferred": [],
     }
+    if phase.get("edict"):
+        data["activePhase"]["edict"] = phase["edict"]
     return data["activePhase"]
 
 
@@ -203,6 +211,7 @@ def add_task(
     title: str,
     details: str = "",
     status: str = "pending",
+    edict: str = "",
 ) -> dict[str, Any]:
     if status not in TASK_STATUSES:
         raise GameplanError(f"Invalid task status: {status}. Use one of {TASK_STATUSES}")
@@ -214,7 +223,10 @@ def add_task(
         "title": title,
         "status": status,
         "details": details,
+        "updated": date.today().isoformat(),
     }
+    if edict:
+        task["edict"] = edict
     active.setdefault("tasks", []).append(task)
     return task
 
@@ -231,6 +243,7 @@ def set_task_status(
     if not task:
         raise GameplanError(f"Task '{task_id}' not found in active phase")
     task["status"] = status
+    task["updated"] = date.today().isoformat()
     if status == "done" and resolution:
         task["resolution"] = resolution
     return task
@@ -245,3 +258,85 @@ def defer_task(data: dict[str, Any], task_id: str, reason: str = "") -> dict[str
     entry = {"id": task["id"], "title": task["title"], "reason": reason}
     active.setdefault("deferred", []).append(entry)
     return entry
+
+
+# ---------- pending proposals (edict 0007) ----------
+#
+# Hooks never edit the gameplan. They write proposals here; a human or a session applies or
+# drops each one with `daedalus gameplan pending apply|drop`.
+
+PENDING_FILENAME = "pending.json"
+
+
+def pending_path(project_dir: Path) -> Path:
+    return GameplanPaths.for_project(project_dir).roadmap_dir / PENDING_FILENAME
+
+
+def load_pending(project_dir: Path) -> list[dict[str, Any]]:
+    path = pending_path(project_dir)
+    if not path.exists():
+        return []
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("proposals", [])
+    except (json.JSONDecodeError, AttributeError):
+        return []
+
+
+def save_pending(project_dir: Path, proposals: list[dict[str, Any]]) -> None:
+    path = pending_path(project_dir)
+    if not proposals:
+        if path.exists():
+            path.unlink()
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"proposals": proposals}, indent=2) + "\n", encoding="utf-8")
+
+
+def add_proposals(project_dir: Path, new: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Merge proposals into the pending file. A proposal for a task that already has one replaces it
+    when it brings commits the old one didn't have; otherwise it is skipped. Returns what was added.
+    """
+    proposals = load_pending(project_dir)
+    by_task = {p.get("task"): p for p in proposals}
+    next_num = max((int(p["id"][1:]) for p in proposals if p.get("id", "")[1:].isdigit()), default=0) + 1
+    added = []
+    for proposal in new:
+        old = by_task.get(proposal["task"])
+        if old and set(proposal.get("commits", [])) <= set(old.get("commits", [])):
+            continue
+        if old:
+            proposal["id"] = old["id"]
+            proposals[proposals.index(old)] = proposal
+        else:
+            proposal["id"] = f"P{next_num}"
+            next_num += 1
+            proposals.append(proposal)
+        by_task[proposal["task"]] = proposal
+        added.append(proposal)
+    save_pending(project_dir, proposals)
+    return added
+
+
+def _select(proposals: list[dict[str, Any]], which: str) -> list[dict[str, Any]]:
+    chosen = proposals if which == "all" else [p for p in proposals if p.get("id") == which]
+    if not chosen:
+        raise GameplanError(f"No pending proposal '{which}'")
+    return chosen
+
+
+def apply_pending(project_dir: Path, data: dict[str, Any], which: str) -> list[dict[str, Any]]:
+    """Apply proposals (an id or 'all') to the gameplan data; removes them from the pending file."""
+    proposals = load_pending(project_dir)
+    chosen = _select(proposals, which)
+    for p in chosen:
+        set_task_status(data, p["task"], p["status"], resolution=p.get("resolution", ""))
+    save_pending(project_dir, [p for p in proposals if p not in chosen])
+    return chosen
+
+
+def drop_pending(project_dir: Path, which: str) -> list[dict[str, Any]]:
+    proposals = load_pending(project_dir)
+    chosen = _select(proposals, which)
+    save_pending(project_dir, [p for p in proposals if p not in chosen])
+    return chosen
