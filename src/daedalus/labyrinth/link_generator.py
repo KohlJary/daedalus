@@ -108,7 +108,7 @@ def parse_api_mapping_report(report_path: Path) -> List[Dict[str, str]]:
         logger.warning(f"Report not found: {report_path}")
         return []
 
-    content = report_path.read_text()
+    content = report_path.read_text(encoding="utf-8")
     mappings = []
 
     # Match table rows (skip header and separator rows)

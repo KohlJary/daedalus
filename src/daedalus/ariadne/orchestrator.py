@@ -227,7 +227,7 @@ class AriadneOrchestrator:
 
             # Create commit
             message_file = commit_dir / "message.md"
-            message = message_file.read_text()
+            message = message_file.read_text(encoding="utf-8")
 
             result = subprocess.run(
                 ["git", "commit", "-a", "--author=Daedalus <daedalus@localhost>", "-m", message],

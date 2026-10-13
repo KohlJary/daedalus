@@ -304,7 +304,7 @@ class Dispatcher:
             },
         }
 
-        state_file.write_text(json.dumps(data, indent=2))
+        state_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def load_state(self, plan_id: str) -> Optional[PlanDispatchState]:
         """Load dispatch state from disk."""
@@ -312,7 +312,7 @@ class Dispatcher:
         if not state_file.exists():
             return None
 
-        data = json.loads(state_file.read_text())
+        data = json.loads(state_file.read_text(encoding="utf-8"))
 
         state = PlanDispatchState(
             plan_id=data["plan_id"],

@@ -303,12 +303,12 @@ def save_proposals(proposal_set: ProposalSet, path: Path) -> None:
         "source": proposal_set.source,
         "proposals": [asdict(p) for p in proposal_set.proposals],
     }
-    path.write_text(json.dumps(data, indent=2))
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def load_proposals(path: Path) -> ProposalSet:
     """Load a proposal set from JSON."""
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     proposals = [
         Proposal(
             id=p["id"],

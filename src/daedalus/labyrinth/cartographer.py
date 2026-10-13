@@ -765,7 +765,7 @@ class Cartographer:
 
         if output_path:
             output_path = Path(output_path)
-            output_path.write_text(json_str)
+            output_path.write_text(json_str, encoding="utf-8")
             logger.info(f"Exported graph to {output_path}")
 
         return json_str
@@ -837,7 +837,7 @@ class Cartographer:
 
         if output_path:
             output_path = Path(output_path)
-            output_path.write_text(dot_str)
+            output_path.write_text(dot_str, encoding="utf-8")
             logger.info(f"Exported DOT to {output_path}")
 
         return dot_str
@@ -1483,7 +1483,7 @@ class Cartographer:
 
         if output_path:
             output_path = Path(output_path)
-            output_path.write_text(html)
+            output_path.write_text(html, encoding="utf-8")
             logger.info(f"Exported HTML visualization to {output_path}")
 
         return html

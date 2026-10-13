@@ -55,7 +55,7 @@ def get_template_content() -> Optional[str]:
         pkg_root = Path(__file__).parent.parent
         template_path = pkg_root / "plugin" / "templates" / "CLAUDE_TEMPLATE.md"
         if template_path.exists():
-            return template_path.read_text()
+            return template_path.read_text(encoding="utf-8")
     except Exception:
         pass
 
@@ -64,7 +64,7 @@ def get_template_content() -> Optional[str]:
         package_root = Path(__file__).parent.parent.parent.parent
         plugin_template = package_root / ".claude-plugin" / "templates" / "CLAUDE_TEMPLATE.md"
         if plugin_template.exists():
-            return plugin_template.read_text()
+            return plugin_template.read_text(encoding="utf-8")
     except Exception:
         pass
 
@@ -97,7 +97,7 @@ def load_daedalus_config(config_path: Optional[Path] = None) -> dict:
     for path in paths_to_try:
         if path.exists():
             try:
-                return json.loads(path.read_text())
+                return json.loads(path.read_text(encoding="utf-8"))
             except Exception as e:
                 _debug_log(f"Failed to load config from {path}: {e}", "warning")
 
@@ -184,29 +184,36 @@ def inject_claude_template(
 
     daedalus_section = match.group(0)
 
+    # Always UTF-8, and newline="" so nothing is translated: the platform default (cp1252 on Windows)
+    # turns em dashes into 0x97, and text-mode writes turn every \n into \r\n.
     try:
         if not claude_md_path.exists():
             # Create new file from template
-            claude_md_path.write_text(template_content)
+            claude_md_path.write_text(template_content, encoding="utf-8", newline="")
             _debug_log(f"Created CLAUDE.md at {claude_md_path}", "info")
         else:
-            # Update existing file
-            existing_content = claude_md_path.read_text()
+            # Update existing file, keeping its line endings
+            # open() rather than read_text(): read_text only takes newline= from Python 3.13
+            with open(claude_md_path, encoding="utf-8", newline="") as f:
+                existing_content = f.read()
+            newline = "\r\n" if "\r\n" in existing_content else "\n"
+            section = daedalus_section.replace("\r\n", "\n").replace("\n", newline)
 
             if DAEDALUS_BEGIN in existing_content:
-                # Replace existing Daedalus section
+                # Replace existing Daedalus section. A function replacement keeps backslashes in the
+                # template literal (a string replacement would read them as escapes and group refs).
                 updated_content = re.sub(
                     rf'{re.escape(DAEDALUS_BEGIN)}.*?{re.escape(DAEDALUS_END)}',
-                    daedalus_section,
+                    lambda _: section,
                     existing_content,
                     flags=re.DOTALL
                 )
-                claude_md_path.write_text(updated_content)
+                claude_md_path.write_text(updated_content, encoding="utf-8", newline="")
                 _debug_log(f"Updated Daedalus section in {claude_md_path}", "info")
             else:
                 # Prepend Daedalus section to existing content
-                updated_content = daedalus_section + "\n\n" + existing_content
-                claude_md_path.write_text(updated_content)
+                updated_content = section + newline + newline + existing_content
+                claude_md_path.write_text(updated_content, encoding="utf-8", newline="")
                 _debug_log(f"Prepended Daedalus section to {claude_md_path}", "info")
 
         return True

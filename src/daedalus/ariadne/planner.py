@@ -515,13 +515,13 @@ class Planner:
     def _save_plan(self, plan: ImplementationPlan) -> None:
         """Save plan to disk."""
         plan_file = self.plans_dir / f"{plan.id}.json"
-        plan_file.write_text(json.dumps(plan.to_dict(), indent=2))
+        plan_file.write_text(json.dumps(plan.to_dict(), indent=2), encoding="utf-8")
 
     def load_plan(self, plan_id: str) -> Optional[ImplementationPlan]:
         """Load a plan from disk."""
         plan_file = self.plans_dir / f"{plan_id}.json"
         if plan_file.exists():
-            data = json.loads(plan_file.read_text())
+            data = json.loads(plan_file.read_text(encoding="utf-8"))
             return ImplementationPlan.from_dict(data)
         return None
 
@@ -529,7 +529,7 @@ class Planner:
         """List all plans, optionally filtered by status."""
         plans = []
         for plan_file in self.plans_dir.glob("*.json"):
-            data = json.loads(plan_file.read_text())
+            data = json.loads(plan_file.read_text(encoding="utf-8"))
             plan = ImplementationPlan.from_dict(data)
             if status is None or plan.status == status:
                 plans.append(plan)

@@ -25,10 +25,15 @@ Directory structure:
 
 import json
 import os
+import sys
 import time
 import uuid
-import fcntl
 from pathlib import Path
+
+if sys.platform != "win32":
+    import fcntl
+else:
+    fcntl = None  # File locking is best-effort; bus is single-host anyway
 from datetime import datetime, timezone
 from enum import Enum
 from dataclasses import dataclass, field, asdict
@@ -182,7 +187,7 @@ class IcarusBus:
             "version": "1.0",
             "daedalus_pid": os.getpid(),
         }
-        (self.root / "manifest.json").write_text(json.dumps(manifest, indent=2))
+        (self.root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     def is_initialized(self) -> bool:
         """Check if bus is initialized."""
@@ -264,7 +269,7 @@ class IcarusBus:
         if not stream_file.exists():
             return []
 
-        lines = stream_file.read_text().splitlines()
+        lines = stream_file.read_text(encoding="utf-8").splitlines()
         return lines[-tail:] if tail else lines
 
     # ========== Work Management ==========
@@ -275,7 +280,7 @@ class IcarusBus:
             work.id = f"work-{uuid.uuid4().hex[:8]}"
 
         work_file = self.dirs["work_queue"] / f"{work.id}.json"
-        work_file.write_text(json.dumps(asdict(work), indent=2))
+        work_file.write_text(json.dumps(asdict(work), indent=2), encoding="utf-8")
         return work.id
 
     def claim_work(self, instance_id: str) -> Optional[WorkPackage]:
@@ -294,9 +299,10 @@ class IcarusBus:
                 # Try to atomically move the file (claim it)
                 claimed_path = self.dirs["claimed"] / work_file.name
 
-                # Use file locking for safe claiming
+                # Use file locking for safe claiming (Unix only)
                 with open(work_file, "r") as f:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    if fcntl is not None:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                     work_data = json.load(f)
 
                     # Update claim info
@@ -305,9 +311,10 @@ class IcarusBus:
                     work_data["claimed_at"] = datetime.now(timezone.utc).isoformat()
 
                     # Write to claimed directory
-                    claimed_path.write_text(json.dumps(work_data, indent=2))
+                    claimed_path.write_text(json.dumps(work_data, indent=2), encoding="utf-8")
 
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                    if fcntl is not None:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
                 # Remove from queue
                 work_file.unlink()
@@ -324,7 +331,7 @@ class IcarusBus:
         """List all pending work packages."""
         work_list = []
         for f in self.dirs["work_queue"].glob("*.json"):
-            data = json.loads(f.read_text())
+            data = json.loads(f.read_text(encoding="utf-8"))
             work_list.append(WorkPackage(**data))
         return sorted(work_list, key=lambda w: w.priority)
 
@@ -332,7 +339,7 @@ class IcarusBus:
         """List all claimed (in-progress) work packages."""
         work_list = []
         for f in self.dirs["claimed"].glob("*.json"):
-            data = json.loads(f.read_text())
+            data = json.loads(f.read_text(encoding="utf-8"))
             work_list.append(WorkPackage(**data))
         return work_list
 
@@ -341,7 +348,7 @@ class IcarusBus:
         for dir_name in ["work_queue", "claimed"]:
             work_file = self.dirs[dir_name] / f"{work_id}.json"
             if work_file.exists():
-                data = json.loads(work_file.read_text())
+                data = json.loads(work_file.read_text(encoding="utf-8"))
                 return WorkPackage(**data)
         return None
 
@@ -360,7 +367,7 @@ class IcarusBus:
         }
 
         result_file = self.dirs["results"] / f"{work_id}.json"
-        result_file.write_text(json.dumps(result_data, indent=2))
+        result_file.write_text(json.dumps(result_data, indent=2), encoding="utf-8")
 
         # Remove from claimed
         claimed_file = self.dirs["claimed"] / f"{work_id}.json"
@@ -371,7 +378,7 @@ class IcarusBus:
         """Collect all completed results."""
         results = []
         for f in self.dirs["results"].glob("*.json"):
-            results.append(json.loads(f.read_text()))
+            results.append(json.loads(f.read_text(encoding="utf-8")))
             if clear:
                 f.unlink()
         return results
@@ -380,7 +387,7 @@ class IcarusBus:
         """Get result for specific work package."""
         result_file = self.dirs["results"] / f"{work_id}.json"
         if result_file.exists():
-            return json.loads(result_file.read_text())
+            return json.loads(result_file.read_text(encoding="utf-8"))
         return None
 
     # ========== Request/Response ==========
@@ -405,7 +412,7 @@ class IcarusBus:
         )
 
         request_file = self.dirs["requests"] / f"{request_id}.json"
-        request_file.write_text(json.dumps(asdict(request), indent=2))
+        request_file.write_text(json.dumps(asdict(request), indent=2), encoding="utf-8")
 
         return request_id
 
@@ -413,7 +420,7 @@ class IcarusBus:
         """List all pending requests needing attention."""
         requests = []
         for f in self.dirs["requests"].glob("*.json"):
-            data = json.loads(f.read_text())
+            data = json.loads(f.read_text(encoding="utf-8"))
             if not data.get("resolved"):
                 requests.append(Request(**data))
         return requests
@@ -423,14 +430,14 @@ class IcarusBus:
         response.request_id = request_id
 
         response_file = self.dirs["responses"] / f"{request_id}.json"
-        response_file.write_text(json.dumps(asdict(response), indent=2))
+        response_file.write_text(json.dumps(asdict(response), indent=2), encoding="utf-8")
 
         # Mark request as resolved
         request_file = self.dirs["requests"] / f"{request_id}.json"
         if request_file.exists():
-            data = json.loads(request_file.read_text())
+            data = json.loads(request_file.read_text(encoding="utf-8"))
             data["resolved"] = True
-            request_file.write_text(json.dumps(data, indent=2))
+            request_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def wait_for_response(
         self,
@@ -444,7 +451,7 @@ class IcarusBus:
 
         while time.time() - start < timeout:
             if response_file.exists():
-                data = json.loads(response_file.read_text())
+                data = json.loads(response_file.read_text(encoding="utf-8"))
                 return Response(**data)
             time.sleep(poll_interval)
 
@@ -463,7 +470,7 @@ class IcarusBus:
 
         while time.time() - start < timeout:
             if response_file.exists():
-                data = json.loads(response_file.read_text())
+                data = json.loads(response_file.read_text(encoding="utf-8"))
                 return Response(**data)
             await asyncio.sleep(poll_interval)
 
@@ -473,7 +480,7 @@ class IcarusBus:
         """Get response for a request (non-blocking)."""
         response_file = self.dirs["responses"] / f"{request_id}.json"
         if response_file.exists():
-            data = json.loads(response_file.read_text())
+            data = json.loads(response_file.read_text(encoding="utf-8"))
             return Response(**data)
         return None
 
@@ -528,13 +535,13 @@ class IcarusBus:
     def _write_instance(self, instance: IcarusInstance) -> None:
         """Write instance data to file."""
         instance_file = self.dirs["instances"] / f"{instance.id}.json"
-        instance_file.write_text(json.dumps(asdict(instance), indent=2))
+        instance_file.write_text(json.dumps(asdict(instance), indent=2), encoding="utf-8")
 
     def _read_instance(self, instance_id: str) -> Optional[IcarusInstance]:
         """Read instance data from file."""
         instance_file = self.dirs["instances"] / f"{instance_id}.json"
         if instance_file.exists():
-            data = json.loads(instance_file.read_text())
+            data = json.loads(instance_file.read_text(encoding="utf-8"))
             # Convert string status back to enum
             data["status"] = InstanceStatus(data["status"])
             return IcarusInstance(**data)
@@ -543,7 +550,7 @@ class IcarusBus:
     def _get_work_priority(self, work_file: Path) -> int:
         """Get priority from work file for sorting."""
         try:
-            data = json.loads(work_file.read_text())
+            data = json.loads(work_file.read_text(encoding="utf-8"))
             return data.get("priority", 5)
         except:
             return 5

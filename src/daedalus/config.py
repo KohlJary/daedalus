@@ -110,7 +110,7 @@ def load_config() -> DaedalusConfig:
         return DaedalusConfig()
 
     try:
-        data = json.loads(config_file.read_text())
+        data = json.loads(config_file.read_text(encoding="utf-8"))
         return DaedalusConfig(
             user=UserConfig(**data.get("user", {})),
             icarus=IcarusConfig(**data.get("icarus", {})),
@@ -132,7 +132,7 @@ def save_config(config: DaedalusConfig) -> None:
         "ariadne": asdict(config.ariadne),
     }
 
-    get_config_file().write_text(json.dumps(data, indent=2))
+    get_config_file().write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def get_nested_value(config: DaedalusConfig, key: str) -> Optional[str]:
