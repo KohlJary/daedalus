@@ -49,3 +49,9 @@ committed to `main` directly at his instruction.
   (0007, then numbered 0004, makes `status.md` a session note). Why: the
   pluggable sources were designed for enterprise teams that don't exist yet,
   and they added a second layer over the gameplan.
+- 2026-10-13, requested by Kohl, alongside 0001's amendment: with edicts
+  off, a diff is auto-approvable only if it comes from an approved Ariadne
+  plan. The criterion "With edicts off, every Ariadne diff routes to
+  `NEEDS_REVIEW`" becomes "With edicts off, every Ariadne diff that doesn't
+  come from an approved plan routes to `NEEDS_REVIEW`". Why: approved plans
+  are a source of approved intent that doesn't need edicts (see 0001).
