@@ -45,8 +45,9 @@ def init(force: bool):
 @main.command()
 @click.option("--agents/--no-agents", default=True, help="Copy agents to .claude/agents/")
 @click.option("--template/--no-template", default=True, help="Inject CLAUDE.md template")
-@click.option("--dry-run", is_flag=True, help="Show what would change (CLAUDE.md diff, agents replaced); write nothing")
-def hydrate(agents: bool, template: bool, dry_run: bool):
+@click.option("--skills/--no-skills", default=True, help="Install plugin skills to .claude/skills/")
+@click.option("--dry-run", is_flag=True, help="Show what would change (CLAUDE.md diff, agents and skills); write nothing")
+def hydrate(agents: bool, template: bool, skills: bool, dry_run: bool):
     """Update Daedalus assets in current project.
 
     Re-injects the CLAUDE.md template and optionally updates agents. Text inside the
@@ -54,7 +55,7 @@ def hydrate(agents: bool, template: bool, dry_run: bool):
     """
     from .commands import hydrate_project
 
-    hydrate_project(Path.cwd(), agents=agents, template=template, dry_run=dry_run)
+    hydrate_project(Path.cwd(), agents=agents, template=template, dry_run=dry_run, skills=skills)
 
 
 @main.command("config")
