@@ -73,6 +73,19 @@ class HooksConfig:
     capture: bool = False       # SessionEnd/PreCompact: propose gameplan updates from commits
 
 
+@dataclass
+class ReconstructConfig:
+    """Evidence gathering for memory reconstruction (edict 0006).
+
+    Evidence paths outside git (e.g. gitignored run logs) are a list set in .daedalus/config.json:
+    {"reconstruct": {"evidence_paths": ["projects/runs"]}}
+    """
+    score_threshold: int = 50  # commits whose message scores below this get their diff in the bundle
+    sample_size: int = 3       # high-scoring commits that get diffs anyway, to check the score
+    diff_cap: int = 8000       # max characters of patch per commit
+    doc_paths: list = field(default_factory=lambda: ["docs/", "analyses/", "release-notes/", "CHANGELOG.md"])
+
+
 # Allowed values for string settings that the template branches on
 SETTING_CHOICES = {
     "git.authorship": ("daedalus", "user"),
@@ -82,7 +95,7 @@ SETTING_CHOICES = {
 TEMPLATE_SETTING_GROUPS = ("git", "sections")
 
 # Groups a project may override in .daedalus/config.json
-PROJECT_SETTING_GROUPS = TEMPLATE_SETTING_GROUPS + ("doctor", "hooks")
+PROJECT_SETTING_GROUPS = TEMPLATE_SETTING_GROUPS + ("doctor", "hooks", "reconstruct")
 
 
 @dataclass
@@ -95,6 +108,7 @@ class DaedalusConfig:
     sections: SectionsConfig = field(default_factory=SectionsConfig)
     doctor: DoctorConfig = field(default_factory=DoctorConfig)
     hooks: HooksConfig = field(default_factory=HooksConfig)
+    reconstruct: ReconstructConfig = field(default_factory=ReconstructConfig)
 
 
 def get_config_dir() -> Path:
@@ -164,6 +178,7 @@ def load_config() -> DaedalusConfig:
             sections=SectionsConfig(**data.get("sections", {})),
             doctor=DoctorConfig(**data.get("doctor", {})),
             hooks=HooksConfig(**data.get("hooks", {})),
+            reconstruct=ReconstructConfig(**data.get("reconstruct", {})),
         )
     except (json.JSONDecodeError, TypeError, KeyError):
         # Return defaults on any parse error
@@ -183,6 +198,7 @@ def save_config(config: DaedalusConfig) -> None:
         "sections": asdict(config.sections),
         "doctor": asdict(config.doctor),
         "hooks": asdict(config.hooks),
+        "reconstruct": asdict(config.reconstruct),
     }
 
     get_config_file().write_text(json.dumps(data, indent=2), encoding="utf-8")

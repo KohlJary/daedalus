@@ -149,6 +149,44 @@ def hook_capture():
         click.echo(note)
 
 
+@main.group("reconstruct")
+def reconstruct():
+    """Rebuild a gameplan period that went unrecorded, from git evidence (edict 0006).
+
+    Run /reconstruct in a Claude Code session for the full flow: gather, the mnemosyne agent,
+    check, and a Momus review. These subcommands are its deterministic parts.
+    """
+    pass
+
+
+@reconstruct.command("gather")
+@click.option("--since", default=None, help="Start the window at this revision instead of the gameplan's last commit")
+def reconstruct_gather(since: str | None):
+    """Find the gap and write the evidence bundle to .daedalus/reconstruction/."""
+    from ..reconstruct import gather, write_bundle
+
+    try:
+        bundle = gather(Path.cwd(), since=since)
+    except ValueError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(2)
+    if bundle is None:
+        click.echo("No gap: the gameplan is current.")
+        return
+    path = write_bundle(Path.cwd(), bundle)
+    w = bundle.window
+    diffs = sum(1 for c in bundle.commits if "diff" in c)
+    low = sum(1 for c in bundle.commits if c.get("diff_reason") == "low score")
+    click.echo(f"Gap: {w['commits']} commits ({w['merge_commits']} merges not counted) since "
+               f"{w['from_date']} ({w['anchor']}).")
+    click.echo(f"Messages scored: {low} below {bundle.settings['score_threshold']} got their diffs; "
+               f"{diffs - low} more for calibration.")
+    click.echo(f"Releases: {len(bundle.releases)}; documents added: {len(bundle.documents_added)}; "
+               f"open tasks: {len(bundle.open_tasks)}; open roadmap items: {len(bundle.open_roadmap_items)}.")
+    click.echo(f"Evidence scope: {bundle.evidence_scope}.")
+    click.echo(f"Bundle: {path.relative_to(Path.cwd())}")
+
+
 @main.command("doctor")
 @click.option("--json", "as_json", is_flag=True, help="Print findings as JSON")
 def doctor(as_json: bool):
