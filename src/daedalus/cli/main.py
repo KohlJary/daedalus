@@ -149,6 +149,77 @@ def hook_capture():
         click.echo(note)
 
 
+@main.group("reconstruct")
+def reconstruct():
+    """Rebuild a gameplan period that went unrecorded, from git evidence (edict 0006).
+
+    Run /reconstruct in a Claude Code session for the full flow: gather, the mnemosyne agent,
+    check, and a Momus review. These subcommands are its deterministic parts.
+    """
+    pass
+
+
+@reconstruct.command("gather")
+@click.option("--since", default=None, help="Window start: a revision or YYYY-MM-DD (default: the gameplan's last commit)")
+@click.option("--until", default=None, help="Window end: a revision or YYYY-MM-DD (default: HEAD)")
+@click.option("--author", default=None, help="Only commits by this author (git --author matching)")
+def reconstruct_gather(since: str | None, until: str | None, author: str | None):
+    """Find the gap (or the given window) and write the evidence bundle to .daedalus/reconstruction/.
+
+    Long histories: reconstruct one window at a time with --since/--until.
+    """
+    from ..reconstruct import gather, write_bundle
+
+    try:
+        bundle = gather(Path.cwd(), since=since, until=until, author=author)
+    except ValueError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(2)
+    if bundle is None:
+        click.echo("No commits in that window." if (since or until or author) else "No gap: the gameplan is current.")
+        return
+    path = write_bundle(Path.cwd(), bundle)
+    w = bundle.window
+    diffs = sum(1 for c in bundle.commits if "diff" in c)
+    low = sum(1 for c in bundle.commits if c.get("diff_reason") == "low score")
+    click.echo(f"Gap: {w['commits']} commits ({w['merge_commits']} merges not counted) since "
+               f"{w['from_date']} ({w['anchor']}).")
+    click.echo(f"Messages scored: {low} below {bundle.settings['score_threshold']} got their diffs; "
+               f"{diffs - low} more for calibration.")
+    click.echo(f"Releases: {len(bundle.releases)}; documents added: {len(bundle.documents_added)}; "
+               f"open tasks: {len(bundle.open_tasks)}; open roadmap items: {len(bundle.open_roadmap_items)}.")
+    click.echo(f"Evidence scope: {bundle.evidence_scope}.")
+    click.echo(f"Bundle: {path.relative_to(Path.cwd())}")
+
+
+@reconstruct.command("check")
+@click.argument("proposal", type=click.Path(exists=True, dir_okay=False))
+def reconstruct_check(proposal: str):
+    """Validate a reconstruction proposal: hashes, window, labels, files, coverage. Exit 1 on errors."""
+    import json
+
+    from ..reconstruct import check_proposal
+
+    try:
+        data = json.loads(Path(proposal).read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        click.echo(f"{proposal} is not valid JSON: {e}", err=True)
+        raise SystemExit(1)
+    result = check_proposal(Path.cwd(), data)
+    for e in result.errors:
+        click.echo(f"error: {e}")
+    labels = ", ".join(f"{k}: {v}" for k, v in sorted(result.labels.items(), key=lambda kv: str(kv[0])))
+    click.echo(f"Entries: {result.entries} ({labels or 'none'})")
+    if result.uncited:
+        click.echo(f"Uncited commits in the window ({len(result.uncited)}):")
+        for sha in result.uncited:
+            click.echo(f"  {sha[:10]}")
+    else:
+        click.echo("Coverage: every commit in the window is cited.")
+    click.echo("OK" if not result.errors else f"{len(result.errors)} error(s)")
+    raise SystemExit(1 if result.errors else 0)
+
+
 @main.command("doctor")
 @click.option("--json", "as_json", is_flag=True, help="Print findings as JSON")
 def doctor(as_json: bool):
@@ -405,6 +476,15 @@ def gameplan_pending(ctx):
         from .commands import list_pending
 
         list_pending(Path.cwd())
+
+
+@gameplan_pending.command("import")
+@click.argument("proposal", type=click.Path(exists=True, dir_okay=False))
+def gameplan_pending_import(proposal: str):
+    """Load a reconstruction proposal (edict 0006) as pending items. It must pass reconstruct check."""
+    from .commands import import_reconstruction
+
+    import_reconstruction(Path.cwd(), Path(proposal))
 
 
 @gameplan_pending.command("apply")

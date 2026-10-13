@@ -93,6 +93,7 @@ A craftsman works with his tools, not around them. These are the moments to reac
 |---|---|
 | Start a session, or pick back up after compaction | `/inhale` (the session-start hook has already printed a short brief; inhale is the full pickup) |
 | Wonder whether the plan or memory has fallen behind the code | `daedalus doctor` |
+| Find the gameplan missing a stretch of work (doctor reports commits after its last update) | `/reconstruct`, which proposes the missing entries from git for you to apply |
 | Ask "what did we decide?" or "what happened last time?" | The `memory` agent, before guessing or re-deriving |
 | Say something works, is fixed, or is done | `momus`, to check the claim against evidence first |
 | Refactor, or change code you didn't write | `theseus` on that area first, to see the complexity you're walking into |
@@ -117,6 +118,7 @@ Bundled agents:
 - `docs` - Documentation and implementation exploration
 - `test-runner` - Generate and maintain tests
 - `ariadne` - Parallel worker orchestration (planning, dispatch, verification)
+- `mnemosyne` - Memory reconstruction: proposes gameplan entries for a period nobody recorded, from git evidence (used by `/reconstruct`)
 - `momus` - Critic: tests claims and results before they're believed, published, or built on (read-and-run, writes only to `.daedalus/momus/`)
 
 When you find yourself repeatedly exploring the same domain, consider defining a custom subagent.

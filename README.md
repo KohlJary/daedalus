@@ -71,6 +71,7 @@ Memory tools usually fail quietly: the notes stop being written during the busie
 - **The gameplan is the record of state**, committed with the code. When a task ships, its resolution (with commit hashes) is recorded on the task. Edicts link to it with an `edict` field, so "is this built?" has one answer.
 - **A session-start hook** (registered by `init`/`hydrate` in `.claude/settings.json`) prints the active phase, the next task, any drift, and the latest session note before the session begins. `/inhale` does the full pickup and `/exhale` preserves the session before a breakpoint.
 - **`daedalus doctor`** checks the plan against the repository: commits since the gameplan was last updated, a finished phase left open, tasks stuck in progress, accepted edicts the gameplan doesn't track, packages the project map never mentions, a gitignored gameplan. It exits non-zero when it finds something, so it can run in CI.
+- **Reconstruction** (`/reconstruct`) recovers a period the gameplan never recorded. `daedalus reconstruct gather` collects the evidence (every commit, with a score for how much its message says and the diff where it says little), the `mnemosyne` agent proposes the missing phases, tasks and status changes with every entry citing its commits and labelled `shown`, `inferred` or `unknown`, `daedalus reconstruct check` validates the proposal against the repository, and Momus reviews it. You import it into `daedalus gameplan pending` and apply what you agree with. [A worked example](docs/examples/wonderland-reconstruction/) rebuilt five weeks and 95 commits of another project.
 - **An optional capture hook** (`hooks.capture`, off by default) runs when a session ends or compacts and proposes gameplan updates for tasks that new commits name. Proposals wait in `daedalus gameplan pending` until you apply or drop them.
 
 ### Project Structure
@@ -97,6 +98,7 @@ After `daedalus init`, your project gets:
   docs.md                # Documentation exploration
   test-runner.md         # Test generation
   momus.md               # Claim and result critic
+  mnemosyne.md           # Memory reconstruction
   gameplan.md            # Phase plan queries
   ariadne.md             # Parallel worker orchestration
 
@@ -204,6 +206,12 @@ daedalus gameplan task status T1 done --resolution "Shipped in b1d1733"
 daedalus gameplan pending                            # proposed updates
 daedalus gameplan pending apply P1                   # or: drop P1, apply all
 daedalus doctor                                      # drift report; exit 1 if anything found
+
+# Reconstruction (the /reconstruct skill runs these with the mnemosyne and momus agents)
+daedalus reconstruct gather                          # evidence for the gap since the gameplan's last update
+daedalus reconstruct gather --since 2026-06-01 --until 2026-06-30 --author Frank
+daedalus reconstruct check .daedalus/reconstruction/proposal-....json
+daedalus gameplan pending import .daedalus/reconstruction/proposal-....json
 ```
 
 `init` and `hydrate` register the session-start hook (`--no-hooks` to skip; `hydrate --dry-run`
@@ -274,8 +282,12 @@ Config is stored in platform-appropriate location:
 | `doctor.stale_task_days` | Days a task may stay in progress before `doctor` reports it | 14 |
 | `hooks.session_start` | Register the session-start brief hook | true |
 | `hooks.capture` | Register the capture hook (SessionEnd, PreCompact) | false |
+| `reconstruct.score_threshold` | Commits whose message scores below this (0-100) get their diff in the evidence bundle | 50 |
+| `reconstruct.sample_size` | High-scoring commits that get diffs anyway, to check the score | 3 |
+| `reconstruct.diff_cap` | Max characters of patch per commit in the bundle | 8000 |
+| `reconstruct.evidence_paths` | Paths outside git to list as evidence (set in `.daedalus/config.json`) | none |
 
-The `git`, `sections`, `doctor`, and `hooks` settings can be overridden per project in
+The `git`, `sections`, `doctor`, `hooks`, and `reconstruct` settings can be overridden per project in
 `.daedalus/config.json` (`daedalus config --project KEY VALUE`), deep-merged over the global config.
 A work repo and a personal repo usually want different authorship.
 
