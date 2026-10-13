@@ -1,60 +1,25 @@
 # Status
 
-*Committed handoff snapshot. Daedalus updates this at the end of each working
-session so work can be picked up from outside the session. See
+*Session note. Progress (phases, tasks, which edicts are built) lives in the
+committed gameplan, `.daedalus/roadmap/gameplan.json`: run `daedalus gameplan show`
+and `daedalus doctor`. This file carries what the gameplan can't say. See
 `docs/edicts/README.md`.*
 
-**Last updated:** 2026-10-13, by a Daedalus session (on `main`)
+**Last updated:** 2026-10-13, by a Daedalus session
 
-## Current phase
-Gameplan (`.daedalus/roadmap/gameplan.json`, local) created this session:
-- **p1-edicts-ariadne** (active): build edicts 0001, 0002, 0003, 0005; verifier
-  fails closed and gains an import/build check (#15); bugs #13, #14; local
-  backends + live tier (#16) blocked on an edict.
-- **p2-memory-backbone** (planned): edict 0007 (builds on 0004 exhale/inhale, already shipped).
-- **p2b-reconstruction** (planned): edict 0006.
-- **p3-theseus-index** (planned): index, status, and linkage for Theseus reports.
-- **p4-evidence** (planned): resume benchmark against plain Claude Code, with
-  cost telemetry and a falsifier registered with Momus first.
-
-## Edicts
-| Edict | Status | Built? | Notes |
-|-------|--------|--------|-------|
-| 0001 Intent flows from edicts | accepted | no | Build first; its edict CLI is shared with 0003 and 0005. |
-| 0002 Model casting | accepted | no | Non-goal narrowed by 2026-10-13 amendment; local backends still need their own edict (#16). |
-| 0003 Dissent | accepted | no | Depends on 0001's edict CLI. |
-| 0004 Exhale and inhale skills | accepted | yes | Built by another session (`48a0e08`, PR #19). Amended 2026-10-13: hook kept, gameplan first (see 0007). |
-| 0005 Edicts opt-in | accepted | no | Amended 2026-10-13: cut to opt-in only (`edicts.enabled`, default off). |
-| 0006 Memory reconstruction | accepted | no | Rebuild missing gameplan periods from git, with commit-message scoring, diffs for weak messages, and a Momus check. Depends on 0007. |
-| 0007 Memory backbone | accepted | no | Renumbered from 0004 after a collision. Gameplan at the center, committed and sole tracker of edict build state; session-start hook wired; `doctor`; capture hook off by default. This table goes away when 0007 lands. |
-
-0005, 0006, and 0007 were drafted by Daedalus at Kohl's request and committed to
-`main` directly at his instruction.
+## Last session
+- Built edict 0007 (memory backbone), merged as PR #21: `daedalus doctor`, the
+  gameplan-first session-start hook, capture proposals, `--edict` links.
+  Edicts 0004 and 0007 are now `done`.
+- Two Daedalus sessions are working in parallel: one on Ariadne (p1: T-e5,
+  T-e8..T-e11), one on memory (edict 0006, reconstruction, on
+  `feat/0006-reconstruction`). The gameplan has a single active phase, so p1
+  stays active and 0006 is tracked in p2b's notes.
 
 ## Open dissents
 None.
 
-## In flight
-- Issues: #1, #2 (palace), #6 (hydrate edited-file detection), #13, #14, #15, #16.
-
-## Last session
-Surveyed real Daedalus usage to pick the next value-add:
-- cass-vessel: Theseus heavily used (~50 reports); session summaries have a
-  53-day gap over the busiest stretch; roadmap empty but still queried by the
-  session-start hook.
-- wonderland-ai: gameplan heavily used (27 phases, rich resolutions) but not
-  updated after 2026-05-18 while work ran to 2026-06-23; session summaries never
-  written. LLM review passed code that failed at import.
-- Conclusion: structured, task-shaped memory gets written; free-form memory
-  doesn't; both go stale unless drift is surfaced. Led to edicts 0005 and 0007 (first numbered 0004).
-- Ran a reconstruction of wonderland-ai's missing gameplan period by hand
-  (95 commits, 2026-05-18 to 2026-06-23) and had Momus check it. Led to 0006.
-
-Found: the session-start hook reads `data/roadmap/index.json` (a cass-vessel
-path), not `.daedalus/roadmap/` (covered by 0007).
-
-**Guardrail:** never run live model calls (workers, judge, the live tier) on
-an employer's account or machine. The hermetic tier needs no model.
-
-**Next, in order:** T-e1, then T-e7 and T-e2, T-e3, T-e4; then activate p2 for
-edict 0007.
+## Notes
+- Guardrail: never run live model calls (workers, judge, the live tier) on an
+  employer's account or machine. The hermetic tier needs no model.
+- Untested in 0007: Windows paths and console encoding.

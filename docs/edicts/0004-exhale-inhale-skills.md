@@ -1,5 +1,5 @@
 # Edict 0004: Exhale and inhale as plugin skills
-Status: accepted
+Status: done
 Depends on: none (the gameplan CLI, the CLAUDE.md template and its local slots, as on main)
 
 *Drafted by Daedalus, reviewed by Momus (trial 2026-10-13, revised for its

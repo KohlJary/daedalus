@@ -2,6 +2,14 @@
   "description": "Multi-phase plans currently in flight. Each phase references roadmap item ids; the activePhase section breaks the current phase into concrete tasks with status. Survives conversation compactions \u2014 a fresh session can pick up by reading this file.",
   "phases": [
     {
+      "id": "p0-exhale-inhale",
+      "title": "Exhale and inhale as plugin skills",
+      "status": "done",
+      "roadmapItems": [],
+      "edict": "0004",
+      "notes": "Built by another Daedalus session: PR #19 (48a0e08). Amended by 0007 (hook kept, gameplan first); those changes shipped in PR #21."
+    },
+    {
       "id": "p1-edicts-ariadne",
       "title": "Accepted edicts + Ariadne verification gaps",
       "status": "in_progress",
@@ -11,9 +19,9 @@
     {
       "id": "p2-memory-backbone",
       "title": "Memory backbone: gameplan-first, self-maintaining, drift-visible",
-      "status": "planned",
+      "status": "done",
       "roadmapItems": [],
-      "notes": "BUILT, in review: PR #21 (branch feat/0007-memory-backbone, worktree ~/cass/daedalus-0007), CI green, Momus-reviewed (4 bugs + 1 overclaim fixed in e12a5d5). Mark done when merged. Edict 0007 (accepted 2026-10-13; renumbered from 0004). Builds on 0004 exhale/inhale (shipped). Evidence (2026-10-13 survey): memory goes stale when work is busiest. cass-vessel: 53-day summary hole (2025-12-19 -> 2026-02-11, 70 commits unsummarized); lessons/notes/observations frozen in Dec; project-map misses 25 backend packages; roadmap empty but still queried by session-start.sh. wonderland-ai: gameplan heavily used (27 phases, 22 done, rich resolutions, 49 commits May 4-18) and roadmap 213 items, but session-summaries.md never written; gameplan stopped 2026-05-18 while work ran to 2026-06-23; p20 still in_progress after T-a7 resolved. This repo: last summary 2025-12-24, no gameplan until now. Lesson: structured, task-shaped memory (gameplan resolutions) gets written because it's part of finishing a task; free-form memory does not. Planned tasks: (M1) daedalus doctor: commits since last gameplan update, phase in_progress with all tasks done, tasks in_progress > N days, status.md vs edict Status lines, project-map vs top-level packages, empty files still queried. Fixtures: snapshots of wonderland-ai and cass-vessel .daedalus. (M2) Wire session-start.sh: init/hydrate register it as a SessionStart hook in .claude/settings.json (merge, never clobber; --no-hooks); rewrite it gameplan-first (active goal, next task, doctor findings, latest session note; point to /inhale); drop the empty-roadmap query. (M3) Capture hook (SessionEnd/PreCompact), off by default (hooks.capture): match commits since last update to active-phase tasks, draft proposed status/resolution changes to a pending file for approval (never silent writes). Consider cass-vessel evaluate_summarization_readiness (backend/memory/summaries.py:53) and <decision>/<lesson> tag capture ('tags over tools'). (M4) Exhale records gameplan before its summary; inhale reads the gameplan first and uses doctor. Lessons/warnings/observations become opt-in; init stops creating empty templates (obs-008). (M5) README repositioning: gameplan + committed status as the backbone; differentiate from Claude Code native per-user auto memory (committed, shared, structured).",
+      "notes": "DONE 2026-10-13: PR #21 merged (d85dc5c), CI green, Momus-reviewed. doctor, gameplan-first session-start hook (wired by init/hydrate), capture hook + pending proposals (off by default), --edict field, init un-ignores the gameplan. Untested: Windows paths/encoding.",
       "edict": "0007"
     },
     {
@@ -44,7 +52,7 @@
     "title": "Accepted edicts + Ariadne verification gaps",
     "started": "2026-10-13",
     "goal": "Build the three accepted edicts to their acceptance criteria and close the verifier gaps that let LLM-only review pass broken code.",
-    "sequencing": "T-e1 first: the edict CLI (list/show, Status parsing) is shared infrastructure for T-e2 and T-e7. T-e7 and T-e2 build on it. T-e3 is independent and can run alongside. T-e4 is independent and high value (Wonderland analyses 045/048: reviewers approved code that failed at import). T-e6 is small housekeeping, anytime. T-e5 is blocked on an edict for local backends. Next phase p2 is edict 0007.",
+    "sequencing": "p1 is being worked by a parallel session (Ariadne: T-e5, T-e8..T-e11). Non-Ariadne tasks: T-e7 (0005 opt-in) and the edict list/show CLI half of T-e1; the T-e1 intent gate lives in the orchestrator, so coordinate before touching it. T-e1's edict CLI is shared infrastructure for T-e2 and T-e7. T-e3 is independent. T-e4 is high value (reviewers approved code that failed at import). T-e6 is small housekeeping. Edict 0006 (p2b) is being built in parallel on feat/0006-reconstruction; it is not the active phase because activating it would clear p1's tasks.",
     "tasks": [
       {
         "id": "T-e1",

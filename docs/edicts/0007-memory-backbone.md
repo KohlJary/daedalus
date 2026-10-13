@@ -1,5 +1,5 @@
 # Edict 0007: Memory backbone
-Status: accepted
+Status: done
 Depends on: Edict 0004 (exhale and inhale as plugin skills)
 
 ## Intent
