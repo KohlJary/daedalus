@@ -109,7 +109,6 @@ class IcarusWorker:
         permission_timeout: float = 300,
         stream_output: bool = True,
         use_ariadne: bool = False,
-        model: Optional[str] = None,
         isolate: Optional[bool] = None,
     ):
         """
@@ -123,7 +122,6 @@ class IcarusWorker:
             permission_timeout: Seconds to wait for permission responses
             stream_output: Whether to stream output to bus
             use_ariadne: Submit diffs to Ariadne instead of committing
-            model: Model for the agent (e.g. "haiku"); None uses the SDK default
             isolate: Run each work package in its own git worktree (default: on in Ariadne mode), so
                 parallel workers never share a working tree and the project's own tree is untouched
         """
@@ -134,7 +132,6 @@ class IcarusWorker:
         self.permission_timeout = permission_timeout
         self.stream_output = stream_output
         self.use_ariadne = use_ariadne
-        self.model = model
         self.isolate = use_ariadne if isolate is None else isolate
 
         # Where the agent actually works: project_root, or a per-package worktree while isolated
@@ -511,8 +508,6 @@ class IcarusWorker:
                     "PreToolUse": [pre_tool_hook],
                 },
             )
-            if self.model:
-                option_args["model"] = self.model
             options = ClaudeAgentOptions(**option_args)
 
             # Hooks require streaming mode - wrap prompt in async generator
@@ -597,9 +592,6 @@ class IcarusWorker:
 
         prompt = "\n".join(prompt_parts)
 
-        if work.inputs.get("model"):
-            self.model = work.inputs["model"]
-
         # Execute, in an isolated worktree when enabled; in Ariadne mode the harness hands the
         # changes to Ariadne itself (the agent has no way to call submit_diff_to_ariadne)
         if self.isolate:
@@ -632,7 +624,6 @@ async def run_worker(
     prompt: Optional[str] = None,
     claim_from_queue: bool = False,
     use_ariadne: bool = False,
-    model: Optional[str] = None,
 ):
     """
     Run an Icarus worker.
@@ -643,7 +634,6 @@ async def run_worker(
         prompt: Direct prompt to execute (if not using work package)
         claim_from_queue: Whether to claim work from the queue
         use_ariadne: Submit diffs to Ariadne instead of committing
-        model: Model for the agent (e.g. "haiku")
     """
     bus = IcarusBus()
 
@@ -656,7 +646,6 @@ async def run_worker(
         project_root=project_root,
         bus=bus,
         use_ariadne=use_ariadne,
-        model=model,
     )
 
     await worker.register()
@@ -704,7 +693,6 @@ def main():
     parser.add_argument("--claim", action="store_true", help="Claim work from queue")
     parser.add_argument("--ariadne", action="store_true",
                        help="Submit diffs to Ariadne instead of committing")
-    parser.add_argument("--model", help="Model for the agent, e.g. haiku (default: the SDK's default)")
 
     args = parser.parse_args()
 
@@ -714,7 +702,6 @@ def main():
         prompt=args.prompt,
         claim_from_queue=args.claim,
         use_ariadne=args.ariadne,
-        model=args.model,
     ))
 
 

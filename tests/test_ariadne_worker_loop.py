@@ -186,7 +186,7 @@ def test_change_that_breaks_a_test_is_rejected_by_the_real_verifier(project, bus
     assert len(git(project, "log", "--oneline").splitlines()) == 1
 
 
-# --- isolation and model selection ----------------------------------------------------------------
+# --- isolation -----------------------------------------------------------------------------------
 
 def test_parallel_workers_do_not_see_each_others_edits(project, buses, fake_sdk):
     seen = {}
@@ -208,14 +208,6 @@ def test_parallel_workers_do_not_see_each_others_edits(project, buses, fake_sdk)
     assert seen["one"][0] != seen["two"][0], "both workers ran in the same directory"
     assert "return a + b" in seen["two"][1], "worker two saw worker one's uncommitted edit"
     assert len(buses[1].list_pending_diffs()) == 2
-
-
-def test_worker_model_reaches_the_sdk(project, buses, fake_sdk):
-    fake_sdk.scripts.append(create("x.txt", "x\n"))
-
-    asyncio.run(run_work(project, buses, "anything", model="haiku"))
-
-    assert fake_sdk.calls[0].model == "haiku"
 
 
 def test_verifier_still_applies_the_diff_when_temp_is_inside_another_repo(project, buses, fake_sdk, tmp_path, monkeypatch):
