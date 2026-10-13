@@ -4,6 +4,7 @@ Daedalus CLI entry point.
 Commands:
   init      Initialize Daedalus in current project
   hydrate   Inject/update templates and agents
+  doctor    Check memory and plans for drift
   config    Manage global configuration
   palace    Mind Palace operations
 """
@@ -76,10 +77,12 @@ def config_cmd(key: str, value: str, project: bool):
     import json
 
     if project:
-        from ..config import get_template_settings, set_project_value
+        from ..config import get_project_settings, get_template_settings, set_project_value
 
         if key is None or value is None:
             settings = get_template_settings(Path.cwd())
+            for group in ("doctor", "hooks"):
+                settings[group] = get_project_settings(Path.cwd(), group)
             if key is None:
                 click.echo(json.dumps(settings, indent=2))
             else:
@@ -110,6 +113,31 @@ def config_cmd(key: str, value: str, project: bool):
             click.echo(f"Set {key} = {value}")
         else:
             click.echo(f"Unknown config key: {key}", err=True)
+
+
+@main.command("doctor")
+@click.option("--json", "as_json", is_flag=True, help="Print findings as JSON")
+def doctor(as_json: bool):
+    """Check whether the gameplan, edicts, and memory have fallen behind the code.
+
+    Exits 1 when anything is found, so it can run in CI.
+    """
+    import json
+    from dataclasses import asdict
+
+    from ..doctor import run_checks
+
+    findings, hints = run_checks(Path.cwd())
+    if as_json:
+        click.echo(json.dumps({"findings": [asdict(f) for f in findings], "hints": hints}, indent=2))
+    else:
+        for f in findings:
+            click.echo(f"{f.name}: {f.message}")
+        for h in hints:
+            click.echo(f"hint: {h}")
+        if not findings:
+            click.echo("No drift found.")
+    raise SystemExit(1 if findings else 0)
 
 
 @main.command("digest")

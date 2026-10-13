@@ -33,6 +33,7 @@ Schema:
           "status": "pending" | "in_progress" | "done",
           "details": "...",
           "edict": "NNNN",      # optional: the edict this task implements
+          "updated": "YYYY-MM-DD",  # last status change
           "resolution": "..."   # only when done
         }
       ],
@@ -222,6 +223,7 @@ def add_task(
         "title": title,
         "status": status,
         "details": details,
+        "updated": date.today().isoformat(),
     }
     if edict:
         task["edict"] = edict
@@ -241,6 +243,7 @@ def set_task_status(
     if not task:
         raise GameplanError(f"Task '{task_id}' not found in active phase")
     task["status"] = status
+    task["updated"] = date.today().isoformat()
     if status == "done" and resolution:
         task["resolution"] = resolution
     return task
