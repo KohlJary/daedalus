@@ -4,46 +4,52 @@
 session so work can be picked up from outside the session. See
 `docs/edicts/README.md`.*
 
-**Last updated:** 2026-10-13, by a Daedalus session (branch `test/ariadne-real-smoke`)
+**Last updated:** 2026-10-13, by a Daedalus session (on `main`)
 
 ## Current phase
-Ariadne: proving the worker -> Ariadne -> verify -> commit loop. The hermetic
-tier (real worker, scripted model) is done on `test/ariadne-real-smoke`; the
-live tier with real models is proposed in #16 and waits on an edict.
+Gameplan (`.daedalus/roadmap/gameplan.json`, local) created this session:
+- **p1-edicts-ariadne** (active): build edicts 0001, 0002, 0003, 0005; verifier
+  fails closed and gains an import/build check (#15); bugs #13, #14; local
+  backends + live tier (#16) blocked on an edict.
+- **p2-memory-backbone** (planned): edict 0004.
+- **p3-theseus-index** (planned): index, status, and linkage for Theseus reports.
+- **p4-evidence** (planned): resume benchmark against plain Claude Code, with
+  cost telemetry and a falsifier registered with Momus first.
 
 ## Edicts
-| Edict | Status | Notes |
-|-------|--------|-------|
-| 0001 Intent flows from edicts | proposed | Depends on the semantic review gate (merged) |
-| 0002 Model casting | proposed | Not started. A worker `model` parameter was added and then removed on `test/ariadne-real-smoke` so 0002 gets built to its spec. Its "no non-Anthropic backends" non-goal conflicts with the local backend proposed in #16. |
-| 0003 Dissent | proposed | |
+| Edict | Status | Built? | Notes |
+|-------|--------|--------|-------|
+| 0001 Intent flows from edicts | accepted | no | Header reads `Status: acccepted` (typo); Kohl to fix. Build behind 0005's intent-source interface. |
+| 0002 Model casting | accepted | no | Non-goal narrowed by 2026-10-13 amendment; local backends still need their own edict (#16). |
+| 0003 Dissent | accepted | no | Depends on 0001's edict CLI. |
+| 0004 Memory backbone | accepted | no | `daedalus doctor`, gameplan-first session-start hook, proposal-only capture hook, optional free-form memory. |
+| 0005 Edicts opt-in, intent from any source | accepted | no | `edicts.enabled` (default off); intent-source interface with edict and github-issue sources. |
+
+0004 and 0005 were drafted by Daedalus at Kohl's request and committed to
+`main` directly at his instruction.
 
 ## Open dissents
 None.
 
 ## In flight
-- `test/ariadne-real-smoke`: hermetic end-to-end tests through a real `IcarusWorker`, and the fixes they forced (see "Last session"). PR to `main`.
-- #12 `template/reach-for-tools` (open PR).
-- Issues: #6 (hydrate edited-file detection), #13 (permission path-prefix check), #14 (machine-wide bus roots), #15 (verifier passes when no tests match), #16 (proposal: local backends + live tier).
+- Issues: #1, #2 (palace), #6 (hydrate edited-file detection), #13, #14, #15, #16.
 
 ## Last session
-Built `tests/test_ariadne_worker_loop.py`: a real worker executing work
-packages in Ariadne mode with only the model scripted, the real verifier
-running a fixture project's pytest suite, the orchestrator merging and
-committing. Every test failed on the existing code. Fixed:
-- Worker diffs never reached Ariadne (the prompt asked the model to call a
-  harness method it had no tool for; nothing else called it). The harness now
-  submits the diff itself.
-- New files were dropped (`git diff HEAD` skips untracked files).
-- Parallel workers shared one working tree. Each work package now runs in its
-  own git worktree.
-- The verifier passed a change that breaks a test: when the temp dir is inside
-  another git repository, `git apply` skipped the whole patch and exited 0. The
-  copy is now its own repo, and a skipped patch fails setup.
+Surveyed real Daedalus usage to pick the next value-add:
+- cass-vessel: Theseus heavily used (~50 reports); session summaries have a
+  53-day gap over the busiest stretch; roadmap empty but still queried by the
+  session-start hook.
+- wonderland-ai: gameplan heavily used (27 phases, rich resolutions) but not
+  updated after 2026-05-18 while work ran to 2026-06-23; session summaries never
+  written. LLM review passed code that failed at import.
+- Conclusion: structured, task-shaped memory gets written; free-form memory
+  doesn't; both go stale unless drift is surfaced. Led to edicts 0004 and 0005.
+
+Found: the session-start hook reads `data/roadmap/index.json` (a cass-vessel
+path), not `.daedalus/roadmap/` (covered by 0004).
 
 **Guardrail:** never run live model calls (workers, judge, the live tier) on
 an employer's account or machine. The hermetic tier needs no model.
 
-**Next, in order:** merge `test/ariadne-real-smoke`; decide 0002 and #16 (amend
-or new edict for local backends); build the local backend with a stub-server
-test; then the live tier, local first on the home GPU.
+**Next, in order:** T-e1 + T-e7 (0001 behind 0005's intent-source interface),
+then T-e2, T-e3, T-e4; then activate p2 for edict 0004.
