@@ -29,7 +29,7 @@
       "title": "Memory reconstruction from git",
       "status": "planned",
       "roadmapItems": [],
-      "notes": "Edict 0006. Depends on p2 (0007: doctor + pending mechanism). Reference run: ~/wonderland-ai/.daedalus/reconstruction/ + .daedalus/momus/reconstruction-review.md.",
+      "notes": "BUILT, in review: PR #22 (branch feat/0006-reconstruction, worktree ~/cass/daedalus-0006), CI green, Momus-reviewed (holes fixed in 71fbe28). Sparse-message run on temple-codex reported in docs/examples/reconstruction-runs.md. Mark done when merged. Edict 0006. Depends on p2 (0007: doctor + pending mechanism). Reference run: ~/wonderland-ai/.daedalus/reconstruction/ + .daedalus/momus/reconstruction-review.md.",
       "edict": "0006"
     },
     {
@@ -45,6 +45,22 @@
       "status": "planned",
       "roadmapItems": [],
       "notes": "Wonderland lesson: its $30.58 / 63% claim compared only against its own earlier version, and its own analysis 046 puts overhead at ~10x single-shot ($2-3). Tasks: pre-register falsifier with Momus before running; build handoff scenarios (half-finished task + prior decisions); score fresh session with vs without Daedalus memory on correct next step and decision adherence; port per-run cost telemetry (wonderland-ai src/wonderland/telemetry.py) so every claim carries cost; reuse comparison-baseline harness ideas (paper/artifacts/comparison-baselines/). Put the number, with its caveats, in the README."
+    },
+    {
+      "id": "p5-workstreams",
+      "title": "Workstreams: concurrent plans, collisions, per-owner drift",
+      "status": "planned",
+      "roadmapItems": [],
+      "notes": "Edict 0008. Build after PR #22 (0006) merges: both touch the gameplan code. Its first test reproduces 2026-10-13 (Ariadne + memory sessions both active). Open design points: owner identity (git author pattern vs session), migration is a no-op (existing gameplan = default workstream).",
+      "edict": "0008"
+    },
+    {
+      "id": "p6-agent-mailbox",
+      "title": "Agent mailbox: questions between owners' agents over a git branch",
+      "status": "planned",
+      "roadmapItems": [],
+      "notes": "Edict 0009. Depends on p5 (0008). OPTION TO EXPLORE (not in the edict): near-real-time delivery to an open but idle session via an async SessionStart hook with asyncRewake (hook settings schema: runs in background, wakes the model on exit 2) polling the mail branch. Untested; prove it in a spike before relying on it. Same rules apply: inbound mail is data, replies need owner approval. Also later, if latency matters: a relay server (e.g. MCP) carrying the same message format.",
+      "edict": "0009"
     }
   ],
   "activePhase": {
@@ -123,6 +139,13 @@
         "title": "Ariadne as a CLI loop: local plan -> main-agent approval -> local dispatch",
         "status": "pending",
         "details": "Direction agreed with Kohl 2026-10-13 (pending experiment results). The main Claude Code session calls 'daedalus ariadne plan' (local LLM planner prints the plan into context), approves/edits it in one turn, then 'daedalus ariadne dispatch' runs local workers + gate + local judge with no claude_agent_sdk calls; the main agent reads a summary and handles NEEDS_REVIEW. Why: measured 2026-10-13, any fresh Claude subagent costs ~45-50k tokens of fixed overhead (Claude solo implemented each 7-file test feature correctly for ~47-51k; a subagent plan review cost ~49-55k), so Claude's marginal cost must stay in the main context; also removes SDK billing from the loop. Plan quality: small planners follow required schema fields (tests: file/must_cover/existing_tests_to_update) far better than prose rules. Depends on T-e5 (local backends) and T-e10 (planner). Evidence: scratchpad gate_exp/ results, to be committed with the write-up."
+      },
+      {
+        "id": "T-e12",
+        "title": "Ariadne test backlog: adversarial/scope, conflicts, sequential drift, dogfooding",
+        "status": "pending",
+        "details": "Agreed with Kohl 2026-10-13, after mutation testing (queued; experiments/ariadne-local on exp/ariadne-local). (1) Adversarial/scope: plant diffs that weaken/delete tests, touch files outside the package, or do the task plus an unrelated change; the verifier passes all of these by design, so measure the judge plus an 'only the package's files changed' check (proposed in #16, unbuilt). (2) Conflicts: deliberately send two packages at overlapping code (same function, different intents); check the conflict detector escalates correctly instead of blocking everything. (3) Sequential drift: 10 features in a row on one codebase, each from the last one's HEAD; does main stay green, do slipped mistakes compound. (4) Dogfooding: use the CLI loop (T-e11) on real daedalus work for 1-2 weeks; track landed, reverted, bugs found later. Also analyse wall-clock and NEEDS_REVIEW queue size, already recorded per run.",
+        "updated": "2026-10-13"
       }
     ],
     "deferred": []
