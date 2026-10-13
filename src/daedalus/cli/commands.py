@@ -222,23 +222,12 @@ def palace_status(project_dir: Path):
 
     palace = storage.load()
     click.echo(f"Palace: {palace.name}")
+    # Palace.regions/buildings/rooms/entities are flat dicts keyed by slug (not nested
+    # Region -> Building -> Room containers), so count them directly.
     click.echo(f"Regions: {len(palace.regions)}")
-
-    total_buildings = sum(len(r.buildings) for r in palace.regions)
-    click.echo(f"Buildings: {total_buildings}")
-
-    total_rooms = sum(
-        len(b.rooms) for r in palace.regions for b in r.buildings
-    )
-    click.echo(f"Rooms: {total_rooms}")
-
-    total_entities = sum(
-        len(room.entities)
-        for r in palace.regions
-        for b in r.buildings
-        for room in b.rooms
-    )
-    click.echo(f"Entities: {total_entities}")
+    click.echo(f"Buildings: {len(palace.buildings)}")
+    click.echo(f"Rooms: {len(palace.rooms)}")
+    click.echo(f"Entities: {len(palace.entities)}")
 
 
 def list_roadmap_items(
