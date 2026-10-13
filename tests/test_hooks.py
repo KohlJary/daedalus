@@ -77,8 +77,10 @@ def test_empty_roadmap_prints_nothing_and_in_progress_items_show(tmp_path):
     assert "**Roadmap in progress:** Ship it" in session_start_brief(tmp_path)
 
 
-def test_brief_without_daedalus_is_minimal(tmp_path):
-    assert session_start_brief(tmp_path).splitlines() == ["## Daedalus", "Run /inhale for the full pickup."]
+def test_brief_without_daedalus_is_silent(tmp_path, monkeypatch):
+    assert session_start_brief(tmp_path) == ""
+    monkeypatch.chdir(tmp_path)
+    assert CliRunner().invoke(main, ["hook", "session-start"]).output == ""
 
 
 def test_latest_note_handles_newest_first_and_undated():
@@ -103,20 +105,20 @@ def test_register_merges_and_is_idempotent(tmp_path):
         "permissions": {"allow": ["Bash(ls)"]},
         "hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "echo hi"}]}]},
     }))
-    added, err = register_hooks(tmp_path)
-    assert (added, err) == (["SessionStart"], None)
+    added, removed, err = register_hooks(tmp_path)
+    assert (added, removed, err) == (["SessionStart"], [], None)
     s = settings(tmp_path)
     assert s["permissions"] == {"allow": ["Bash(ls)"]}
     commands = [h["command"] for g in s["hooks"]["SessionStart"] for h in g["hooks"]]
     assert commands == ["echo hi", SESSION_START_COMMAND]
 
-    assert register_hooks(tmp_path) == ([], None)
+    assert register_hooks(tmp_path) == ([], [], None)
     assert settings(tmp_path) == s
 
 
 def test_register_never_clobbers_bad_json(tmp_path):
     write(tmp_path / ".claude/settings.json", "{not json")
-    added, err = register_hooks(tmp_path)
+    added, _, err = register_hooks(tmp_path)
     assert added == [] and "not valid JSON" in err
     assert (tmp_path / ".claude/settings.json").read_text() == "{not json"
 
@@ -129,7 +131,7 @@ def test_capture_registered_only_when_enabled(tmp_path):
 
 
 def test_dry_run_writes_nothing(tmp_path):
-    added, _ = register_hooks(tmp_path, dry_run=True)
+    added, _, _ = register_hooks(tmp_path, dry_run=True)
     assert added == ["SessionStart"]
     assert not (tmp_path / ".claude").exists()
 
@@ -152,3 +154,23 @@ def test_hydrate_registers_respects_flags_and_config(tmp_path, monkeypatch):
     runner.invoke(main, ["config", "--project", "hooks.capture", "true"])
     runner.invoke(main, flags)
     assert "PreCompact" in settings(tmp_path)["hooks"]
+
+
+@pytest.mark.parametrize("bad", [{"hooks": []}, {"hooks": {"SessionStart": ["x"]}},
+                                 {"hooks": {"SessionStart": [{"hooks": "x"}]}}])
+def test_register_reports_wrong_shapes_without_writing(tmp_path, bad):
+    write(tmp_path / ".claude/settings.json", json.dumps(bad))
+    added, removed, err = register_hooks(tmp_path)
+    assert added == removed == [] and "hooks not registered" in err
+    assert json.loads((tmp_path / ".claude/settings.json").read_text()) == bad
+
+
+def test_disabling_capture_removes_only_daedalus_entries(tmp_path):
+    write(tmp_path / ".claude/settings.json", json.dumps({"hooks": {"PreCompact": [
+        {"hooks": [{"type": "command", "command": "echo mine"}]}]}}))
+    register_hooks(tmp_path, capture=True)
+    added, removed, _ = register_hooks(tmp_path, capture=False)
+    assert added == [] and sorted(removed) == ["PreCompact", "SessionEnd"]
+    hooks = settings(tmp_path)["hooks"]
+    assert "SessionEnd" not in hooks
+    assert [h["command"] for g in hooks["PreCompact"] for h in g["hooks"]] == ["echo mine"]

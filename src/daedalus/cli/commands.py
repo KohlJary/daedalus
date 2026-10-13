@@ -238,15 +238,21 @@ def _register_hooks(project_dir: Path, dry_run: bool = False):
     from ..hooks import register_hooks
 
     settings = get_project_settings(project_dir, "hooks")
-    added, error = register_hooks(
+    added, removed, error = register_hooks(
         project_dir, session_start=settings["session_start"], capture=settings["capture"], dry_run=dry_run
     )
     if error:
         click.echo(f"  Warning: {error}", err=True)
-    elif dry_run:
+        return
+    if dry_run:
         click.echo("Hooks that would be registered: " + (", ".join(added) if added else "none"))
-    elif added:
+        if removed:
+            click.echo("Hooks that would be removed (disabled in config): " + ", ".join(removed))
+        return
+    if added:
         click.echo(f"  Registered hooks in .claude/settings.json: {', '.join(added)}")
+    if removed:
+        click.echo(f"  Removed disabled hooks from .claude/settings.json: {', '.join(removed)}")
 
 
 def _skill_files(name: str):

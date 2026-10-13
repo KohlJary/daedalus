@@ -7,6 +7,7 @@ Three fixtures model real states seen on 2026-10-13:
 """
 
 import json
+import os
 import subprocess
 from datetime import date
 
@@ -79,6 +80,8 @@ def cass_vessel_like(tmp_path):
     write(repo / ".daedalus/roadmap/index.json", json.dumps({"items": [], "projects": []}))
     write(repo / ".claude/settings.json", json.dumps({"hooks": {"SessionStart": [{"hooks": [
         {"type": "command", "command": "daedalus hook session-start"}]}]}}))
+    old = 1735000000  # 2024-12-24: the roadmap has sat empty since then
+    os.utime(repo / ".daedalus/roadmap/index.json", (old, old))
     commit_all(repo, "init")
     return repo
 
@@ -185,3 +188,19 @@ def test_src_layout_checks_subpackages(tmp_path):
     write(tmp_path / "src/daedalus/__init__.py", "")
     write(tmp_path / "tests/helpers/__init__.py", "")
     assert source_packages(tmp_path) == ["ariadne", "bus", "cli"]
+
+
+def test_fresh_init_reports_no_drift(tmp_path, monkeypatch):
+    from daedalus.config import DaedalusConfig
+    from daedalus.templates import injector
+    monkeypatch.setattr(injector, "load_daedalus_config", lambda config_path=None: {})
+    monkeypatch.setattr(injector, "load_config", lambda: DaedalusConfig())
+    monkeypatch.setattr(injector, "get_daedalus_email", lambda config: "daedalus@example.com")
+    monkeypatch.setattr("daedalus.cli.commands.get_config_dir", lambda: tmp_path / "cfg")
+    repo = tmp_path / "fresh"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    monkeypatch.chdir(repo)
+    assert CliRunner().invoke(main, ["init"]).exit_code == 0
+    result = CliRunner().invoke(main, ["doctor"])
+    assert result.exit_code == 0, result.output

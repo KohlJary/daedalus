@@ -280,16 +280,22 @@ def session_start_hook_registered(project_dir: Path) -> bool:
     return False
 
 
-def check_empty_templates_read(project_dir: Path) -> list[Finding]:
+def check_empty_templates_read(project_dir: Path, max_days: int, today: Optional[date] = None) -> list[Finding]:
+    """Empty templates the hook reads that have stayed empty past max_days (a fresh init is fine)."""
     if not session_start_hook_registered(project_dir):
         return []
+    today = today or date.today()
     findings = []
     for rel in SESSION_START_READS:
         path = project_dir / rel
-        if path.exists() and _is_empty_template(rel, path.read_text(encoding="utf-8")):
+        if not path.exists() or not _is_empty_template(rel, path.read_text(encoding="utf-8")):
+            continue
+        age = (today - date.fromtimestamp(path.stat().st_mtime)).days
+        if age > max_days:
             findings.append(Finding(
                 "empty-file-read-by-hook",
-                f"{rel} is still an empty template, but the session-start hook reads it every session.",
+                f"{rel} has been an empty template for {age} days, but the session-start hook reads it "
+                "every session. Start using it, or stop the hook reading it.",
             ))
     return findings
 
@@ -326,5 +332,5 @@ def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Fi
         findings += check_unreferenced_edicts(edicts, data)
 
     findings += check_project_map(project_dir)
-    findings += check_empty_templates_read(project_dir)
+    findings += check_empty_templates_read(project_dir, settings["stale_task_days"], today=today)
     return findings, hints

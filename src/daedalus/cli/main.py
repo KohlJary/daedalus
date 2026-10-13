@@ -129,9 +129,11 @@ def hook_session_start():
     from ..hooks import session_start_brief
 
     try:
-        click.echo(session_start_brief(Path.cwd()))
+        brief = session_start_brief(Path.cwd())
     except Exception as e:  # a broken brief must not block the session
-        click.echo(f"## Daedalus\n(session brief unavailable: {e}) Run /inhale.")
+        brief = f"## Daedalus\n(session brief unavailable: {e}) Run /inhale."
+    if brief:
+        click.echo(brief)
 
 
 @hook.command("capture")
@@ -395,10 +397,6 @@ def gameplan_task_defer(task_id: str, reason: str):
     defer_gameplan_task(Path.cwd(), task_id=task_id, reason=reason)
 
 
-if __name__ == "__main__":
-    main()
-
-
 @gameplan.group("pending", invoke_without_command=True)
 @click.pass_context
 def gameplan_pending(ctx):
@@ -425,3 +423,7 @@ def gameplan_pending_drop(proposal_id: str):
     from .commands import drop_pending
 
     drop_pending(Path.cwd(), proposal_id)
+
+
+if __name__ == "__main__":
+    main()

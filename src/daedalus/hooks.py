@@ -71,6 +71,8 @@ def session_start_brief(project_dir: Path) -> str:
     from .doctor import run_checks
 
     project_dir = Path(project_dir)
+    if not (project_dir / ".daedalus").is_dir():
+        return ""  # not a Daedalus project: the hook stays silent
     lines = ["## Daedalus"]
 
     try:
@@ -120,12 +122,36 @@ def session_start_brief(project_dir: Path) -> str:
 # ---------- registration in .claude/settings.json ----------
 
 
+def _hooks_shape_error(settings: dict) -> Optional[str]:
+    """Why settings["hooks"] isn't the shape Claude Code uses, or None if it is (or is absent)."""
+    hooks = settings.get("hooks", {})
+    if not isinstance(hooks, dict):
+        return '"hooks" is not an object'
+    for event, groups in hooks.items():
+        if not isinstance(groups, list) or not all(
+            isinstance(g, dict) and isinstance(g.get("hooks", []), list)
+            and all(isinstance(h, dict) for h in g.get("hooks", []))
+            for g in groups
+        ):
+            return f'"hooks.{event}" is not a list of hook groups'
+    return None
+
+
 def _hook_commands(settings: dict, event: str) -> list[str]:
     return [
         h.get("command", "")
         for group in settings.get("hooks", {}).get(event, [])
         for h in group.get("hooks", [])
     ]
+
+
+def _remove_command(settings: dict, event: str, command: str) -> None:
+    groups = settings["hooks"][event]
+    for group in groups:
+        group["hooks"] = [h for h in group.get("hooks", []) if h.get("command") != command]
+    settings["hooks"][event] = [g for g in groups if g.get("hooks")]
+    if not settings["hooks"][event]:
+        del settings["hooks"][event]
 
 
 def wanted_hooks(session_start: bool, capture: bool) -> dict[str, str]:
@@ -139,14 +165,18 @@ def wanted_hooks(session_start: bool, capture: bool) -> dict[str, str]:
     return wanted
 
 
+ALL_HOOKS = {"SessionStart": SESSION_START_COMMAND, "SessionEnd": CAPTURE_COMMAND, "PreCompact": CAPTURE_COMMAND}
+
+
 def register_hooks(
     project_dir: Path, session_start: bool = True, capture: bool = False, dry_run: bool = False
-) -> tuple[list[str], Optional[str]]:
+) -> tuple[list[str], list[str], Optional[str]]:
     """
-    Merge Daedalus hooks into .claude/settings.json, keeping everything already there.
+    Bring the Daedalus hooks in .claude/settings.json in line with config, keeping everything else.
 
-    Returns (events that were or would be added, error). Hooks already present are left alone.
-    An unreadable settings file is never overwritten: it is reported as the error.
+    Adds enabled hooks that are missing and removes Daedalus's own entries for disabled ones (other
+    hooks are never touched). Returns (events added, events removed, error). A settings file that
+    isn't valid JSON or isn't the shape Claude Code uses is never rewritten: it is reported instead.
     """
     path = Path(project_dir) / ".claude" / "settings.json"
     settings: dict = {}
@@ -154,24 +184,31 @@ def register_hooks(
         try:
             loaded = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as e:
-            return [], f"{path} is not valid JSON ({e}); hooks not registered"
+            return [], [], f"{path} is not valid JSON ({e}); hooks not registered"
         if not isinstance(loaded, dict):
-            return [], f"{path} is not a JSON object; hooks not registered"
+            return [], [], f"{path} is not a JSON object; hooks not registered"
         settings = loaded
+    shape_error = _hooks_shape_error(settings)
+    if shape_error:
+        return [], [], f"{path}: {shape_error}; hooks not registered"
 
-    added = []
-    for event, command in wanted_hooks(session_start, capture).items():
-        if command in _hook_commands(settings, event):
-            continue
-        settings.setdefault("hooks", {}).setdefault(event, []).append(
-            {"hooks": [{"type": "command", "command": command}]}
-        )
-        added.append(event)
+    wanted = wanted_hooks(session_start, capture)
+    added, removed = [], []
+    for event, command in ALL_HOOKS.items():
+        present = command in _hook_commands(settings, event)
+        if wanted.get(event) == command and not present:
+            settings.setdefault("hooks", {}).setdefault(event, []).append(
+                {"hooks": [{"type": "command", "command": command}]}
+            )
+            added.append(event)
+        elif event not in wanted and present:
+            _remove_command(settings, event, command)
+            removed.append(event)
 
-    if added and not dry_run:
+    if (added or removed) and not dry_run:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
-    return added, None
+    return added, removed, None
 
 
 # ---------- capture: propose gameplan updates from commits ----------
@@ -209,7 +246,7 @@ def commits_since_gameplan(project_dir: Path) -> list[dict]:
 
 
 def _mentions(task: dict, message: str) -> bool:
-    if re.search(rf"(?<![\w-]){re.escape(task.get('id', ''))}(?![\w-])", message):
+    if task.get("id") and re.search(rf"(?<![\w-]){re.escape(task.get('id', ''))}(?![\w-])", message):
         return True
     title = (task.get("title") or "").strip().lower()
     return len(title) >= MIN_TITLE_MATCH and title in message.lower()
@@ -222,7 +259,7 @@ def propose_from_commits(project_dir: Path) -> list[dict]:
     except (gp.GameplanError, json.JSONDecodeError):
         return []
     active = data.get("activePhase") or {}
-    open_tasks = [t for t in active.get("tasks", []) if t.get("status") != "done"]
+    open_tasks = [t for t in active.get("tasks", []) if t.get("status") != "done" and t.get("id")]
     if not open_tasks:
         return []
     commits = commits_since_gameplan(project_dir)

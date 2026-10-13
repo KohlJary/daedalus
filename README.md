@@ -4,9 +4,9 @@
 
 It's a Claude Code plugin plus a small CLI. Everything it keeps is plain files in your repo.
 
-At the center is the **gameplan**: the record of what is built, in progress, and next, committed with the code. Every session starts from it, `daedalus doctor` says when it has fallen behind the commits, and nothing but you or a session you approve ever writes to it.
+At the center is the **gameplan**: the record of what is built, in progress, and next, committed with the code. Every session starts from it, and `daedalus doctor` says when it has fallen behind the commits. Working sessions update it as they finish tasks; hooks and reconstructions never write to it, they only propose changes for you to apply or drop.
 
-**How this differs from Claude Code's built-in memory.** Claude Code's own memory is kept per user, on your machine: notes about you and your work. Daedalus keeps the project's memory in the repository, so it is shared by everyone and every session that works there (including Claude in chat reading the repo), and it is structured around tasks rather than free-form notes. The two complement each other.
+**How this differs from what Claude Code already has.** Claude Code's auto memory is kept per user, on your machine (under `~/.claude/projects/`): notes about you and your work. `CLAUDE.md` is committed and shared, but it holds instructions, not a record of the work. Daedalus keeps the project's working memory in the repository, so it is shared by everyone and every session that works there (including Claude in chat reading the repo), and it is structured around tasks rather than free-form notes. They complement each other.
 
 ## At a glance
 

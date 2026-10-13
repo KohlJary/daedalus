@@ -3,7 +3,9 @@
 import json
 import os
 import subprocess
+import sys
 import time
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -13,6 +15,7 @@ from daedalus.cli import gameplan as gp
 from daedalus.cli.main import main
 from daedalus.hooks import capture, propose_from_commits
 
+SRC = str(Path(__file__).resolve().parents[1] / "src")
 ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
        "GIT_COMMITTER_EMAIL": "t@t", "PATH": os.environ["PATH"]}
 
@@ -121,3 +124,20 @@ def test_unknown_proposal_is_an_error(repo, monkeypatch):
     monkeypatch.chdir(repo)
     result = CliRunner().invoke(main, ["gameplan", "pending", "apply", "P9"])
     assert "No pending proposal 'P9'" in result.output
+
+
+def test_task_without_id_is_skipped_not_fatal(repo):
+    data = gp.load_gameplan(repo)
+    data["activePhase"]["tasks"].append({"title": "No id here", "status": "pending"})
+    gp.save_gameplan(repo, data)
+    commit(repo, "gameplan: add a task without an id")
+    commit(repo, "T-1 shipped")
+    assert [p["task"] for p in propose_from_commits(repo)] == ["T-1"]
+
+
+def test_module_entry_point_has_every_command(repo):
+    commit(repo, "T-1 shipped")
+    capture(repo)
+    out = subprocess.run([sys.executable, "-m", "daedalus.cli.main", "gameplan", "pending"], cwd=repo,
+                         capture_output=True, text=True, env={**os.environ, "PYTHONPATH": SRC})
+    assert out.returncode == 0 and "P1: T-1 -> done" in out.stdout
