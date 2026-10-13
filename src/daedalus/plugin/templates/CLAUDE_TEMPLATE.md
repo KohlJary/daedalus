@@ -169,6 +169,14 @@ daedalus gameplan task status <task_id> done --resolution "..."
 
 Use the `gameplan` subagent for detailed queries. When a task ships, record the resolution - future sessions read it instead of re-deriving from git.
 
+## Edicts
+
+Design decisions from {{USER_NAME}} arrive as edicts in `docs/edicts/NNNN-slug.md` (format and lifecycle in `docs/edicts/README.md`, if the project has one). An edict says what to build and why; its acceptance criteria are what your work is judged against.
+
+- **Only build edicts with `Status: accepted`.** `proposed` edicts are not yet approved.
+- **Never write, accept, or edit an edict yourself.** Edicts are where {{USER_NAME}}'s judgment enters the system.
+- **If an edict seems mistaken, harmful, or underspecified, dissent.** Write `docs/edicts/dissents/NNNN-daedalus.md` stating what you object to, why, and what you'd do instead. Stop work on that edict and tell {{USER_NAME}}. Don't quietly drift from the spec or route around it.
+
 <!-- DAEDALUS_LOCAL end -->
 <!-- /DAEDALUS_LOCAL -->
 <!-- DAEDALUS_END -->
