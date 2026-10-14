@@ -264,9 +264,11 @@ def _ensure_dissent_ask_rule(project_dir: Path, dry_run: bool = False):
     try:
         settings = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     except json.JSONDecodeError:
-        return
+        settings = None
     perms = settings.setdefault("permissions", {}) if isinstance(settings, dict) else None
     if not isinstance(perms, dict) or not isinstance(perms.get("ask", []), list):
+        click.echo(f"  Warning: couldn't add the ask rule for resolving dissents: {path} is not in the shape "
+                   f"Claude Code uses. Add \"{RESOLVE_PERMISSION}\" to permissions.ask by hand.", err=True)
         return
     if RESOLVE_PERMISSION in perms.get("ask", []):
         return

@@ -21,7 +21,7 @@ from typing import Optional
 from .config import edicts_setting
 
 EDICT_FILE = re.compile(r"^(\d{4})-.+\.md$")
-STATUS_LINE = re.compile(r"^Status:\s*(.*?)\s*$", re.MULTILINE)
+STATUS_LINE = re.compile(r"^Status:[ \t]*(.*?)[ \t]*$", re.MULTILINE)
 SECTION = re.compile(r"^## (.+?)\s*$", re.MULTILINE)
 DISSENT_FILE = re.compile(r"^(\d{4})-([\w.-]+?)(?:-(\d+))?\.md$")
 OUTCOMES = ("amended", "overruled", "withdrawn")
@@ -157,7 +157,10 @@ def resolve_dissent(repo: Path, name: str, outcome: str, note: str) -> Path:
     if outcome not in OUTCOMES:
         raise EdictError(f"Outcome must be one of {', '.join(OUTCOMES)}")
     folder = dissents_dir(repo)
-    path = folder / (name if name.endswith(".md") else f"{name}.md")
+    filename = name if name.endswith(".md") else f"{name}.md"
+    if "/" in filename or "\\" in filename or not DISSENT_FILE.match(filename):
+        raise EdictError(f"'{name}' is not a dissent name (expected NNNN-agent, as listed by `edict dissents`)")
+    path = folder / filename
     if not path.exists():
         raise EdictError(f"No dissent {path.name} in {folder}")
     dissent = _parse_dissent(path)
@@ -189,6 +192,13 @@ def dispatch_block(repo: Path, number: str) -> Optional[str]:
     return None
 
 
+def intent_block(edict: Edict) -> Optional[str]:
+    """Why an edict can't serve as approved intent, or None: it needs a non-empty Intent section."""
+    if not edict.sections.get("Intent"):
+        return f"Edict {edict.number} has no Intent section to grade against"
+    return None
+
+
 def intent_for_diff(repo: Path, metadata: dict) -> tuple[Optional[str], str]:
     """
     (approved intent, reason) for a diff. The intent comes from the edict file in the checkout,
@@ -204,7 +214,11 @@ def intent_for_diff(repo: Path, metadata: dict) -> tuple[Optional[str], str]:
     block = dispatch_block(repo, str(number))
     if block:
         return None, f"No approved intent: {block}."
-    return approved_intent(load_edict(repo, str(number))), ""
+    edict = load_edict(repo, str(number))
+    block = intent_block(edict)
+    if block:
+        return None, f"No approved intent: {block}."
+    return approved_intent(edict), ""
 
 
 def mark_done(repo: Path, number: str) -> Path:

@@ -52,12 +52,15 @@ class FeatureRequest:
         its number travels with the plan to every diff. Refuses an edict that isn't accepted or
         has an open dissent.
         """
-        from ..edicts import approved_intent, dispatch_block, load_edict
+        from ..edicts import approved_intent, dispatch_block, intent_block, load_edict
 
         block = dispatch_block(repo_path, number)
         if block:
             raise ValueError(block)
         edict = load_edict(repo_path, number)
+        block = intent_block(edict)
+        if block:
+            raise ValueError(block)
         return cls.create(edict.title, approved_intent(edict), edict=edict.number, **kwargs)
 
 
@@ -146,7 +149,8 @@ class ImplementationPlan:
     def digest(self) -> str:
         """Fingerprint of what an approval covers: the packages, the source, and the edict."""
         body = json.dumps({"work_packages": [asdict(wp) for wp in self.work_packages],
-                           "source": self.source, "edict": self.edict}, sort_keys=True)
+                           "source": self.source, "edict": self.edict, "feature_title": self.feature_title,
+                           "approved_by": self.approved_by, "approved_at": self.approved_at}, sort_keys=True)
         return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
     def approval_valid(self) -> bool:

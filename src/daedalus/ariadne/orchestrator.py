@@ -18,6 +18,7 @@ The orchestrator can run as:
 """
 
 import asyncio
+import re
 import subprocess
 import time
 from dataclasses import dataclass, field, asdict
@@ -169,20 +170,33 @@ class AriadneOrchestrator:
         from .planner import Planner
 
         plan_id, spec_id = diff.metadata.get("plan_id"), diff.metadata.get("spec_id")
+        tagged = str(diff.metadata.get("edict") or "").zfill(4) if diff.metadata.get("edict") else None
+        if not (plan_id and spec_id):
+            # A tag alone is metadata; it never grants intent (0001 as amended)
+            if tagged:
+                return None, (f"No approved intent: the diff is tagged edict {tagged} but carries no plan "
+                              "provenance (plan_id/spec_id); edict intent applies only to dispatched work.")
+            return intent_for_diff(self.repo_path, diff.metadata)
         if plan_id and spec_id:
             plan = Planner(self.repo_path).load_plan(plan_id)
             if plan is None:
                 return None, f"No approved intent: plan {plan_id} not found."
-            if not plan.approval_valid():
-                why = "is not approved" if not plan.approved else "changed after it was approved"
-                return None, f"No approved intent: plan {plan_id} {why}."
             spec = next((wp for wp in plan.work_packages if wp.id == spec_id), None)
             if spec is None:
                 return None, f"No approved intent: package {spec_id} is not in plan {plan_id}."
+            if tagged and tagged != (plan.edict or "").zfill(4):
+                return None, (f"No approved intent: the diff is tagged edict {tagged} but plan {plan_id} "
+                              f"comes from {('edict ' + plan.edict) if plan.edict else 'a feature request'}.")
             if plan.edict:
                 block = dispatch_block(self.repo_path, plan.edict)
                 if block:
                     return None, f"No approved intent: {block}."
+            if not plan.approval_valid():
+                if plan.edict and not plan.approved:
+                    # Work dispatched from an accepted edict: the edict itself is the approval
+                    return intent_for_diff(self.repo_path, {"edict": plan.edict})
+                why = "is not approved" if not plan.approved else "changed after it was approved"
+                return None, f"No approved intent: plan {plan_id} {why}."
             source = f"edict {plan.edict}" if plan.edict else f"feature request: {plan.feature_title}"
             return (
                 f"Approved plan {plan.id} (approved by {plan.approved_by} at {plan.approved_at}; "
@@ -377,24 +391,38 @@ class AriadneOrchestrator:
         from ..edicts import EdictError, load_edict, mark_done
         from .planner import Planner
 
-        numbers = {str(d.metadata.get("edict")).zfill(4) for d in committed if d.metadata.get("edict")}
+        planner = Planner(self.repo_path)
+        all_plans = planner.list_plans()
+        plan_edict = {p.id: (p.edict or "").zfill(4) for p in all_plans if p.edict}
+        # The edict comes from the stored plan, not from the diff's tag
+        numbers = {plan_edict[d.metadata.get("plan_id")] for d in committed if d.metadata.get("plan_id") in plan_edict}
+        diffs = self.bus.list_all_diffs()
         closed = 0
         for number in sorted(numbers):
             try:
-                if load_edict(self.repo_path, number).status != "accepted":
-                    continue
+                edict = load_edict(self.repo_path, number)
             except EdictError:
                 continue
-            tagged = [d for d in self.bus.list_all_diffs() if str(d.metadata.get("edict", "")).zfill(4) == number]
-            if any(d.status != DiffStatus.MERGED for d in tagged):
+            if edict.status != "accepted":
                 continue
-            merged_specs = {(d.metadata.get("plan_id"), d.metadata.get("spec_id")) for d in tagged}
-            plans = [p for p in Planner(self.repo_path).list_plans() if (p.edict or "").zfill(4) == number]
-            if not plans or any((p.id, wp.id) not in merged_specs for p in plans for wp in p.work_packages):
+            ours = [d for d in diffs if plan_edict.get(d.metadata.get("plan_id")) == number]
+            # Work still in flight blocks; a rejected attempt doesn't, if its package merged later
+            if any(d.status in (DiffStatus.PENDING, DiffStatus.VERIFIED, DiffStatus.NEEDS_REVIEW) for d in ours):
                 continue
-            path = mark_done(self.repo_path, number)
+            merged = {(d.metadata.get("plan_id"), d.metadata.get("spec_id")) for d in ours if d.status == DiffStatus.MERGED}
+            # The plans that count: approved ones, and any plan that produced a diff (drafts don't block)
+            used = {d.metadata.get("plan_id") for d in ours}
+            plans = [p for p in all_plans if plan_edict.get(p.id) == number and (p.approval_valid() or p.id in used)]
+            if not plans or any((p.id, wp.id) not in merged for p in plans for wp in p.work_packages):
+                continue
+            rel = str(edict.path.relative_to(self.repo_path))
+            dirty = subprocess.run(["git", "status", "--porcelain", "--", rel], cwd=self.repo_path,
+                                   capture_output=True, text=True).stdout.strip()
+            if dirty:
+                # Never commit someone's uncommitted edits to the edict along with the status change
+                continue
+            mark_done(self.repo_path, number)
             if self.auto_commit:
-                rel = str(path.relative_to(self.repo_path))
                 subprocess.run(_commit_args(f"Edict {number}: done (all its planned work has merged)", [rel]),
                                cwd=self.repo_path, capture_output=True, text=True)
             closed += 1
@@ -449,8 +477,12 @@ class AriadneOrchestrator:
         # Prepare commit directory
         commit_dir = self.bus.prepare_atomic_commit(merge_result, self.repo_path)
 
-        # Apply the combined diff, staged, so new files are committed and nothing else is
-        paths = sorted({f for d in diffs for f in d.all_affected_files()})
+        # Apply the combined diff, staged, so new files are committed and nothing else is. Paths come
+        # from the diff headers too, so a rename commits its old path's deletion as well as the new one.
+        paths = sorted({f for d in diffs for f in d.all_affected_files()} | {
+            p for d in diffs for m in re.finditer(r"^diff --git a/(.+?) b/(.+)$", d.content, re.MULTILINE)
+            for p in m.groups()
+        })
         try:
             diff_file = commit_dir / "combined.diff"
             result = subprocess.run(
