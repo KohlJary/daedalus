@@ -493,6 +493,10 @@ class AriadneOrchestrator:
         })
         try:
             diff_file = commit_dir / "combined.diff"
+            # --index trusts git's cached stat data; a file touched but unchanged (an editor, a tool
+            # rewriting the same bytes) would read as "does not match index". Refresh it first.
+            subprocess.run(["git", "update-index", "-q", "--refresh"], cwd=self.repo_path,
+                           capture_output=True, text=True)
             result = subprocess.run(
                 ["git", "apply", "--index", str(diff_file)],
                 cwd=self.repo_path,

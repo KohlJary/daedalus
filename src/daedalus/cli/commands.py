@@ -236,8 +236,21 @@ def _ensure_gameplan_tracked(project_dir: Path):
     checks = [(".daedalus/roadmap/gameplan.json", GITIGNORE_WORKSTREAMS_BLOCK, "the gameplan"),
               (".daedalus/gameplans/plan.json", GITIGNORE_WORKSTREAMS_BLOCK, "workstream plans")]
     gitignore = project_dir / ".gitignore"
-    if subprocess.run(["git", "rev-parse"], cwd=project_dir, capture_output=True).returncode == 0 \
-            and not ignored(".daedalus/config.json"):
+    in_repo = subprocess.run(["git", "rev-parse"], cwd=project_dir, capture_output=True).returncode == 0
+    # A project that has never committed anything under .daedalus/ (a fresh setup) gets the full
+    # block: plans committed, everything else local. Only a project that already commits its memory
+    # files (and so chose to share them) is left to do so.
+    tracked = subprocess.run(["git", "ls-files", "--", ".daedalus/"], cwd=project_dir, capture_output=True,
+                             text=True).stdout.split() if in_repo else []
+    shares_memory = any(not (t.startswith(".daedalus/gameplans/") or t == ".daedalus/roadmap/gameplan.json")
+                        for t in tracked)
+    if in_repo and not shares_memory and not ignored(".daedalus/session-summaries.md"):
+        text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
+        if GITIGNORE_WORKSTREAMS_BLOCK.strip() not in text:
+            sep = "" if not text or text.endswith("\n") else "\n"
+            gitignore.write_text(text + sep + GITIGNORE_WORKSTREAMS_BLOCK, encoding="utf-8")
+            click.echo("  Added .gitignore rules: plans are committed, the rest of .daedalus/ stays local")
+    if in_repo and not ignored(".daedalus/config.json"):
         # The local project config (current workstream, edicts setting) must never be committed
         text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
         sep = "" if not text or text.endswith("\n") else "\n"

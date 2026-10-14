@@ -17,6 +17,7 @@ from .diff_bus import (
     Conflict,
     ConflictType,
     MergeStrategy,
+    make_conflict_id,
 )
 
 
@@ -99,7 +100,7 @@ class ConflictDetector:
             ]
 
         conflict = Conflict(
-            id=f"conflict-{diff_a.id[:6]}-{diff_b.id[:6]}",
+            id=make_conflict_id(diff_a.id, diff_b.id),
             diff_a_id=diff_a.id,
             diff_b_id=diff_b.id,
             conflict_type=ConflictType.LINE_OVERLAP if line_conflicts else ConflictType.FILE_OVERLAP,
@@ -154,7 +155,7 @@ class ConflictDetector:
 
             if (a_deletes and b_modifies) or (b_deletes and a_modifies):
                 conflict = Conflict(
-                    id=f"conflict-{diff_a.id[:6]}-{diff_b.id[:6]}",
+                    id=make_conflict_id(diff_a.id, diff_b.id),
                     diff_a_id=diff_a.id,
                     diff_b_id=diff_b.id,
                     conflict_type=ConflictType.SEMANTIC,

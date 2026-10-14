@@ -137,3 +137,24 @@ def test_resolving_with_reject_lets_the_earlier_diff_land(repo, bus, monkeypatch
     assert bus.get_diff(a.id).status == DiffStatus.MERGED
     assert bus.get_diff(b.id).status == DiffStatus.REJECTED
     assert "raise ValueError" in (repo / "calc.py").read_text() and "sum_all" not in (repo / "calc.py").read_text()
+
+
+def test_conflict_ids_are_unique_per_pair_and_order_independent():
+    from daedalus.ariadne.diff_bus import make_conflict_id
+    assert make_conflict_id("diff-3aaaaaaaaaaa", "diff-3bbbbbbbbbbb") != make_conflict_id("diff-3aaaaaaaaaaa", "diff-3ccccccccccc")
+    assert make_conflict_id("diff-1", "diff-2") == make_conflict_id("diff-2", "diff-1")
+
+
+
+def test_a_touched_but_unchanged_file_still_commits(repo, bus):
+    """git apply --index trusts cached stat data; a rewritten-but-identical file must not block a commit."""
+    import os
+    import time
+    plan = approved_plan(repo, "calc change")
+    submit(repo, bus, plan, "wp-1", "calc.py", REJECTS_NEGATIVES)
+    path = repo / "calc.py"
+    path.write_text(path.read_text())                      # same bytes, new mtime
+    later = time.time() + 5
+    os.utime(path, (later, later))
+    result = process(repo, bus)
+    assert result.errors == [] and result.commits_created == 1

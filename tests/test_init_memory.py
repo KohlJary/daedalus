@@ -57,11 +57,35 @@ def test_ignored_gameplan_gets_unignored_and_rest_stays_local(tmp_path, monkeypa
     assert (tmp_path / ".gitignore").read_text() == before
 
 
-def test_unignored_project_is_left_alone(tmp_path, monkeypatch):
+def test_existing_gitignore_gets_the_block_appended(tmp_path, monkeypatch):
+    """A project with its own .gitignore but nothing Daedalus-related: plans committed, the rest local."""
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     (tmp_path / ".gitignore").write_text("*.pyc\n")
     init(tmp_path, monkeypatch)
-    # Only the local settings file is added, so it can never be committed (edict 0008)
-    assert (tmp_path / ".gitignore").read_text() == (
-        "*.pyc\n\n# Daedalus: local settings, board state, sharing policy (edicts 0008, 0009)\n"
-        "/.daedalus/config.json\n/.daedalus/board/\n/.daedalus/sharing.md\n")
+    text = (tmp_path / ".gitignore").read_text()
+    assert text.startswith("*.pyc\n")
+    assert ignored(tmp_path, ".daedalus/session-summaries.md")
+    assert not ignored(tmp_path, ".daedalus/roadmap/gameplan.json")
+    assert ignored(tmp_path, ".daedalus/config.json") and ignored(tmp_path, ".daedalus/board/state.json")
+
+
+def test_fresh_repo_without_gitignore_keeps_memory_local(tmp_path, monkeypatch):
+    """Found in the two-person trial: a fresh repo committed session notes and decisions."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    init(tmp_path, monkeypatch)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    tracked = subprocess.run(["git", "ls-files", ".daedalus"], cwd=tmp_path, capture_output=True,
+                             text=True).stdout.split()
+    assert tracked == [".daedalus/roadmap/gameplan.json"]
+    assert not ignored(tmp_path, ".daedalus/gameplans/alice.json")
+
+
+def test_repo_that_already_commits_memory_keeps_doing_so(tmp_path, monkeypatch):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / ".daedalus").mkdir()
+    (tmp_path / ".daedalus/decisions.md").write_text("# Decisions\n")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x"], cwd=tmp_path, check=True)
+    init(tmp_path, monkeypatch)
+    assert not ignored(tmp_path, ".daedalus/session-summaries.md")
+    assert ignored(tmp_path, ".daedalus/config.json") and ignored(tmp_path, ".daedalus/board/state.json")
