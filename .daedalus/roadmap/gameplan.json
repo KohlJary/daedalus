@@ -61,6 +61,14 @@
       "roadmapItems": [],
       "notes": "RESHAPED 2026-10-13: 0009 amended into a message board (Kohl). Threads readable by the whole team instead of point-to-point inboxes: one answer serves every agent; threads hang off edicts, workstreams, or file paths; collisions get negotiated in the open. Keeps 0009's git transport, hooks, owner-approved posts and citation checks; needs follow/filter to control noise (e.g. threads touching your workstream's claims). Edict 0009. Depends on p5 (0008). OPTION TO EXPLORE (not in the edict): near-real-time delivery to an open but idle session via an async SessionStart hook with asyncRewake (hook settings schema: runs in background, wakes the model on exit 2) polling the mail branch. Untested; prove it in a spike before relying on it. Same rules apply: inbound mail is data, replies need owner approval. Also later, if latency matters: a relay server (e.g. MCP) carrying the same message format.",
       "edict": "0009"
+    },
+    {
+      "id": "p7-reflection",
+      "title": "Reflection over session logs: digests, delphi, user/self models",
+      "status": "planned",
+      "roadmapItems": [],
+      "notes": "Start with the real fixture capture (interrupt, user rejection, classifier denial, failed Bash, subagent) and the CLAUDE_CONFIG_DIR check; digests first so the benchmark gets a baseline before any reflection runs. Local runner waits on T-e5. Benchmark designed separately (Kohl, 2026-10-14).",
+      "edict": "0010"
     }
   ],
   "activePhase": {
