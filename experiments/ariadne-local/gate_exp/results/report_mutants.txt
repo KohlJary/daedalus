@@ -1,0 +1,12 @@
+177 killable mutants from 74 distinct correct diffs; 32 of them pass Ariadne's verifier (the judge's real workload)
+by operator (mutants, of which verifier-passing): {'and_to_or': (2, 0), 'drop_not': (14, 0), 'eq_to_ne': (13, 6), 'gt_to_ge': (4, 4), 'int_plus_one': (36, 9), 'le_to_lt': (1, 0), 'lt_to_le': (3, 0), 'minus_to_plus': (10, 1), 'ne_to_eq': (5, 4), 'or_to_and': (1, 1), 'plus_to_minus': (8, 0), 'raise_to_pass': (20, 1), 'return_none': (60, 6)}
+
+Judge qwen3-coder:30b:
+  catches bad diffs (not approved), all mutants:       170/177 = 96% [92%, 98%]
+  catches bad diffs that passed the verifier:          29/32 = 91% [76%, 97%]
+  false-rejects correct diffs (not approved):          3/74 = 4% [1%, 11%]
+
+Judge qwen3:14b:
+  catches bad diffs (not approved), all mutants:       175/177 = 99% [96%, 100%]
+  catches bad diffs that passed the verifier:          32/32 = 100% [89%, 100%]
+  false-rejects correct diffs (not approved):          5/74 = 7% [3%, 15%]
