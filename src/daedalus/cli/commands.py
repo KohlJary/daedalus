@@ -102,6 +102,7 @@ def init_project(project_dir: Path, force: bool = False, hooks: bool = True, edi
     if gp.ensure_gameplan(project_dir, force=force):
         click.echo("  Created roadmap/gameplan.json")
     _ensure_gameplan_tracked(project_dir)
+    _ensure_reflection_ignored(project_dir)
 
     # Copy agents
     agents_dir = project_dir / ".claude" / "agents"
@@ -139,6 +140,8 @@ def hydrate_project(
     hooks: bool = True,
 ):
     """Update Daedalus assets in project. With dry_run, report what would change and write nothing."""
+    if not dry_run:
+        _ensure_reflection_ignored(project_dir)
     if hooks:
         _register_hooks(project_dir, dry_run=dry_run)
     else:
@@ -268,6 +271,30 @@ def _ensure_gameplan_tracked(project_dir: Path):
                        f"See `git check-ignore -v {rel}`.", err=True)
         else:
             click.echo(f"  Un-ignored {what} in .gitignore so it can be committed")
+
+
+REFLECTION_IGNORE = "\n# Daedalus: session digests, reports and A/B state never leave this machine (edict 0010)\n/.daedalus/reflection/\n"
+
+
+def _ensure_reflection_ignored(project_dir: Path):
+    """Make sure git ignores .daedalus/reflection/ (digests are per machine; edict 0010)."""
+    import subprocess
+
+    try:
+        in_repo = subprocess.run(["git", "rev-parse"], cwd=project_dir, capture_output=True).returncode == 0
+        if not in_repo:
+            return
+        ignored = subprocess.run(["git", "check-ignore", "-q", ".daedalus/reflection/sessions/x.json"],
+                                 cwd=project_dir, capture_output=True).returncode == 0
+    except FileNotFoundError:
+        return
+    if ignored:
+        return
+    gitignore = project_dir / ".gitignore"
+    text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
+    sep = "" if not text or text.endswith("\n") else "\n"
+    gitignore.write_text(text + sep + REFLECTION_IGNORE, encoding="utf-8")
+    click.echo("  Added .gitignore rule: .daedalus/reflection/ stays local")
 
 
 def _enable_edicts(project_dir: Path):

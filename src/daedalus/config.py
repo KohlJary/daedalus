@@ -104,16 +104,46 @@ class ReconstructConfig:
     doc_paths: list = field(default_factory=lambda: ["docs/", "analyses/", "release-notes/", "CHANGELOG.md"])
 
 
+@dataclass
+class ReflectionConfig:
+    """Reflection over session logs (edict 0010). Defaults are the edict's."""
+    runner: str = "inhale"          # inhale | local | headless (local/headless need machine.employer false)
+    model_summary: str = "ab"       # off | on | ab: the models at inhale, as an A/B test
+    forget: str = "purge"           # purge | retain: what `forget` does to a user-model entry's history
+    scope: str = "work"             # work | personal: this project's scope (set per project)
+    activity_threshold: int = 20    # a day with fewer tool calls is not due as a daily
+    retry_window: int = 5           # tool calls after a failure in which the same call is a retry
+    half_life_self: int = 60        # days
+    half_life_user: int = 180       # days
+    summary_tokens: int = 400       # cap on the inhale summary (estimated as characters / 4)
+    cleanup_warning_days: int = 7   # doctor warns this many days before Claude Code's cleanup
+
+
+@dataclass
+class MachineConfig:
+    """Facts about this machine. Set by the user; nothing infers them."""
+    # Whether this is an employer's machine. Unset (None) is treated as an employer's on purpose:
+    # the local and headless reflection runners run only when this is explicitly false.
+    employer: Optional[bool] = None
+
+
 # Allowed values for string settings that the template branches on
 SETTING_CHOICES = {
     "git.authorship": ("daedalus", "user"),
+    "reflection.runner": ("inhale", "local", "headless"),
+    "reflection.model_summary": ("off", "on", "ab"),
+    "reflection.forget": ("purge", "retain"),
+    "reflection.scope": ("work", "personal"),
 }
+
+# Settings that hold true, false, or unset (null)
+TRISTATE_SETTINGS = ("machine.employer",)
 
 # Top-level config groups that template conditionals can read (and that project config may override)
 TEMPLATE_SETTING_GROUPS = ("git", "sections", "edicts")
 
 # Groups a project may override in .daedalus/config.json
-PROJECT_SETTING_GROUPS = TEMPLATE_SETTING_GROUPS + ("doctor", "hooks", "reconstruct", "board")
+PROJECT_SETTING_GROUPS = TEMPLATE_SETTING_GROUPS + ("doctor", "hooks", "reconstruct", "board", "reflection")
 
 
 @dataclass
@@ -129,6 +159,8 @@ class DaedalusConfig:
     hooks: HooksConfig = field(default_factory=HooksConfig)
     reconstruct: ReconstructConfig = field(default_factory=ReconstructConfig)
     board: BoardConfig = field(default_factory=BoardConfig)
+    reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
+    machine: MachineConfig = field(default_factory=MachineConfig)
 
 
 def get_config_dir() -> Path:
@@ -208,6 +240,8 @@ def load_config() -> DaedalusConfig:
             hooks=HooksConfig(**data.get("hooks", {})),
             reconstruct=ReconstructConfig(**data.get("reconstruct", {})),
             board=BoardConfig(**data.get("board", {})),
+            reflection=ReflectionConfig(**data.get("reflection", {})),
+            machine=MachineConfig(**data.get("machine", {})),
         )
     except (json.JSONDecodeError, TypeError, KeyError):
         # Return defaults on any parse error
@@ -230,6 +264,8 @@ def save_config(config: DaedalusConfig) -> None:
         "hooks": asdict(config.hooks),
         "reconstruct": asdict(config.reconstruct),
         "board": asdict(config.board),
+        "reflection": asdict(config.reflection),
+        "machine": asdict(config.machine),
     }
 
     get_config_file().write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -276,6 +312,17 @@ def set_nested_value(config: DaedalusConfig, key: str, value: str) -> bool:
 
     # Set the final attribute
     final_key = parts[-1]
+    if key in TRISTATE_SETTINGS and hasattr(obj, final_key):
+        lowered = value.lower()
+        if lowered in ("true", "1", "yes", "on"):
+            setattr(obj, final_key, True)
+        elif lowered in ("false", "0", "no", "off"):
+            setattr(obj, final_key, False)
+        elif lowered in ("unset", "none", "null"):
+            setattr(obj, final_key, None)
+        else:
+            return False
+        return True
     if hasattr(obj, final_key):
         # Handle type conversion for boolean fields
         current_value = getattr(obj, final_key)
@@ -292,6 +339,15 @@ def set_nested_value(config: DaedalusConfig, key: str, value: str) -> bool:
         return True
 
     return False
+
+
+def setting_refusal(config: DaedalusConfig, key: str, value: str) -> Optional[str]:
+    """Why a setting is refused even though the key and value are valid, or None (edict 0010)."""
+    if key == "reflection.runner" and value in ("local", "headless") and config.machine.employer is not False:
+        return (f"Refused: the {value} runner makes model calls outside your session, so it runs only on a "
+                "machine marked as not an employer's. If this is your own machine, run "
+                "`daedalus config machine.employer false` first.")
+    return None
 
 
 def get_project_config_file(project_dir: Path) -> Path:

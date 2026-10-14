@@ -42,3 +42,13 @@ Thumbs.db
 !.daedalus/roadmap/
 .daedalus/roadmap/*
 !.daedalus/roadmap/gameplan.json
+
+# Daedalus: commit the gameplan and workstream plans; everything else in .daedalus/ (including
+# pending proposals) stays local (edicts 0007, 0008)
+!.daedalus/
+.daedalus/*
+!.daedalus/roadmap/
+.daedalus/roadmap/*
+!.daedalus/roadmap/gameplan.json
+!.daedalus/gameplans/
+.daedalus/gameplans/*.pending.json

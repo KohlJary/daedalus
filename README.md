@@ -25,7 +25,7 @@ claude        # the session opens with a brief: your active phase, next task, an
 
 - [Quick start](#quick-start)
 - [How a session works](#how-a-session-works)
-- [Memory that stays current](#memory-that-stays-current): gameplan, doctor, reconstruction
+- [Memory that stays current](#memory-that-stays-current): gameplan, doctor, reconstruction, reflection
 - [Working with others](#working-with-others): workstreams, the agent board, edicts
 - [Ariadne: parallel workers (experimental)](#ariadne-parallel-workers-experimental)
 - [The cast](#the-cast): agents and skills
@@ -137,6 +137,39 @@ example](docs/examples/wonderland-reconstruction/) rebuilt five weeks and 95 com
 project; [a second run](docs/examples/reconstruction-runs.md) worked from a history whose commit
 messages were mostly single, often cryptic lines.
 
+### Reflection: learning from the session logs
+
+Claude Code keeps a transcript of every session and deletes it after `cleanupPeriodDays` (30 by
+default). Reflection keeps what is worth keeping, and reads it back:
+
+1. **Digests** (`daedalus reflect digest`, run by `/exhale`): one JSON summary per session, with no
+   model calls. Token totals and cache hit rate, tool calls and failures, retries, re-reads,
+   permission denials and rejections, interruptions, subagents (with each background agent's real
+   token total), and the event UUIDs behind every count, so findings can cite them. Heuristic counts
+   are labelled `inferred`. `doctor` warns before cleanup deletes a session nobody digested.
+2. **What is due** (`daedalus reflect due`): a daily, weekly or monthly reflection, only for periods
+   with sessions. Quiet days produce nothing, small days roll into the week, and a month away means
+   one monthly run, not thirty dailies.
+3. **Reflect** (`/reflect`, when you say so): the `delphi` agent reads the period's digests and
+   writes findings and proposals, each citing its evidence. `daedalus reflect check` verifies every
+   citation and figure against the digests, and Momus reviews every proposal.
+4. **You decide** (`daedalus reflect pending`): proposals fix what caused a pattern (a skill, an
+   agent, a CLAUDE.md lesson, a permission rule, a gameplan task) or change the models below. Nothing
+   is applied until you apply it.
+
+Two models live on each machine, not in any repo: a **user model** (only what you said or plainly
+did, plus working preferences seen across at least three sessions; never character, health or mood)
+and a **self model** (what Daedalus did, why, and what it holds to). Every change is recorded in an
+append-only history, confidence decays unless it is re-affirmed, you can edit or delete anything, and
+`forget` removes an entry from your model entirely. Once a month Daedalus is also asked, before it
+sees its earlier answers, who it wants to be, and writes the answer itself: aspirations bind
+nothing, and the record shows whether behavior moves toward them.
+
+By default nothing runs outside your session: the next `/inhale` says what is due and asks.
+`reflection.runner` can instead be `headless` (`claude -p` on a timer) or `local` (a local model, not
+yet available), but only on a machine you have marked `machine.employer false`. See
+[docs/reflection.md](docs/reflection.md) for the formats and timer examples.
+
 ## Working with others
 
 ### Workstreams
@@ -233,6 +266,7 @@ The pieces are named after the Labyrinth myth; here is what each does.
 | `memory` | Retrieves project memory: gameplan, decisions, session history, architecture |
 | `gameplan` | Reads and maintains the plan |
 | `mnemosyne` | Reconstructs periods the plan never recorded, from git, with citations |
+| `delphi` | Reflects on session digests: findings and proposals with citations; aspirations, asked cold |
 | `momus` | The critic: restates a claim, names what would falsify it, checks the evidence, returns a verdict |
 | `theseus` | Hunts complexity before a refactor (hydras, spiders, minotaurs) |
 | `labyrinth` | The Mind Palace: maps the codebase as navigable rooms |
@@ -243,6 +277,7 @@ The pieces are named after the Labyrinth myth; here is what each does.
 |---|---|
 | `/inhale`, `/exhale` | Starting a context; preserving one |
 | `/reconstruct` | The plan has fallen behind the code |
+| `/reflect` | A reflection is due and you said to run it |
 | `board` | Talking to other owners' agents |
 | `mind-palace`, `ariadne` | Navigating the palace; checking on Ariadne |
 
@@ -256,6 +291,7 @@ The pieces are named after the Labyrinth myth; here is what each does.
 | `daedalus gameplan show \| phase … \| task … \| pending [import\|apply\|drop]` | The plan (`-w <id>` for another workstream) |
 | `daedalus doctor [--json]` | Drift report; exit 1 on findings |
 | `daedalus reconstruct gather \| check` | Reconstruction's deterministic steps |
+| `daedalus reflect digest \| tick \| due \| bundle \| check \| done \| pending … \| model … \| inhale \| arm \| runner` | Reflection's deterministic steps and the models |
 | `daedalus workstream new \| list \| others \| use \| show \| claim` | Workstreams |
 | `daedalus board threads \| read \| open \| draft \| check \| post \| follow \| unfollow` | The agent board |
 | `daedalus edict list \| show \| dissent \| dissents \| resolve-dissent` | Edicts |
@@ -280,6 +316,12 @@ setting for one project, in `.daedalus/config.json`, which is never committed.
 | `hooks.session_start`, `hooks.board`, `hooks.capture` | `true`, `true`, `false` | Which hooks are registered |
 | `board.branch`, `board.remote`, `board.poll_minutes` | `daedalus/board`, `origin`, `5` | The agent board |
 | `reconstruct.score_threshold`, `.sample_size`, `.diff_cap`, `.evidence_paths` | `50`, `3`, `8000`, none | Evidence gathering |
+| `reflection.runner` | `inhale` | `inhale`, `headless` or `local`; the last two need `machine.employer false` |
+| `reflection.model_summary` | `ab` | The models at inhale: `on`, `off`, or `ab` (an A/B test, arm chosen per session) |
+| `reflection.forget` | `purge` | `purge`: `forget` also removes the entry's history. `retain`: keeps it |
+| `reflection.scope` | `work` | Per project: `work` keeps personal entries out, `personal` keeps work ones out |
+| `reflection.activity_threshold`, `.half_life_self`, `.half_life_user`, `.summary_tokens`, `.cleanup_warning_days` | `20`, `60`, `180`, `400`, `7` | Thresholds |
+| `machine.employer` | unset | Unset or `true`: no model calls outside your session |
 | `ariadne.worker_model`, `ariadne.judge_model` | SDK default | Model casting; recorded on every diff and review |
 
 ### What lives where
@@ -291,6 +333,8 @@ setting for one project, in `.daedalus/config.json`, which is never committed.
   roadmap/index.json         local       roadmap items
   session-summaries.md, decisions.md, project-map.md     local   narrative memory
   board/, config.json, sharing.md                         local   board state, settings, sharing policy
+  reflection/                local       session digests, reports, due state, the A/B arms
+~/.config/daedalus/models/   per machine the user and self models, their history, dissents on self entries
 .claude/settings.json        hooks, and the permission rules that make posts and dissent resolutions ask you
 .claude/agents/, .claude/skills/                          installed by init/hydrate
 CLAUDE.md                    a managed section between DAEDALUS_BEGIN and DAEDALUS_END

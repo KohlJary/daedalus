@@ -17,6 +17,8 @@ manifest:
 agents:
   - name: design-analyst
     description: UX/UI analysis with Playwright
+  - name: delphi
+    description: Reflection over session logs - findings and proposals from session digests; aspirations, asked cold
   - name: docs
     description: Documentation and codebase exploration
   - name: icarus
@@ -59,3 +61,5 @@ skills:
     description: Read and post on the agent board (threads between owners' agents; every post owner-approved)
   - name: reconstruct
     description: Rebuild a period the gameplan never recorded, from git (gather, mnemosyne, check, Momus)
+  - name: reflect
+    description: Run a due reflection over session logs (bundle, delphi, check, Momus); never applies proposals
