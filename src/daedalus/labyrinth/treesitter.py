@@ -53,6 +53,8 @@ class Grammar:
     test_candidates: Tuple[str, ...] = ()  # templates: {dir} {stem} {ext}
     attribute_tests: bool = False          # Rust: #[test], #[tokio::test], #[rstest] functions
     test_marker: Optional[str] = None      # regex on a definition's text before its name (@Test, [Fact])
+    package_markers: Tuple[str, ...] = ()  # files that stand for their directory (index.ts, mod.rs)
+    doc_files: Tuple[str, ...] = ()        # files holding a directory's documentation (Go's doc.go)
     implicit_self: bool = True             # False: a plain `name()` can't reach a method (needs obj./this./self.)
 
 
@@ -62,18 +64,18 @@ JS_CANDIDATES = ("{dir}/{stem}.test{ext}", "{dir}/{stem}.spec{ext}", "{dir}/__te
 
 GRAMMARS: List[Grammar] = [
     Grammar("JavaScript", [".js", ".jsx", ".mjs", ".cjs"], wheel="tree_sitter_javascript", pack="javascript",
-            constructor_names=("constructor",), test_file=JS_TEST_FILE, test_candidates=JS_CANDIDATES, implicit_self=False),
+            constructor_names=("constructor",), test_file=JS_TEST_FILE, test_candidates=JS_CANDIDATES, package_markers=("index.ts", "index.tsx", "index.js", "index.jsx", "index.mjs"), implicit_self=False),
     Grammar("TypeScript", [".ts", ".mts", ".cts"], wheel="tree_sitter_typescript", wheel_fn="language_typescript",
             pack="typescript", vendored_tags="typescript-tags.scm", base_query_from="tree_sitter_javascript",
-            constructor_names=("constructor",), test_file=JS_TEST_FILE, test_candidates=JS_CANDIDATES, implicit_self=False),
+            constructor_names=("constructor",), test_file=JS_TEST_FILE, test_candidates=JS_CANDIDATES, package_markers=("index.ts", "index.tsx", "index.js", "index.jsx", "index.mjs"), implicit_self=False),
     Grammar("TSX", [".tsx"], wheel="tree_sitter_typescript", wheel_fn="language_tsx", pack="tsx",
             vendored_tags="typescript-tags.scm", base_query_from="tree_sitter_javascript",
-            constructor_names=("constructor",), test_file=JS_TEST_FILE, test_candidates=JS_CANDIDATES, implicit_self=False),
+            constructor_names=("constructor",), test_file=JS_TEST_FILE, test_candidates=JS_CANDIDATES, package_markers=("index.ts", "index.tsx", "index.js", "index.jsx", "index.mjs"), implicit_self=False),
     Grammar("Go", [".go"], wheel="tree_sitter_go", pack="go", test_file=r"_test\.go$",
-            test_symbol=r"^(Test|Benchmark|Example|Fuzz)", test_candidates=("{dir}/{stem}_test.go",), implicit_self=False),
+            test_symbol=r"^(Test|Benchmark|Example|Fuzz)", test_candidates=("{dir}/{stem}_test.go",), doc_files=("doc.go",), implicit_self=False),
     Grammar("Rust", [".rs"], wheel="tree_sitter_rust", pack="rust", constructor_names=("new",),
             supplement="rust-supplement.scm",
-            test_file=r"(^|/)tests/", attribute_tests=True, test_candidates=("tests/{stem}.rs",), implicit_self=False),
+            test_file=r"(^|/)tests/", attribute_tests=True, test_candidates=("tests/{stem}.rs",), package_markers=("mod.rs", "lib.rs"), implicit_self=False),
     Grammar("Java", [".java"], wheel="tree_sitter_java", pack="java", constructor_is_class_name=True,
             test_marker=r"@(Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate)\b",
             test_file=r"(^|/)src/test/|Tests?\.java$|(^|/)Test[A-Z]\w*\.java$",
@@ -231,6 +233,33 @@ class TreeSitterSupport(LanguageSupport):
     @property
     def implicit_self(self) -> bool:
         return self.grammar.implicit_self
+
+    @property
+    def package_markers(self) -> Tuple[str, ...]:  # type: ignore[override]
+        return self.grammar.package_markers
+
+    @property
+    def doc_files(self) -> Tuple[str, ...]:
+        return self.grammar.doc_files
+
+    def module_doc(self, file_path: Path) -> Optional[str]:
+        """The comment block at the top of the file (after a shebang or package line), markers stripped."""
+        if not self._load():
+            return None
+        try:
+            tree = self._parser.parse(Path(file_path).read_bytes())
+        except OSError:
+            return None
+        block = []
+        for child in tree.root_node.named_children:
+            if "comment" in child.type:
+                block.append(child.text.decode("utf-8", "replace"))
+            elif block or child.type not in ("package_clause", "package_declaration", "hash_bang_line"):
+                break
+        text = "\n".join(block)
+        lines = [re.sub(r"^\s*(//[/!]?|/\*\*?|\*/|\*|#)\s?", "", ln).rstrip() for ln in text.splitlines()]
+        doc = "\n".join(ln for ln in lines if ln.strip() and ln.strip() != "*/").strip()
+        return doc or None
 
     def constructor_of(self, class_name: str) -> Tuple[str, ...]:
         names = self.grammar.constructor_names

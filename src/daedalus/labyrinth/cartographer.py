@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .models import (
+    slugify,
     AccessLevel,
     Anchor,
     Building,
@@ -36,6 +37,7 @@ from .models import (
 )
 from .storage import PalaceStorage
 from .languages import CodeElement, get_language_registry, LanguageSupport
+from .sources import SKIP_DIRS, git_ignored, is_ignored, is_ignored_dir, keep_file, source_files
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +115,7 @@ class Cartographer:
         self.storage = storage
         self.project_root = storage.project_root
         self.language_registry = get_language_registry()
+        self._ignored: Optional[Set[str]] = None
 
     # =========================================================================
     # Code Analysis
@@ -135,6 +138,54 @@ class Cartographer:
 
         elements = language.analyze_file(file_path, self.project_root)
         return elements, language
+
+    def _ignored_paths(self) -> Set[str]:
+        if self._ignored is None:
+            self._ignored = git_ignored(self.project_root)
+        return self._ignored
+
+    def _directory_files(self, directory: Path) -> List[Path]:
+        """Source files directly in `directory`, by the shared rules (sources.py), sorted."""
+        exts = set(self.language_registry.supported_extensions())
+        ignored = self._ignored_paths()
+        out = []
+        for f in sorted(directory.iterdir()):
+            if not f.is_file() or f.suffix not in exts:
+                continue
+            rel = f.relative_to(self.project_root)
+            if not is_ignored(rel.as_posix(), ignored) and keep_file(f, rel):
+                out.append(f)
+        return out
+
+    def _package_marker(self, directory: Path) -> Optional[Path]:
+        """The file that stands for a directory: __init__.py, index.ts, mod.rs, ..."""
+        for f in self._directory_files(directory):
+            language = self.language_registry.get_by_extension(f)
+            if language is not None and f.name in language.package_markers:
+                return f
+        return None
+
+    def _directory_doc(self, directory: Path) -> Optional[str]:
+        """A directory's documentation: its package marker's docstring or leading comment, else a doc file
+        (Go's doc.go)."""
+        candidates = []
+        marker = self._package_marker(directory)
+        if marker is not None:
+            candidates.append(marker)
+        for f in self._directory_files(directory):
+            language = self.language_registry.get_by_extension(f)
+            if language is not None and f.name in getattr(language, "doc_files", ()):
+                candidates.append(f)
+        for f in candidates:
+            language = self.language_registry.get_by_extension(f)
+            doc = language.module_doc(f) if language is not None else None
+            if doc:
+                return doc
+        return None
+
+    def _is_test_file(self, path: Path) -> bool:
+        from .query import in_test_file
+        return in_test_file(path.relative_to(self.project_root).as_posix())
 
     def analyze_python_file(self, file_path: Path) -> List[CodeElement]:
         """
@@ -177,16 +228,11 @@ class Cartographer:
                 if first_line.startswith("#"):
                     description = first_line.lstrip("# ")
 
-        init_file = directory / "__init__.py"
-        if init_file.exists():
-            try:
-                with open(init_file) as f:
-                    tree = ast.parse(f.read())
-                docstring = ast.get_docstring(tree)
-                if docstring:
-                    description = docstring.split("\n")[0]
-            except:
-                pass
+        # A package's own documentation: __init__.py's docstring, index.ts's or mod.rs's leading comment,
+        # Go's doc.go
+        docstring = self._directory_doc(directory)
+        if docstring:
+            description = docstring.split("\n")[0]
 
         # Find adjacent regions (sibling directories)
         adjacent = []
@@ -196,11 +242,11 @@ class Cartographer:
                     if not sibling.name.startswith("."):
                         adjacent.append(sibling.name)
 
-        # Entry points are Python files in this directory
+        # Entry points are this directory's source files, minus private modules and tests
         entry_points = [
             str(f.relative_to(self.project_root))
-            for f in directory.glob("*.py")
-            if not f.name.startswith("_")
+            for f in self._directory_files(directory)
+            if not f.name.startswith("_") and not self._is_test_file(f)
         ][:5]  # Limit to 5
 
         return Region(
@@ -221,21 +267,24 @@ class Cartographer:
         Returns:
             Suggested Building
         """
+        source_file: Optional[Path] = None
         if module_path.is_dir():
             name = module_path.name
-            anchor_file = str((module_path / "__init__.py").relative_to(self.project_root))
+            source_file = self._package_marker(module_path)
+            anchor_file = str((source_file or module_path / "__init__.py").relative_to(self.project_root))
         else:
-            name = module_path.stem
+            source_file = module_path
+            language = self.language_registry.get_by_extension(module_path)
+            # A package marker (__init__.py, index.ts, mod.rs) is named for its directory
+            name = module_path.parent.name if language and module_path.name in language.package_markers else module_path.stem
             anchor_file = str(module_path.relative_to(self.project_root))
 
         # Analyze for purpose
         purpose = f"Module: {name}"
-        elements = []
-
-        if module_path.is_file():
-            elements = self.analyze_python_file(module_path)
-        elif (module_path / "__init__.py").exists():
-            elements = self.analyze_python_file(module_path / "__init__.py")
+        elements: List[CodeElement] = []
+        language = None
+        if source_file is not None and source_file.exists():
+            elements, language = self.analyze_file(source_file)
 
         # Use docstring if available
         for e in elements:
@@ -244,11 +293,17 @@ class Cartographer:
                     purpose = e.docstring.split("\n")[0]
                     break
 
+        if purpose == f"Module: {name}" and language is not None and source_file is not None:
+            doc = language.module_doc(source_file)
+            if doc:
+                purpose = doc.split("\n")[0]
+
         # Count floors based on nesting depth
         floors = 1
         if module_path.is_dir():
             max_depth = 0
-            for f in module_path.rglob("*.py"):
+            for f in source_files(self.project_root, self.language_registry.supported_extensions(),
+                                  under=module_path, ignored=self._ignored_paths()):
                 depth = len(f.relative_to(module_path).parts)
                 max_depth = max(max_depth, depth)
             floors = max(1, max_depth)
@@ -275,11 +330,17 @@ class Cartographer:
             main_entrance=main_entrance,
             side_doors=side_doors[:5],
             internal_only=internal_only[:5],
-            anchor=Anchor(
-                pattern=f"# {name}" if module_path.is_dir() else f"def |class ",
-                file=anchor_file,
-            ),
+            anchor=self._building_anchor(module_path, name, anchor_file, elements, language),
         )
+
+    def _building_anchor(self, module_path: Path, name: str, anchor_file: str,
+                         elements: List[CodeElement], language: Optional[LanguageSupport]) -> Anchor:
+        """Python keeps its historical building anchors; other languages anchor on the file's first definition."""
+        if language is None or language.name == "Python" or not elements:
+            return Anchor(pattern=f"# {name}" if module_path.is_dir() else f"def |class ", file=anchor_file)
+        first = min(elements, key=lambda e: e.line)
+        pattern = language.generate_anchor_pattern(first)
+        return Anchor(pattern=pattern.pattern, file=anchor_file, is_regex=pattern.is_regex)
 
     def suggest_room(
         self,
@@ -371,7 +432,15 @@ class Cartographer:
             pattern = f"def {element.simple_name}(" if element.element_type != "class" else f"class {element.simple_name}"
             is_regex = False
 
+        # Python anchors carry the name as their last word, which the slug is built from; other languages'
+        # anchors are whitespace-free regexes, so name their slug explicitly (file + qualified name, which
+        # also keeps Cart.total and Order.total in one file apart).
+        slug = None
+        if language is not None and language.name != "Python":
+            slug = slugify(f"{Path(element.file).with_suffix('')}-{element.name}")
+
         return Room(
+            slug=slug,
             name=element.name,
             building=building_name,
             floor=floor,
@@ -430,42 +499,41 @@ class Cartographer:
             self.storage.add_region(self.palace, region)
             regions_added += 1
 
-        # Map source files as buildings (supports multiple languages)
-        supported_extensions = self.language_registry.supported_extensions()
-        for ext in supported_extensions:
-            pattern = f"*{ext}"
-            for source_file in directory.glob(pattern):
-                # Skip private files (except __init__.py for Python)
-                if source_file.name.startswith("_") and source_file.name != "__init__.py":
-                    continue
+        # Map source files as buildings (every language the registry analyzes)
+        for source_file in self._directory_files(directory):
+            language = self.language_registry.get_by_extension(source_file)
+            # Skip private files (Python's _module.py; __init__.py stays)
+            if language is not None and language.is_private_file(source_file.name):
+                continue
 
-                building_name = source_file.stem
-                if building_name == "__init__":
-                    building_name = directory.name
+            building_name = source_file.stem
+            if language is not None and source_file.name in language.package_markers:
+                building_name = directory.name  # __init__.py, index.ts, mod.rs stand for their directory
 
-                if building_name not in self.palace.buildings:
-                    building = self.suggest_building(source_file, region_name)
-                    self.storage.add_building(self.palace, building)
-                    buildings_added += 1
+            if building_name not in self.palace.buildings:
+                building = self.suggest_building(source_file, region_name)
+                self.storage.add_building(self.palace, building)
+                buildings_added += 1
 
-                # Map functions/classes as rooms using language-aware analysis
-                elements, language = self.analyze_file(source_file)
-                for element in elements:
-                    if _is_noise_element(element):
-                        continue  # Skip boilerplate
+            # Map functions/classes as rooms using language-aware analysis
+            elements, language = self.analyze_file(source_file)
+            for element in elements:
+                if _is_noise_element(element):
+                    continue  # Skip boilerplate
 
-                    room_name = element.name
-                    if room_name not in self.palace.rooms:
-                        room = self.suggest_room(element, building_name, language)
-                        self.storage.add_room(self.palace, room)
-                        rooms_added += 1
+                room_name = element.name
+                if room_name not in self.palace.rooms:
+                    room = self.suggest_room(element, building_name, language)
+                    self.storage.add_room(self.palace, room)
+                    rooms_added += 1
 
         # Recursively map subdirectories
         if recursive:
-            for subdir in directory.iterdir():
+            for subdir in sorted(directory.iterdir()):
                 if subdir.is_dir() and not subdir.name.startswith((".", "_")):
-                    # Skip common non-source directories
-                    if subdir.name in ("node_modules", "venv", "__pycache__", ".git", "dist", "build"):
+                    # Skip non-source directories: the shared skip list, and anything git ignores
+                    if subdir.name in SKIP_DIRS or is_ignored_dir(
+                            subdir.relative_to(self.project_root).as_posix(), self._ignored_paths()):
                         continue
                     sub_region = f"{region_name}/{subdir.name}"
                     r, b, rm = self.map_directory(subdir, sub_region, recursive=True)
@@ -527,11 +595,11 @@ class Cartographer:
                     ))
                     continue
 
-                # Check signature hash if available
+                # Check signature hash if available. Rooms are keyed by slug; match the element by the room's name.
                 if anchor.signature_hash:
                     elements, _ = self.analyze_file(file_path)
                     for element in elements:
-                        if element.name == room_name or element.name.endswith(f".{room_name}"):
+                        if element.name == room.name or element.name.endswith(f".{room.name}"):
                             new_hash = hashlib.md5(element.signature.encode()).hexdigest()[:8]
                             if new_hash != anchor.signature_hash:
                                 reports.append(DriftReport(
@@ -571,9 +639,10 @@ class Cartographer:
         if not file_path.exists():
             return None
 
-        elements = self.analyze_python_file(file_path)
+        elements, _ = self.analyze_file(file_path)
         for element in elements:
-            if element.name == room_name or element.name.endswith(f".{room_name}"):
+            # room_name may be the room's slug (how palace.rooms is keyed); match elements by its name
+            if element.name == room.name or element.name.endswith(f".{room.name}"):
                 # Update room from current code
                 updated = self.suggest_room(element, room.building)
                 updated.history = room.history + [HistoryEntry(
@@ -609,79 +678,53 @@ class Cartographer:
         elif not directory.is_absolute():
             directory = self.project_root / directory
 
-        nodes = {}  # name -> node data
+        # The same graph `daedalus palace callers/callees/...` use (query.py): every language the registry
+        # analyzes, calls resolved to node ids within a language family, private helpers kept so call chains
+        # through them don't break. Restricted here to nodes under `directory`.
+        from .query import build_query_graph
+
+        query_graph = build_query_graph(self.project_root).graph
+        scope = Path(directory).resolve()
+        root = self.project_root.resolve()
+        prefix = "" if scope == root else scope.relative_to(root).as_posix() + "/"
+        source_files_in_scope = source_files(root, self.language_registry.supported_extensions(),
+                                             under=scope, ignored=self._ignored_paths())
+
+        nodes = {}  # node id -> node data
         edges = []  # list of {source, target, type}
-        modules = {}  # module_name -> list of node names
-
-        # Collect all supported files
-        supported_extensions = self.language_registry.supported_extensions()
-        source_files = []
-        for ext in supported_extensions:
-            source_files.extend(directory.rglob(f"*{ext}"))
-
-        # Filter out common non-source directories
-        skip_dirs = {"node_modules", "venv", "__pycache__", ".git", "dist", "build", ".venv", "env"}
-        source_files = [
-            f for f in source_files
-            if not any(skip in f.parts for skip in skip_dirs)
-        ]
-
-        # First pass: collect all nodes
-        for source_file in source_files:
-            try:
-                elements, language = self.analyze_file(source_file)
-                rel_path = source_file.relative_to(self.project_root)
-                module_name = str(rel_path.with_suffix("")).replace("/", ".")
-
-                if module_name not in modules:
-                    modules[module_name] = []
-
-                for element in elements:
-                    if _is_noise_element(element):
-                        continue  # Skip boilerplate
-
-                    node_id = f"{module_name}.{element.name}"
-                    nodes[node_id] = {
-                        "id": node_id,
-                        "name": element.name,
-                        "simple_name": element.simple_name,
-                        "type": element.element_type,
-                        "module": module_name,
-                        "file": str(rel_path),
-                        "line": element.line,
-                        "signature": element.signature,
-                        "docstring": (element.docstring or "")[:200],
-                        "calls": element.calls,
-                        "called_by": [],  # populated in second pass
-                        "complexity": len(element.calls),  # simple proxy
-                    }
-                    modules[module_name].append(node_id)
-
-            except Exception as e:
-                logger.warning(f"Error analyzing {source_file}: {e}")
+        modules = {}  # module_name -> list of node ids
+        for node_id, n in query_graph.nodes.items():
+            if not n.file.startswith(prefix):
                 continue
-
-        # Second pass: build edges and populate called_by
+            nodes[node_id] = {
+                "id": node_id,
+                "name": n.name,
+                "simple_name": n.simple_name,
+                "type": n.type,
+                "module": n.module,
+                "file": n.file,
+                "line": n.line,
+                "signature": n.signature,
+                "docstring": (n.docstring or "")[:200],
+                "calls": [],
+                "called_by": [],
+                "is_test": n.is_test,
+            }
+            modules.setdefault(n.module, []).append(node_id)
         for node_id, node in nodes.items():
-            for call in node["calls"]:
-                # Try to resolve the call to a known node
-                target_id = self._resolve_call(call, node["module"], nodes)
-                if target_id:
-                    edges.append({
-                        "source": node_id,
-                        "target": target_id,
-                        "type": "calls",
-                    })
-                    # Add to called_by
-                    if target_id in nodes:
-                        nodes[target_id]["called_by"].append(node_id)
+            for target_id in query_graph.nodes[node_id].calls:
+                if target_id in nodes:
+                    node["calls"].append(target_id)
+                    nodes[target_id]["called_by"].append(node_id)
+                    edges.append({"source": node_id, "target": target_id, "type": "calls"})
+            node["complexity"] = len(node["calls"])  # simple proxy
 
         # Calculate additional stats
         stats = {
             "total_nodes": len(nodes),
             "total_edges": len(edges),
             "total_modules": len(modules),
-            "total_files": len(source_files),
+            "total_files": len(source_files_in_scope),
             "nodes_by_type": {},
             "most_called": [],
             "most_complex": [],
@@ -728,24 +771,6 @@ class Cartographer:
             "project": self.palace.name if self.palace else str(self.project_root.name),
             "generated_at": datetime.now().isoformat(),
         }
-
-    def _resolve_call(self, call: str, current_module: str, nodes: Dict) -> Optional[str]:
-        """Try to resolve a call name to a known node ID."""
-        # Direct match
-        if call in nodes:
-            return call
-
-        # Try with current module prefix
-        full_name = f"{current_module}.{call}"
-        if full_name in nodes:
-            return full_name
-
-        # Try to find by simple name
-        for node_id, node in nodes.items():
-            if node["simple_name"] == call:
-                return node_id
-
-        return None
 
     def export_graph_json(self, directory: Optional[Path] = None, output_path: Optional[Path] = None) -> str:
         """

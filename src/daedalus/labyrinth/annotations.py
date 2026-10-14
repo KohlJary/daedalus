@@ -49,19 +49,22 @@ class AnnotatedFile:
 
 
 # Regex patterns for annotation types
+# Regex patterns for annotation types. Annotations live in comments: # (Python, Ruby, shell),
+# // and /* */ (C-family, JS, Go, Rust, Java), -- (Lua, SQL).
+COMMENT = r"(?:#|//|--|/\*+|\*)\s*"
 ANNOTATION_PATTERNS = {
     # Syntax: MAP:ROOM room_name
-    "room": re.compile(r"#\s*MAP:ROOM\s+(\S+)"),
+    "room": re.compile(COMMENT + r"MAP:ROOM\s+(\S+)"),
     # Syntax: MAP:HAZARD description
-    "hazard": re.compile(r"#\s*MAP:HAZARD\s+(.+)$"),
+    "hazard": re.compile(COMMENT + r"MAP:HAZARD\s+(.+)$"),
     # Syntax: MAP:EXIT:DIRECTION target
-    "exit": re.compile(r"#\s*MAP:EXIT:(\w+)\s+(\S+)"),
+    "exit": re.compile(COMMENT + r"MAP:EXIT:(\w+)\s+(\S+)"),
     # Syntax: MAP:ENTITY entity_name
-    "entity": re.compile(r"#\s*MAP:ENTITY\s+(\S+)"),
+    "entity": re.compile(COMMENT + r"MAP:ENTITY\s+(\S+)"),
     # Syntax: MAP:WHY explanation (for documenting design decisions)
-    "why": re.compile(r"#\s*MAP:WHY\s+(.+)$"),
+    "why": re.compile(COMMENT + r"MAP:WHY\s+(.+)$"),
     # Syntax: MAP:CONTAINS name: type
-    "contains": re.compile(r"#\s*MAP:CONTAINS\s+(.+)$"),
+    "contains": re.compile(COMMENT + r"MAP:CONTAINS\s+(.+)$"),
 }
 
 
@@ -188,6 +191,18 @@ def parse_annotations(content: str, file_path: str) -> AnnotatedFile:
     return result
 
 
+def _contexts_from_elements(annotated: AnnotatedFile, elements) -> None:
+    """For languages without Python's def/class lines: each annotation's context is the definition its
+    comment leads (one starting within the next few lines), else the innermost one containing it, else the
+    nearest one above it."""
+    spans = sorted(((e.line, e.end_line or e.line, e.simple_name or e.name) for e in elements), key=lambda t: t[0])
+    for ann in annotated.annotations:
+        led = [name for start, _, name in spans if ann.line < start <= ann.line + 3]
+        containing = [(end - start, name) for start, end, name in spans if start <= ann.line <= end]
+        above = [name for start, _, name in spans if start <= ann.line]
+        ann.context = led[0] if led else (min(containing)[1] if containing else (above[-1] if above else None))
+
+
 def scan_directory(
     directory: Path,
     project_root: Path,
@@ -199,35 +214,40 @@ def scan_directory(
     Args:
         directory: Directory to scan
         project_root: Project root for relative paths
-        extensions: File extensions to scan (default: .py)
+        extensions: File extensions to scan (default: every language the palace analyzes)
 
     Returns:
         Dict mapping relative file paths to their annotations
     """
+    from .languages import get_language_registry
+    from .sources import source_files
+
+    registry = get_language_registry()
     if extensions is None:
-        extensions = [".py"]
+        extensions = registry.supported_extensions()
 
     results = {}
 
-    for ext in extensions:
-        for file_path in directory.rglob(f"*{ext}"):
-            # Skip common non-code directories
-            if any(part.startswith(".") or part in ("__pycache__", "node_modules", "venv")
-                   for part in file_path.parts):
-                continue
+    for file_path in source_files(project_root, extensions, under=directory):
+        # Skip dot-directories (as this scan always has)
+        if any(part.startswith(".") for part in file_path.relative_to(project_root).parts):
+            continue
 
-            try:
-                content = file_path.read_text(encoding="utf-8")
-                relative = str(file_path.relative_to(project_root))
+        try:
+            content = file_path.read_text(encoding="utf-8")
+            relative = str(file_path.relative_to(project_root))
 
-                annotated = parse_annotations(content, relative)
+            annotated = parse_annotations(content, relative)
 
-                # Only include files with annotations
-                if annotated.annotations:
-                    results[relative] = annotated
+            # Only include files with annotations
+            if annotated.annotations:
+                language = registry.get_by_extension(file_path)
+                if language is not None and language.name != "Python":
+                    _contexts_from_elements(annotated, language.analyze_file(file_path, project_root))
+                results[relative] = annotated
 
-            except Exception as e:
-                logger.warning(f"Failed to parse {file_path}: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to parse {file_path}: {e}")
 
     return results
 

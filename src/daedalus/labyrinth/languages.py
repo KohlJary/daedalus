@@ -140,6 +140,17 @@ class LanguageSupport(ABC):
         """Method names that construction of `class_name` runs."""
         return ()
 
+    # Files that stand for their directory (a package's __init__.py, index.ts, mod.rs)
+    package_markers: Tuple[str, ...] = ()
+
+    def module_doc(self, file_path: Path) -> Optional[str]:
+        """The file's leading documentation (a module docstring, a leading comment block)."""
+        return None
+
+    def is_private_file(self, file_name: str) -> bool:
+        """Files the palace builder doesn't map as buildings (Python's _private.py modules)."""
+        return False
+
     @property
     def implicit_self(self) -> bool:
         """Whether a plain `name()` call can reach a method of the enclosing class (Java, Ruby) or only
@@ -169,6 +180,17 @@ class PythonSupport(LanguageSupport):
 
     def test_file_candidates(self, rel_path: str) -> List[str]:
         return [str(Path("tests") / f"test_{Path(rel_path).stem}.py")]
+
+    package_markers = ("__init__.py",)
+
+    def module_doc(self, file_path: Path) -> Optional[str]:
+        try:
+            return ast.get_docstring(ast.parse(Path(file_path).read_text(encoding="utf-8")))
+        except (SyntaxError, UnicodeDecodeError, OSError, ValueError):
+            return None
+
+    def is_private_file(self, file_name: str) -> bool:
+        return file_name.startswith("_") and file_name != "__init__.py"
 
     def constructor_of(self, class_name: str) -> Tuple[str, ...]:
         return ("__init__",)
