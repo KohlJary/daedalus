@@ -1,5 +1,5 @@
 # Edict 0005: Edicts opt-in
-Status: accepted
+Status: done
 
 ## Intent
 Edicts are how Kohl sends designs from Claude in chat to Claude Code. They

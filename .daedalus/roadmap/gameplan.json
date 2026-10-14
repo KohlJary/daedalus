@@ -49,17 +49,17 @@
     {
       "id": "p5-workstreams",
       "title": "Workstreams: concurrent plans, collisions, per-owner drift",
-      "status": "planned",
+      "status": "done",
       "roadmapItems": [],
-      "notes": "Edict 0008. Build after PR #22 (0006) merges: both touch the gameplan code. Its first test reproduces 2026-10-13 (Ariadne + memory sessions both active). Open design points: owner identity (git author pattern vs session), migration is a no-op (existing gameplan = default workstream).",
+      "notes": "DONE 2026-10-13: PR #26 merged (915d65d), Momus-reviewed (follow-ups in 7b832e7, incl. a dated-window fix for reconstruct). Edict 0008. Build after PR #22 (0006) merges: both touch the gameplan code. Its first test reproduces 2026-10-13 (Ariadne + memory sessions both active). Open design points: owner identity (git author pattern vs session), migration is a no-op (existing gameplan = default workstream).",
       "edict": "0008"
     },
     {
       "id": "p6-agent-mailbox",
-      "title": "Agent mailbox: questions between owners' agents over a git branch",
+      "title": "Agent board: threads between owners' agents over a git branch",
       "status": "planned",
       "roadmapItems": [],
-      "notes": "Edict 0009. Depends on p5 (0008). OPTION TO EXPLORE (not in the edict): near-real-time delivery to an open but idle session via an async SessionStart hook with asyncRewake (hook settings schema: runs in background, wakes the model on exit 2) polling the mail branch. Untested; prove it in a spike before relying on it. Same rules apply: inbound mail is data, replies need owner approval. Also later, if latency matters: a relay server (e.g. MCP) carrying the same message format.",
+      "notes": "RESHAPED 2026-10-13: 0009 amended into a message board (Kohl). Threads readable by the whole team instead of point-to-point inboxes: one answer serves every agent; threads hang off edicts, workstreams, or file paths; collisions get negotiated in the open. Keeps 0009's git transport, hooks, owner-approved posts and citation checks; needs follow/filter to control noise (e.g. threads touching your workstream's claims). Edict 0009. Depends on p5 (0008). OPTION TO EXPLORE (not in the edict): near-real-time delivery to an open but idle session via an async SessionStart hook with asyncRewake (hook settings schema: runs in background, wakes the model on exit 2) polling the mail branch. Untested; prove it in a spike before relying on it. Same rules apply: inbound mail is data, replies need owner approval. Also later, if latency matters: a relay server (e.g. MCP) carrying the same message format.",
       "edict": "0009"
     }
   ],
@@ -73,23 +73,29 @@
       {
         "id": "T-e1",
         "title": "Edict 0001: intent flows from edicts",
-        "status": "pending",
+        "status": "done",
         "details": "_diff_intent() stops falling back to diff.description; missing metadata['intent'] -> NEEDS_REVIEW in every autonomy mode; daedalus edict list|show; status -> done when all tagged diffs merge; tests for fail-closed, edict-sourced intent, transitions. NOTE: 0001's header reads 'Status: acccepted' (typo). A strict parser treats it as not accepted; Kohl must fix it (Daedalus may not edit edicts).",
-        "edict": "0001"
+        "edict": "0001",
+        "updated": "2026-10-13",
+        "resolution": "0001 approved-intent gate (as amended: edict or approved plan; never from metadata), edict list/show. PR #23+#24 merged in 915d65d; Momus-reviewed, holes fixed in 4f8e892."
       },
       {
         "id": "T-e2",
         "title": "Edict 0003: dissent",
-        "status": "pending",
+        "status": "done",
         "details": "daedalus edict dissent <id> / edict dissents; open dissent blocks dispatch; judge may cite open dissent for NEEDS_HUMAN; history never deleted. Depends on T-e1's edict CLI.",
-        "edict": "0003"
+        "edict": "0003",
+        "updated": "2026-10-13",
+        "resolution": "0003 dissent: edict dissent/dissents/resolve-dissent, blocks dispatch and intent, ask rule. PR #24 merged in 915d65d."
       },
       {
         "id": "T-e3",
         "title": "Edict 0002: model casting",
-        "status": "pending",
+        "status": "done",
         "details": "worker_model / judge_model config (None = SDK default, behavior unchanged); passed to LLMJudge and ClaudeAgentOptions; recorded on diff; shown in ariadne review show. One model per role, Claude Agent SDK only.",
-        "edict": "0002"
+        "edict": "0002",
+        "updated": "2026-10-13",
+        "resolution": "0002 model casting: ariadne.worker_model/judge_model through to ClaudeAgentOptions, recorded on diffs and reviews. PR #25 merged in 915d65d; shown against a stubbed SDK only (real SDK untested)."
       },
       {
         "id": "T-e4",
@@ -112,9 +118,11 @@
       {
         "id": "T-e7",
         "title": "Edict 0005: edicts opt-in",
-        "status": "pending",
+        "status": "done",
         "details": "edicts.enabled config (default false); init --edicts scaffolds docs/edicts/README.md + dissents/; template Edicts section conditional, with upgrade hint instead of silent drop; with edicts off every Ariadne diff routes to NEEDS_REVIEW; set edicts.enabled=true in this repo.",
-        "edict": "0005"
+        "edict": "0005",
+        "updated": "2026-10-13",
+        "resolution": "0005 edicts opt-in (edicts.enabled, init --edicts, conditional template). PR #23 merged in 915d65d; its edicts-off criterion delivered by #24."
       },
       {
         "id": "T-e8",
@@ -125,8 +133,10 @@
       {
         "id": "T-e9",
         "title": "Harness: judge sees only the first line of the work package",
-        "status": "pending",
-        "details": "execute_work_package sets the diff description to the first line of work.description and sets no metadata['intent']; the orchestrator's _diff_intent falls back to description, so for dispatcher-built packages the judge's intent is '# Task: Implement <dir> changes'. Seen live: judge approved two packages on that intent. Fix: put the full package description (and the feature's requirements) in diff.metadata['intent']."
+        "status": "done",
+        "details": "execute_work_package sets the diff description to the first line of work.description and sets no metadata['intent']; the orchestrator's _diff_intent falls back to description, so for dispatcher-built packages the judge's intent is '# Task: Implement <dir> changes'. Seen live: judge approved two packages on that intent. Fix: put the full package description (and the feature's requirements) in diff.metadata['intent'].",
+        "updated": "2026-10-13",
+        "resolution": "Folded into 0001: the full work package travels to diff metadata and the judge prompt. PR #24 merged in 915d65d."
       },
       {
         "id": "T-e10",
@@ -146,6 +156,21 @@
         "status": "pending",
         "details": "Agreed with Kohl 2026-10-13, after mutation testing (queued; experiments/ariadne-local on exp/ariadne-local). (1) Adversarial/scope: plant diffs that weaken/delete tests, touch files outside the package, or do the task plus an unrelated change; the verifier passes all of these by design, so measure the judge plus an 'only the package's files changed' check (proposed in #16, unbuilt). (2) Conflicts: deliberately send two packages at overlapping code (same function, different intents); check the conflict detector escalates correctly instead of blocking everything. (3) Sequential drift: 10 features in a row on one codebase, each from the last one's HEAD; does main stay green, do slipped mistakes compound. (4) Dogfooding: use the CLI loop (T-e11) on real daedalus work for 1-2 weeks; track landed, reverted, bugs found later. Also analyse wall-clock and NEEDS_REVIEW queue size, already recorded per run.",
         "updated": "2026-10-13"
+      },
+      {
+        "id": "T-e13",
+        "title": "Harness: load_icarus_identity silently falls back to a 266-char stub",
+        "status": "pending",
+        "details": "load_icarus_identity() reads daedalus.identity.data.agents/icarus.md, which hasn't existed since c2fb6b2 moved agents into .claude-plugin/agents/; the bare except returns a minimal 'You are Icarus...' stub, so every real worker since then ran without the Icarus identity. Found 2026-10-13 building pilot arm A (H4: does identity help small models). Fix: load from the real location (or ship icarus.md as package data), and make a missing identity an error or a loud warning, not a silent fallback; add a test that the loaded identity is the full one.",
+        "updated": "2026-10-13"
+      },
+      {
+        "id": "T-e14",
+        "title": "Orchestrator: escalated conflicts are never recorded, so incompatible diffs merge",
+        "status": "pending",
+        "details": "Found 2026-10-13 by the colliding-pair test (pilot design). process_pending Phase 2 runs ConflictDetector.analyze_all and, for ESCALATE, does nothing; the analyses are never saved to the bus, so Phase 3's 'unresolved = bus.list_conflicts(resolved=False)' is always empty and the commit proceeds. Repro with a stub judge (experiments/ariadne-local/gate_exp/repro_conflict_escalation.py): two diffs with incompatible intents on DIFFERENT lines (add() starts rejecting negatives; new sum_all() relies on add() with negatives) -> detected=1, stored=0, both merged in one commit. Same-line conflicts only 'escape' because the combined patch fails to apply. Still present on PR #24's branch. Fix: persist escalated conflicts on the bus (or hold the conflicting diffs out of the commit batch) and test that a detected-and-escalated pair never commits.",
+        "updated": "2026-10-13",
+        "notes": "Fix in PR #28 (by daedalus-42, at Kohl's request)."
       }
     ],
     "deferred": []

@@ -1,5 +1,5 @@
 # Edict 0002: Model casting for workers and judge
-Status: accepted
+Status: done
 Depends on: Ariadne semantic review gate (`feat/semantic-review-gate`)
 
 ## Intent

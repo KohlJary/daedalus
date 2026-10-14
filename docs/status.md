@@ -8,15 +8,15 @@ and `daedalus doctor`. This file carries what the gameplan can't say. See
 **Last updated:** 2026-10-13, by a Daedalus session
 
 ## Last session
-- Built edicts 0007 (memory backbone, PR #21) and 0006 (memory reconstruction,
-  PR #22); both merged and marked `done`. Drafted edicts 0008 (workstreams)
-  and 0009 (agent mailbox) at Kohl's request; next to build, in that order.
-- 0006's real run on temple-codex (sparse messages) surfaced two places where
-  `research/hybrid.md` reports more than its logs support (the TSP arithmetic,
-  the unreported Gemini Busy Beaver runs). Momus confirmed both. The proposal
-  is kept outside any repo, pending Kohl's call.
-- Two Daedalus sessions are working in parallel: one on Ariadne (p1), one on
-  memory. Edict 0008 exists because the single active phase couldn't hold both.
+- Built and merged edicts 0005, 0001 (as amended: an approved plan is approved
+  intent), 0003, 0002 and 0008 (PRs #23-#26, merged as 915d65d). Each was
+  reviewed by Momus before merge; its findings were fixed with tests.
+- PR #28 (open): Ariadne recorded no escalated conflicts, so incompatible diffs
+  could merge (T-e14, found by the Ariadne session).
+- Edict 0009 reshaped from a mailbox into an agent message board, at Kohl's
+  request. It is the next build.
+- Two sessions worked in parallel (Ariadne and memory) and coordinated over
+  Claude Code's cross-session messages; edict 0008 now models that.
 
 ## Open dissents
 None.

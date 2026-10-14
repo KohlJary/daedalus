@@ -1,5 +1,5 @@
 # Edict 0008: Workstreams
-Status: accepted
+Status: done
 Depends on: Edict 0007 (gameplan, doctor, session-start hook); Edict 0006 (reconstruct, for
 per-workstream reconstruction)
 
