@@ -241,6 +241,13 @@
         "status": "pending",
         "details": "Calls resolve by name only (same module, else every same-named definition up to a cap), so interface-heavy code over-links: snapd's Lock() reaches 2,667 callers. Resolving through imports (Python imports, TS paths and index files, Go packages) is the precision fix, per language. Measure against coverage ground truth as T-e18 did before and after.",
         "updated": "2026-10-14"
+      },
+      {
+        "id": "T-e24",
+        "title": "Palace: type-informed dispatch for calls through fields and variables",
+        "status": "pending",
+        "details": "T-e23 resolves calls bound by imports (from x import f; mod.f(); pkg.F(); Foo.bar()). Calls through a field or variable (self.reviewer.review(), s.mu.Lock(), store.save()) still use the name-based rule, so interface-heavy code over-links: snapd's Lock() keeps ~2,666 callers. Fix with light type information: constructor assignments (self.x = Foo(...), x := Foo{}), annotated parameters and fields (reviewer: LLMJudge, mu sync.Mutex), Go struct field types. Measure with the T-e18 harness (experiments/palace-recall/measure.sh on exp/ariadne-local). Note from the T-e23 measurement: on this repo the remaining extras are mostly path-sensitivity (ConflictDetector.analyze_all has one definition) and injected fakes (LLMJudge.review), which types won't fix either.",
+        "updated": "2026-10-14"
       }
     ],
     "deferred": []

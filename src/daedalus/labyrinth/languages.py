@@ -43,6 +43,9 @@ class CodeElement:
     member_calls: List[str] = field(default_factory=list)
     # Set by analyzers that know their language's test conventions; None means "use the Python rule"
     is_test: Optional[bool] = None
+    # Each call as (qualifier, name): "" for a plain call, an identifier for `mod.name()` / `Foo.name()`,
+    # "self" for self/this, "?" for anything more complex. Used to resolve calls through imports.
+    call_sites: List[Tuple[str, str]] = field(default_factory=list)
 
     def __post_init__(self):
         # Derive simple_name from name if not set
@@ -151,6 +154,12 @@ class LanguageSupport(ABC):
         """Files the palace builder doesn't map as buildings (Python's _private.py modules)."""
         return False
 
+    def file_imports(self, file_path: Path, project_root: Path) -> Dict[str, Tuple[str, Optional[str]]]:
+        """Names the file binds by importing: local name -> (module spec, imported symbol or None for a whole
+        module). Specs are tagged by kind ("py:a.b", "js:src/cart", "go:example.com/m/pkg",
+        "java:com/x/Foo", "ext:" for anything outside the project); query.py resolves them."""
+        return {}
+
     @property
     def implicit_self(self) -> bool:
         """Whether a plain `name()` call can reach a method of the enclosing class (Java, Ruby) or only
@@ -192,17 +201,58 @@ class PythonSupport(LanguageSupport):
     def is_private_file(self, file_name: str) -> bool:
         return file_name.startswith("_") and file_name != "__init__.py"
 
+    def file_imports(self, file_path: Path, project_root: Path) -> Dict[str, Tuple[str, Optional[str]]]:
+        try:
+            tree = self._parse(file_path)
+        except (SyntaxError, UnicodeDecodeError, OSError, ValueError):
+            return {}
+        rel = Path(file_path).relative_to(project_root)
+        package = list(rel.parent.parts)  # relative imports resolve against the file's directory
+        out: Dict[str, Tuple[str, Optional[str]]] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.asname:
+                        out[alias.asname] = (f"py:{alias.name}", None)
+                    else:  # `import a.b` binds `a`
+                        head = alias.name.split(".")[0]
+                        out[head] = (f"py:{head}", None)
+            elif isinstance(node, ast.ImportFrom):
+                if node.level:
+                    parts = package[: len(package) - (node.level - 1)] if node.level > 1 else list(package)
+                    if node.level - 1 > len(package):
+                        continue
+                    base = ".".join(parts + ([node.module] if node.module else []))
+                else:
+                    base = node.module or ""
+                for alias in node.names:
+                    if alias.name != "*":
+                        out[alias.asname or alias.name] = (f"py:{base}", alias.name)
+        return out
+
     def constructor_of(self, class_name: str) -> Tuple[str, ...]:
         return ("__init__",)
+
+    _last_parse: Optional[Tuple[object, ast.AST]] = None
+
+    def _parse(self, file_path: Path) -> ast.AST:
+        """Parse, reusing the last tree for the same unchanged file (analysis then imports)."""
+        st = Path(file_path).stat()
+        key = (str(file_path), st.st_mtime_ns, st.st_size)
+        if self._last_parse is not None and self._last_parse[0] == key:
+            return self._last_parse[1]
+        with open(file_path) as f:
+            tree = ast.parse(f.read())
+        self._last_parse = (key, tree)
+        return tree
 
     def analyze_file(self, file_path: Path, project_root: Path) -> List[CodeElement]:
         """Analyze a Python file using AST parsing."""
         elements = []
 
         try:
-            with open(file_path) as f:
-                source = f.read()
-            tree = ast.parse(source)
+            tree = self._parse(file_path)
+            source = ""
         except Exception as e:
             logger.warning(f"Failed to parse {file_path}: {e}")
             return elements
@@ -268,6 +318,7 @@ class PythonSupport(LanguageSupport):
         docstring = ast.get_docstring(node)
         member_calls = sorted({c.func.attr for c in ast.walk(node)
                                if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)})
+        call_sites = _python_call_sites(node)
 
         # Find function calls within this function
         calls = []
@@ -295,6 +346,7 @@ class PythonSupport(LanguageSupport):
             simple_name=node.name,
             end_line=node.end_lineno,
             member_calls=member_calls,
+            call_sites=call_sites,
         )
 
     def _extract_class(self, node: ast.ClassDef, file_path: str, source: str) -> CodeElement:
@@ -318,6 +370,7 @@ class PythonSupport(LanguageSupport):
             end_line=node.end_lineno,
             member_calls=sorted({c.func.attr for c in ast.walk(node)
                                  if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)}),
+            call_sites=_python_call_sites(node),
         )
 
     def generate_anchor_pattern(self, element: CodeElement) -> AnchorPattern:
@@ -357,6 +410,20 @@ class PythonSupport(LanguageSupport):
                 is_regex=True,
                 description=f"Function: {element.simple_name}",
             )
+
+
+def _python_call_sites(node) -> List[Tuple[str, str]]:
+    sites = set()
+    for c in ast.walk(node):
+        if not isinstance(c, ast.Call):
+            continue
+        if isinstance(c.func, ast.Name):
+            sites.add(("", c.func.id))
+        elif isinstance(c.func, ast.Attribute):
+            value = c.func.value
+            qualifier = ("self" if value.id in ("self", "cls") else value.id) if isinstance(value, ast.Name) else "?"
+            sites.add((qualifier, c.func.attr))
+    return sorted(sites)
 
 
 class TypeScriptSupport(LanguageSupport):

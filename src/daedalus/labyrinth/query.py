@@ -27,11 +27,12 @@ C/C++ and Ruby (see treesitter.py). Test conventions (which files and symbols ar
 file's tests usually live) come from each language's support class.
 """
 
+import posixpath
 import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from .pathfinding import CallGraph, GraphNode
 
@@ -39,9 +40,18 @@ from .sources import (MAX_FILE_BYTES, OTHER_SKIP_DIRS, PYTHON_EXTS, SKIP_DIRS,  
                       git_ignored as _git_ignored, module_id, source_files)
 
 
+_LANGUAGE_CACHE: Dict[Tuple[int, str], object] = {}
+_TEST_FILE_CACHE: Dict[Tuple[int, str], bool] = {}
+
+
 def _language(file: str):
+    """The file's language support, by extension (cached per registry; called for every call candidate)."""
     from .languages import get_language_registry
-    return get_language_registry().get_by_extension(Path(file))
+    registry = get_language_registry()
+    key = (id(registry), posixpath.splitext(file)[1].lower())
+    if key not in _LANGUAGE_CACHE:
+        _LANGUAGE_CACHE[key] = registry.get_by_extension(Path("x" + key[1]))
+    return _LANGUAGE_CACHE[key]
 
 
 FAMILIES = {"TypeScript": "JavaScript", "TSX": "JavaScript", "C++": "C"}  # languages that call each other's code
@@ -62,10 +72,13 @@ def _python_test_file(file: str) -> bool:
 def in_test_file(file: str) -> bool:
     """Defined in test code, by the file's language's conventions (Python: tests/, test_*.py, *_test.py,
     conftest.py; files no analyzer covers use the Python rule)."""
-    language = _language(file)
-    if language is None or language.name == "Python":
-        return _python_test_file(file)
-    return language.is_test_file(file)
+    from .languages import get_language_registry
+    key = (id(get_language_registry()), file)
+    if key not in _TEST_FILE_CACHE:
+        language = _language(file)
+        _TEST_FILE_CACHE[key] = (_python_test_file(file) if language is None or language.name == "Python"
+                                 else language.is_test_file(file))
+    return _TEST_FILE_CACHE[key]
 
 
 class GitError(RuntimeError):
@@ -79,8 +92,9 @@ class QueryGraph:
     skipped: Dict[str, int] = field(default_factory=dict)  # bare name -> number of definitions (over the cap)
 
 
-def _collect_nodes(project_root: Path) -> Dict[str, dict]:
-    """Every function, method and class, private ones and dunders included."""
+def _collect_nodes(project_root: Path, imports: Optional[Dict[str, dict]] = None) -> Dict[str, dict]:
+    """Every function, method and class, private ones and dunders included. When `imports` is given, each
+    file's import bindings are collected into it (repo-relative path -> {local name: (spec, symbol)})."""
     from .cartographer import Cartographer
     from .storage import PalaceStorage
 
@@ -97,12 +111,18 @@ def _collect_nodes(project_root: Path) -> Dict[str, dict]:
         family = _family(str(rel))
         language = _language(str(rel))
         implicit_self = language.implicit_self if language else True
+        if imports is not None and language is not None:  # every analyzed file gets an entry
+            try:
+                imports[rel.as_posix()] = language.file_imports(f, project_root)
+            except Exception:
+                imports[rel.as_posix()] = {}
         for el in elements:
             node_id = f"{module}.{el.name}"
             raw[node_id] = {"family": family, "implicit_self": implicit_self, "id": node_id, "name": el.name, "simple_name": el.simple_name or el.name.split(".")[-1],
                             "type": el.element_type, "module": module, "file": rel.as_posix(), "line": el.line,
                             "end_line": el.end_line, "attr_calls": sorted(set(el.member_calls)),
                             "is_test": el.is_test, "signature": el.signature,
+                            "call_sites": [tuple(site) for site in el.call_sites],
                             "docstring": (el.docstring or "")[:200], "calls": list(el.calls)}
     return raw
 
@@ -110,7 +130,9 @@ def _collect_nodes(project_root: Path) -> Dict[str, dict]:
 def build_query_graph(project_root: Path, max_candidates: int = 10) -> QueryGraph:
     """Build a call graph from source, without reading or writing palace storage."""
     project_root = Path(project_root).resolve()
-    raw = _collect_nodes(project_root)
+    imports: Dict[str, dict] = {}
+    raw = _collect_nodes(project_root, imports)
+    resolver = ImportResolver(raw, imports, project_root)
 
     by_simple: Dict[str, List[str]] = {}
     for node_id, node in raw.items():
@@ -123,6 +145,13 @@ def build_query_graph(project_root: Path, max_candidates: int = 10) -> QueryGrap
         for call in node.get("calls", []):
             if call in raw:
                 targets.add(call)
+                continue
+            # Imports decide what they can: `from x import f; f()`, `mod.f()`, `pkg.F()`. A call bound to
+            # code outside the project (json.dumps, fmt.Println) links to nothing. Calls through variables,
+            # self, or expressions fall through to the name-based rules below.
+            decided, undecided = resolver.resolve_call(node, call)
+            targets.update(decided)
+            if not undecided:
                 continue
             through_object = call.split(".")[-1] in node.get("attr_calls", ())
             local = f"{node['module']}.{call}"
@@ -166,6 +195,145 @@ def build_query_graph(project_root: Path, max_candidates: int = 10) -> QueryGrap
     graph.end_lines = {nid: n.get("end_line") for nid, n in raw.items()}  # type: ignore[attr-defined]
     graph.raw_calls = {nid: list(n.get("calls", [])) for nid, n in raw.items()}  # type: ignore[attr-defined]
     return QueryGraph(graph=graph, ambiguous_links=ambiguous, skipped=skipped)
+
+
+JS_EXTS = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts")
+
+
+class ImportResolver:
+    """Maps import bindings (from each language's file_imports) to graph nodes.
+
+    A lookup answers None when imports don't decide the call (no binding, an ambiguous module, a name the
+    module doesn't define), an empty set when the binding points outside the project, and node ids otherwise.
+    """
+
+    def __init__(self, raw: Dict[str, dict], imports: Dict[str, dict], project_root: Path):
+        self.raw = raw
+        self.imports = imports
+        # Every analyzed file is a module, definitions or not (an __init__.py that only re-exports still
+        # makes its package part of the project, not an external import)
+        self.module_file: Dict[str, str] = {module_id(Path(f)): f for f in imports}
+        for node in raw.values():
+            self.module_file.setdefault(node["module"], node["file"])
+        self.file_module = {f: m for m, f in self.module_file.items()}
+        self.py_suffix: Dict[str, List[str]] = {}
+        self.dir_modules: Dict[str, List[str]] = {}
+        for m, f in self.module_file.items():
+            if f.endswith(PYTHON_EXTS):
+                parts = m.split(".")
+                for i in range(len(parts)):
+                    self.py_suffix.setdefault(".".join(parts[i:]), []).append(m)
+            self.dir_modules.setdefault(posixpath.dirname(f), []).append(m)
+        self.go_mods = self._go_modules(project_root)
+
+    def _go_modules(self, project_root: Path) -> List[Tuple[str, str]]:
+        """(directory, module path) for each go.mod above a Go file, nearest first."""
+        found: Dict[str, str] = {}
+        for d in {posixpath.dirname(f) for f in self.module_file.values() if f.endswith(".go")}:
+            parts = d.split("/") if d else []
+            for i in range(len(parts), -1, -1):
+                rel = "/".join(parts[:i])
+                if rel in found:
+                    break
+                gomod = project_root / rel / "go.mod"
+                if gomod.is_file():
+                    m = re.search(r"^module\s+(\S+)", gomod.read_text(errors="replace"), re.MULTILINE)
+                    if m:
+                        found[rel] = m.group(1)
+                    break
+        return sorted(found.items(), key=lambda kv: -len(kv[0]))
+
+    def modules_for(self, spec: str, importer: str) -> Optional[List[str]]:
+        kind, _, value = spec.partition(":")
+        if kind == "ext":
+            return []
+        if kind == "py":
+            candidates = set(self.py_suffix.get(value, [])) | set(self.py_suffix.get(value + ".__init__", []))
+            if len(candidates) <= 1:
+                return sorted(candidates)
+            # Several files match (config.py in two packages): take the one nearest the importer, if unique
+            here = self.file_module.get(importer, "").split(".")
+            score = {c: len(posixpath.commonprefix([c.split("."), here])) for c in candidates}
+            best = max(score.values())
+            winners = [c for c, v in score.items() if v == best]
+            return winners if len(winners) == 1 else None
+        if kind == "js":
+            stem = value
+            for ext in JS_EXTS:  # './x.js' in TypeScript ESM means x.ts
+                if stem.endswith(ext):
+                    stem = stem[: -len(ext)]
+                    break
+            for candidate in [stem + e for e in JS_EXTS] + [stem + "/index" + e for e in JS_EXTS]:
+                if candidate in self.file_module:
+                    return [self.file_module[candidate]]
+            return None  # a relative import we can't see (generated, or an asset)
+        if kind == "go":
+            for directory, module_path in self.go_mods:
+                if value == module_path or value.startswith(module_path + "/"):
+                    rel = posixpath.normpath(posixpath.join(directory, value[len(module_path):].lstrip("/")))
+                    rel = "" if rel == "." else rel
+                    return sorted(m for m in self.dir_modules.get(rel, []) if self.module_file[m].endswith(".go")) or None
+            return []  # standard library or a dependency
+        if kind == "java":
+            suffix = value + ".java"
+            hits = [m for m, f in self.module_file.items() if f == suffix or f.endswith("/" + suffix)]
+            return hits if len(hits) <= 1 else None
+        return None
+
+    def symbol(self, spec: str, sym: str, local: str, importer: str, depth: int = 0) -> Optional[Set[str]]:
+        """Nodes an imported symbol names: a definition, or one re-exported through the module's own imports."""
+        modules = self.modules_for(spec, importer)
+        if modules is None:
+            return None
+        if not modules:
+            return set()
+        name = local if sym == "default" else sym
+        hits = {f"{m}.{name}" for m in modules if f"{m}.{name}" in self.raw}
+        if hits:
+            return hits
+        if depth < 3:  # from pkg import f, where pkg/__init__.py itself imports f
+            for m in modules:
+                binding = self.imports.get(self.module_file[m], {}).get(sym)
+                if binding and binding[1] is not None:
+                    found = self.symbol(binding[0], binding[1], sym, self.module_file[m], depth + 1)
+                    if found:
+                        return found
+        return None
+
+    def resolve_call(self, node: dict, call: str) -> Tuple[Set[str], bool]:
+        """(targets the imports decide, whether any call site is left to the name-based rules)."""
+        sites = {q for q, n in node.get("call_sites", ()) if n == call}
+        if not sites:
+            return set(), True
+        imports = self.imports.get(node["file"], {})
+        decided: Set[str] = set()
+        undecided = False
+        for qualifier in sites:
+            result = None
+            if qualifier == "":
+                binding = imports.get(call)
+                if binding and binding[1] is not None:
+                    result = self.symbol(binding[0], binding[1], call, node["file"])
+            elif qualifier not in ("?", "self") and qualifier in imports:
+                spec, sym = imports[qualifier]
+                if sym is None:  # a module or package: mod.f(), pkg.F()
+                    modules = self.modules_for(spec, node["file"])
+                    if modules is not None:
+                        hits = {f"{m}.{call}" for m in modules if f"{m}.{call}" in self.raw}
+                        result = hits if (hits or not modules) else None
+                else:  # an imported class (Foo.bar()), or a submodule (from pkg import mod; mod.f())
+                    owners = self.symbol(spec, sym, qualifier, node["file"])
+                    if owners is None and spec.startswith("py:"):
+                        modules = self.modules_for(f"{spec}.{sym}", node["file"])
+                        owners = set(modules) if modules else owners
+                    if owners is not None:
+                        hits = {f"{o}.{call}" for o in owners if f"{o}.{call}" in self.raw}
+                        result = hits if (hits or not owners) else None
+            if result is None:
+                undecided = True
+            else:
+                decided |= result
+        return decided, undecided
 
 
 def resolve_symbol(graph: CallGraph, symbol: str) -> List[str]:
