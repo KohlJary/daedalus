@@ -7,8 +7,8 @@ the Ariadne bus through the worker itself, the real verifier runs the fixture pr
 on them, and the orchestrator merges and commits what passes.
 
 The only stand-in is the model: claude_agent_sdk.query is replaced by a script that edits files in the
-worker's cwd, the way a model would through its Edit/Write tools. No model calls, no cost; the live tier
-(test_ariadne_live.py) uses real models.
+worker's cwd, the way a model would through its Edit/Write tools. No model calls, no cost; a live tier with
+real models is tracked in issue #16 and is not in this suite.
 """
 
 import asyncio
@@ -163,6 +163,25 @@ def test_new_files_are_part_of_the_diff(project, buses, fake_sdk):
     assert not (project / "geometry.py").exists()  # handed off, not left behind untracked
 
 
+def test_bytecode_and_test_caches_stay_out_of_the_diff(project, buses, fake_sdk):
+    """A worker that ran pytest leaves __pycache__ and .pytest_cache behind; with no .gitignore they
+    used to ride along as binary patches that git apply refuses (gameplan T-e8)."""
+    def run_tests_and_edit(cwd: Path):
+        edit("calc.py", "return a * b", "return b * a")(cwd)
+        subprocess.run([sys.executable, "-m", "pytest", "-q"], cwd=cwd, capture_output=True)
+        create("pkg/__pycache__/mod.cpython-312.pyc", "\x00bytes")(cwd)
+        create("stray.pyc", "\x00bytes")(cwd)
+
+    fake_sdk.scripts.append(run_tests_and_edit)
+    asyncio.run(run_work(project, buses, "Swap mul operands"))
+
+    pending = buses[1].list_pending_diffs()
+    assert len(pending) == 1
+    assert pending[0].all_affected_files() == {"calc.py"}
+    assert "__pycache__" not in pending[0].content and ".pyc" not in pending[0].content
+    assert ".pytest_cache" not in pending[0].content
+
+
 # --- through verification and merge ---------------------------------------------------------------
 
 def test_good_change_is_verified_by_real_tests_and_committed(project, buses, fake_sdk):
@@ -186,6 +205,46 @@ def test_change_that_breaks_a_test_is_rejected_by_the_real_verifier(project, bus
     assert result.diffs_rejected == 1 and result.commits_created == 0, result
     assert "return a + b" in (project / "calc.py").read_text(encoding="utf-8")
     assert len(git(project, "log", "--oneline").splitlines()) == 1
+
+
+def test_change_no_test_matches_goes_to_review_not_merge(project, buses, fake_sdk):
+    """No test is named for geometry.py, so nothing checked it: not verified, so a human decides
+    (gameplan T-e4, issue #15). It used to pass and auto-merge."""
+    fake_sdk.scripts.append(create("geometry.py", "def area(w, h):\n    return w * h\n"))
+    plan = approved_plan(project, "Add geometry.area")
+
+    asyncio.run(run_work(project, buses, "Add geometry.area", inputs={"plan_id": plan.id, "spec_id": "wp-1"}))
+    result = process(project, buses[1])
+
+    assert result.commits_created == 0 and result.diffs_needs_review == 1, result
+    waiting = buses[1].list_needs_review_diffs()
+    assert len(waiting) == 1
+    tests = waiting[0].verification_result["tests"]
+    assert tests["no_tests_matched"] and tests["run"] == 0 and not tests["passed"]
+    assert waiting[0].semantic_review["reviewer"] == "verifier"
+    assert not (project / "geometry.py").exists()
+
+
+def test_a_syntax_error_is_rejected_even_when_no_test_matches(project, buses, fake_sdk):
+    fake_sdk.scripts.append(create("geometry.py", "def area(w, h)\n    return w * h\n"))
+
+    asyncio.run(run_work(project, buses, "Add geometry.area"))
+    result = process(project, buses[1])
+
+    assert result.diffs_rejected == 1 and result.diffs_needs_review == 0, result
+    (rejected,) = buses[1].list_all_diffs()
+    assert not rejected.verification_result["compile"]["passed"]
+    assert "geometry.py" in rejected.verification_result["compile"]["errors"][0]
+
+
+def test_a_changed_test_file_runs_even_if_its_name_matches_no_module(project, buses, fake_sdk):
+    fake_sdk.scripts.append(create("tests/test_arith_props.py",
+                                   "from calc import add\n\n\ndef test_zero():\n    assert add(0, 0) == 1\n"))
+
+    asyncio.run(run_work(project, buses, "Add a property test"))
+    result = process(project, buses[1])
+
+    assert result.diffs_rejected == 1 and result.commits_created == 0, result
 
 
 # --- isolation -----------------------------------------------------------------------------------

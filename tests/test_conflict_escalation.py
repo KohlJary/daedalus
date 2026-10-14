@@ -74,7 +74,8 @@ def submit(repo, bus, plan, spec, path, content):
 def process(repo, bus):
     o = AriadneOrchestrator(repo, bus=bus, auto_commit=True, autonomy="full", semantic_reviewer=ApproveAll())
     noop = [sys.executable, "-c", "pass"]
-    o.verifier = CausalSliceVerifier(repo, typecheck_cmd=noop, lint_cmd=noop, test_cmd=noop)
+    o.verifier = CausalSliceVerifier(repo, typecheck_cmd=noop, lint_cmd=noop, test_cmd=noop,
+                                     require_tests=False)
     return o.process_pending()
 
 

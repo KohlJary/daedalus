@@ -40,6 +40,9 @@ Focus on completing the task efficiently and correctly.
 """
 
 
+# Never part of a worker's diff (T-e8)
+DIFF_EXCLUDES = ("**/__pycache__/**", "**/*.pyc", "**/*.pyo", "**/.pytest_cache/**")
+
 _FRONTMATTER = re.compile(r"---[ \t]*\r?\n.*?\r?\n---[ \t]*(?:\r?\n|$)", re.S)
 
 
@@ -248,8 +251,10 @@ class IcarusWorker:
             return None
 
         try:
-            # Stage everything so new files are included, then diff the index against HEAD
-            self._git("add", "-A")
+            # Stage everything so new files are included, then diff the index against HEAD. Build
+            # artifacts are left out even without a .gitignore: a worker that ran pytest leaves
+            # binary .pyc files, which git apply refuses, so the verifier rejected the diff (T-e8).
+            self._git("add", "-A", "--", ".", *(f":(exclude,glob){p}" for p in DIFF_EXCLUDES))
             result = self._git("diff", "--cached", "HEAD")
 
             diff_content = result.stdout

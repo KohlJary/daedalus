@@ -92,6 +92,11 @@ def _git(project_dir: Path, *args: str, check: bool = True) -> str:
         return ""
 
 
+# A commit's day in local time. `%as` gives the day in the commit's own recorded timezone, but
+# `--since=DATE` and file mtimes are local, so a window's from_date must be local too.
+LOCAL_DAY = ("--date=short-local", "--format=%ad")
+
+
 def _until_args(project_dir: Path, until: Optional[str]) -> tuple[str, list[str]]:
     """(end revision, extra rev-list args). `until` may be a revision or a YYYY-MM-DD date."""
     if not until:
@@ -124,9 +129,9 @@ def find_window(project_dir: Path, since: Optional[str] = None, until: Optional[
         base = _git(project_dir, "rev-parse", since).strip()
         if not base:
             raise ValueError(f"Unknown revision: {since}")
-        return {"from": base, "from_date": _git(project_dir, "log", "-1", "--format=%as", base).strip(),
+        return {"from": base, "from_date": _git(project_dir, "log", "-1", *LOCAL_DAY, base).strip(),
                 "to": to, "range": [*until_args, f"{base}..{end}"], "anchor": f"--since {since}", **extra}
-    last = _git(project_dir, "log", "-1", "--format=%H %as", "--", rel).strip()
+    last = _git(project_dir, "log", "-1", "--date=short-local", "--format=%H %ad", "--", rel).strip()
     if last:
         base, when = last.split()
         return {"from": base, "from_date": when, "to": to, "range": [*until_args, f"{base}..{end}"],

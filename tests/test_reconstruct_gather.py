@@ -160,7 +160,7 @@ def test_until_and_author_narrow_the_window(repo):
 
 
 def test_date_windows(repo):
-    today = subprocess.run(["git", "log", "-1", "--format=%as"], cwd=repo, capture_output=True,
+    today = subprocess.run(["git", "log", "-1", "--date=short-local", "--format=%ad"], cwd=repo, capture_output=True,
                            text=True).stdout.strip()
     assert gather(repo, since=today, until=today).window["commits"] >= 5
     assert gather(repo, since="2001-01-01", until="2001-01-31") is None
@@ -177,9 +177,29 @@ def test_bundle_names_do_not_collide(repo, monkeypatch):
 def test_dated_and_author_windows_keep_roadmap_history(repo):
     commit(repo, "Mark the detector done on the roadmap", {".daedalus/roadmap/index.json": json.dumps(
         {"items": [{"id": "r1", "title": "Detector", "status": "done"}]})})
-    today = subprocess.run(["git", "log", "-1", "--format=%as"], cwd=repo, capture_output=True,
+    today = subprocess.run(["git", "log", "-1", "--date=short-local", "--format=%ad"], cwd=repo, capture_output=True,
                            text=True).stdout.strip()
     dated = gather(repo, since=today)
     assert '"status": "done"' in dated.roadmap_diff["committed"]
     assert gather(repo, author="nobody-by-this-name") is None
     assert '"status": "done"' in gather(repo, author="t").roadmap_diff["committed"]
+
+
+def test_window_day_is_local_not_the_commits_timezone(repo, monkeypatch):
+    """A commit made at 05:00 +14:00 is the previous day in UTC; from_date must follow the reader's
+    clock, as --since and file mtimes do, not the timezone the commit was recorded in."""
+    import time
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
+    try:
+        stamp = "2026-01-02T05:00:00+14:00"
+        (repo / ".daedalus/roadmap/gameplan.json").write_text("{}\n")
+        git(repo, "add", "-A")
+        subprocess.run(["git", "commit", "-q", "-m", "gameplan: far east"], cwd=repo, check=True,
+                       capture_output=True, env={**ENV, "GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp})
+        commit(repo, "after", {"src/c.py": "z = 3\n"})
+        from daedalus.reconstruct import find_window
+        assert find_window(repo)["from_date"] == "2026-01-01"
+    finally:
+        monkeypatch.undo()
+        time.tzset()

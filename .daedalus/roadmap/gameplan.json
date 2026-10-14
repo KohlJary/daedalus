@@ -100,8 +100,10 @@
       {
         "id": "T-e4",
         "title": "#15 verifier fails closed; add import/build check",
-        "status": "pending",
-        "details": "Verifier must not pass a diff when no tests match. Add an execution check (import/compile the touched modules, cf. wonderland verify_imports / verification.py) so LLM review is never the only gate."
+        "status": "done",
+        "details": "Verifier must not pass a diff when no tests match. Add an execution check (import/compile the touched modules, cf. wonderland verify_imports / verification.py) so LLM review is never the only gate.",
+        "updated": "2026-10-14",
+        "resolution": "Phase 0 hygiene PR (2026-10-14): no matching test -> not verified (no_tests_matched); if all else passed, routed to NEEDS_REVIEW (reviewer 'verifier') instead of merged. Changed .py files are compiled first; changed test files always run. Issue #15 can close on merge."
       },
       {
         "id": "T-e5",
@@ -127,8 +129,10 @@
       {
         "id": "T-e8",
         "title": "Harness: __pycache__ binaries end up in Ariadne diffs",
-        "status": "pending",
-        "details": "submit_diff_to_ariadne stages with 'git add -A'; a worker that runs pytest leaves __pycache__/*.pyc in the worktree; without a .gitignore covering them the diff carries binary patches, git apply refuses them, and the verifier rejects every diff. Found by the local gate experiment (2026-10-13); hermetic tier never runs pytest in the worker so it missed this. Fix: exclude untracked ignored-by-convention artifacts (or pass PYTHONDONTWRITEBYTECODE / stage with a default exclude list)."
+        "status": "done",
+        "details": "submit_diff_to_ariadne stages with 'git add -A'; a worker that runs pytest leaves __pycache__/*.pyc in the worktree; without a .gitignore covering them the diff carries binary patches, git apply refuses them, and the verifier rejects every diff. Found by the local gate experiment (2026-10-13); hermetic tier never runs pytest in the worker so it missed this. Fix: exclude untracked ignored-by-convention artifacts (or pass PYTHONDONTWRITEBYTECODE / stage with a default exclude list).",
+        "updated": "2026-10-14",
+        "resolution": "Phase 0 hygiene PR (2026-10-14): submit_diff_to_ariadne stages with exclude pathspecs for __pycache__, *.pyc/*.pyo and .pytest_cache; test in test_ariadne_worker_loop.py."
       },
       {
         "id": "T-e9",

@@ -89,7 +89,8 @@ def diff_for(repo, content="def a():\n    return 42\n", filename="file_a.py"):
 def orchestrate(repo, bus, reviewer, autonomy="full"):
     o = AriadneOrchestrator(repo, bus=bus, auto_commit=True, autonomy=autonomy, semantic_reviewer=reviewer)
     noop = ["python", "-c", "pass"]
-    o.verifier = CausalSliceVerifier(repo, typecheck_cmd=noop, lint_cmd=noop, test_cmd=noop)
+    o.verifier = CausalSliceVerifier(repo, typecheck_cmd=noop, lint_cmd=noop, test_cmd=noop,
+                                     require_tests=False)
     return o.process_pending()
 
 
