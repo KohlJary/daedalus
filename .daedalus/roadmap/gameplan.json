@@ -69,6 +69,22 @@
       "roadmapItems": [],
       "notes": "Start with the real fixture capture (interrupt, user rejection, classifier denial, failed Bash, subagent) and the CLAUDE_CONFIG_DIR check; digests first so the benchmark gets a baseline before any reflection runs. Local runner waits on T-e5. Benchmark designed separately (Kohl, 2026-10-14).",
       "edict": "0010"
+    },
+    {
+      "id": "p8-tui",
+      "title": "Daedalus TUI: dashboard + embedded Claude pane",
+      "status": "planned",
+      "roadmapItems": [],
+      "edict": "0012",
+      "notes": "Edict 0012; reference layout in docs/design/tui/. Sources screen waits on p9-sources (0011). CIRCLE BACK: after the TUI build, decide on a separate edict making Ophanic part of Daedalus (notation skill + width checker, opt-in; not the ophanic parser, which is unreliable as of 2026-10-14). Evidence goes in the dogfooding log in docs/design/tui/README.md."
+    },
+    {
+      "id": "p9-sources",
+      "title": "Sources and roadmap intake: ADO + GitHub Issues, plugin seam for Jira",
+      "status": "planned",
+      "roadmapItems": [],
+      "notes": "Edict 0011. Roadmap becomes intake (committed), gameplan the plan. Sync -> pending proposals; write-backs always ask; on_conflict configurable (propose default). Build before the TUI's Sources screen (0012).",
+      "edict": "0011"
     }
   ],
   "activePhase": {

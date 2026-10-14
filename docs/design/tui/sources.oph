@@ -1,0 +1,40 @@
+# Sources
+
+Where work comes from. Each source is a plugin (ADO, Jira, GitHub Issues, ...)
+that turns outside items into pending proposals. Reached from Health, since a
+broken source is a kind of drift.
+
+@expanded
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Sources                                                                                 esc back │
+├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
+│▸ ● ado       synced 5m     12 items  │ ado · Azure DevOps · org/project                          │
+│  ● github    synced 1h      3 items  │                                                           │
+│  ⚠ jira      auth expired       —    │ Pulls: work items assigned to you, open in sprint         │
+│                                      │ Maps: Epic → phase · Story → roadmap item                 │
+│                                      │       Task → gameplan task                                │
+│                                      │ Writes back: state on task done (asks first)              │
+│                                      ├───────────────────────────────────────────────────────────┤
+│                                      │ r sync now · c configure (opens Config) · ? explain       │
+├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: the source declares its own mapping and write-back; the TUI just shows them.
+
+@github
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Sources                                                                                 esc back │
+├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
+│  ● ado       synced 5m     12 items  │ github · KohlJary/daedalus (from origin)                  │
+│▸ ● github    synced 1h      3 items  │                                                           │
+│  ⚠ jira      auth expired       —    │ Pulls: open issues assigned to you                        │
+│                                      │ Maps: Milestone → phase · Issue → roadmap item            │
+│                                      │       sub-issue → gameplan task                           │
+│                                      │ Writes back: close + resolution comment (asks first)      │
+│                                      │ Auth: gh CLI token ✓                                      │
+│                                      ├───────────────────────────────────────────────────────────┤
+│                                      │ r sync now · c configure (opens Config) · ? explain       │
+├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: zero-config on a GitHub repo: the repository comes from origin, auth from gh.

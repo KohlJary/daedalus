@@ -1,0 +1,74 @@
+# ClaudePane
+
+A Claude Code session behind a swappable session backend (multiplexer, detach
+tool, or Daedalus's own session process; edict 0012 leaves the choice open).
+A persistent backend keeps the session alive across TUI restarts; the plain-PTY
+fallback says so when it can't.
+
+@attached
+┌─────────────────────────────────────────────────────────────────┐
+│ Claude · session daedalus-main                        ● working │
+├─────────────────────────────────────────────────────────────────┤
+│ > diagram NeedsYou's internals                                  │
+│                                                                 │
+│ ● Reading docs/design/tui/shell.oph                             │
+│ ● Writing docs/design/tui/needs-kohl.oph                        │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+│ > _                                                             │
+└─────────────────────────────────────────────────────────────────┘
+note: border is $accent when focused, $panel when not; the strip shows idle/working.
+
+@no-session
+┌─────────────────────────────────────────────────────────────────┐
+│ Claude                                             ○ no session │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│   No Claude session for this project.                           │
+│                                                                 │
+│   n  new session in ~/cass/cass-vessel/daedalus                 │
+│   a  attach an existing one (2 found)                           │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+@fallback
+┌─────────────────────────────────────────────────────────────────┐
+│ Claude · plain PTY                                    ● working │
+├─────────────────────────────────────────────────────────────────┤
+│ ⚠ no persistent backend: this session ends when the TUI quits   │
+│                                                                 │
+│ > _                                                             │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+note: shown when the persistent backend is missing or failing; one line, not a modal.
+
+## ◆SendToClaude
+
+@modal
+┌────────────────────────────────────────────────────────┐
+│ Send to Claude                                         │
+├────────────────────────────────────────────────────────┤
+│                                                        │
+│ From: PR #38 feat/tui-shell                            │
+│                                                        │
+│ Review PR #38 (feat/tui-shell) against edict           │
+│ 0012's acceptance criteria. Report gaps; don't         │
+│ fix them.                                              │
+│                                                        │
+├────────────────────────────────────────────────────────┤
+│ e edit · enter paste into prompt · esc cancel          │
+└────────────────────────────────────────────────────────┘
+note: pastes into Claude's input but never submits; you press enter in the pane.
