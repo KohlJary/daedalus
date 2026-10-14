@@ -188,6 +188,46 @@ def test_change_that_breaks_a_test_is_rejected_by_the_real_verifier(project, bus
     assert len(git(project, "log", "--oneline").splitlines()) == 1
 
 
+def test_change_no_test_matches_goes_to_review_not_merge(project, buses, fake_sdk):
+    """No test is named for geometry.py, so nothing checked it: not verified, so a human decides
+    (gameplan T-e4, issue #15). It used to pass and auto-merge."""
+    fake_sdk.scripts.append(create("geometry.py", "def area(w, h):\n    return w * h\n"))
+    plan = approved_plan(project, "Add geometry.area")
+
+    asyncio.run(run_work(project, buses, "Add geometry.area", inputs={"plan_id": plan.id, "spec_id": "wp-1"}))
+    result = process(project, buses[1])
+
+    assert result.commits_created == 0 and result.diffs_needs_review == 1, result
+    waiting = buses[1].list_needs_review_diffs()
+    assert len(waiting) == 1
+    tests = waiting[0].verification_result["tests"]
+    assert tests["no_tests_matched"] and tests["run"] == 0 and not tests["passed"]
+    assert waiting[0].semantic_review["reviewer"] == "verifier"
+    assert not (project / "geometry.py").exists()
+
+
+def test_a_syntax_error_is_rejected_even_when_no_test_matches(project, buses, fake_sdk):
+    fake_sdk.scripts.append(create("geometry.py", "def area(w, h)\n    return w * h\n"))
+
+    asyncio.run(run_work(project, buses, "Add geometry.area"))
+    result = process(project, buses[1])
+
+    assert result.diffs_rejected == 1 and result.diffs_needs_review == 0, result
+    (rejected,) = buses[1].list_all_diffs()
+    assert not rejected.verification_result["compile"]["passed"]
+    assert "geometry.py" in rejected.verification_result["compile"]["errors"][0]
+
+
+def test_a_changed_test_file_runs_even_if_its_name_matches_no_module(project, buses, fake_sdk):
+    fake_sdk.scripts.append(create("tests/test_arith_props.py",
+                                   "from calc import add\n\n\ndef test_zero():\n    assert add(0, 0) == 1\n"))
+
+    asyncio.run(run_work(project, buses, "Add a property test"))
+    result = process(project, buses[1])
+
+    assert result.diffs_rejected == 1 and result.commits_created == 0, result
+
+
 # --- isolation -----------------------------------------------------------------------------------
 
 def test_parallel_workers_do_not_see_each_others_edits(project, buses, fake_sdk):

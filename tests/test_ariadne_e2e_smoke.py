@@ -74,7 +74,7 @@ def _noop_verifier(repo_path: Path) -> CausalSliceVerifier:
     """
     noop = ["python", "-c", "import sys"]
     return CausalSliceVerifier(
-        repo_path, typecheck_cmd=noop, lint_cmd=noop, test_cmd=noop
+        repo_path, typecheck_cmd=noop, lint_cmd=noop, test_cmd=noop, require_tests=False
     )
 
 

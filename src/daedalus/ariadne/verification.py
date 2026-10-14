@@ -1,21 +1,21 @@
 """
-Causal Slice Verification
+Diff Verification
 
-The key innovation of Ariadne: instead of running the full test suite for each
-worker's changes, we verify only the "causal slice" - the code paths affected
-by the changes.
-
-This enables fast feedback (seconds instead of minutes) while still catching
-real issues.
+Ariadne's mechanical gate. Each worker diff is applied to a fresh copy of the whole repository
+(not a slice of it) and checked there. What is narrowed is which checks run: the tests are chosen
+by name from the modules the diff touches, not from a call graph. The name "causal slice" is the
+goal; the Palace call graph (`daedalus palace tests-for`) is not wired in yet.
 
 Flow:
-1. Extract causal chain from diff (what functions/modules are affected)
-2. Find tests that touch the affected code
-3. Run only those tests
-4. Type check only affected modules
-5. Return verification result
+1. Copy the repository to a temp workspace and apply the diff
+2. Compile every changed Python file (a syntax gate that runs even when no test does)
+3. Type check and lint the changed modules
+4. Run the tests matched by name to the changed modules, plus any changed test files
+5. If no test matched, the diff is not verified (`no_tests_matched`): it fails closed, and the
+   orchestrator routes it to human review instead of merging it (gameplan T-e4, issue #15)
 """
 
+import re
 import subprocess
 import tempfile
 import shutil
@@ -29,7 +29,7 @@ from .diff_bus import Diff, CausalChain, DiffStatus
 
 @dataclass
 class VerificationResult:
-    """Result of causal slice verification."""
+    """Result of verifying one diff."""
     diff_id: str
     passed: bool
     duration_seconds: float
@@ -41,7 +41,12 @@ class VerificationResult:
     lint_passed: bool = True
     lint_errors: List[str] = field(default_factory=list)
 
+    compile_passed: bool = True
+    compile_errors: List[str] = field(default_factory=list)
+
     tests_passed: bool = True
+    # True when no test matched the diff: the tests did not pass, they never ran (T-e4)
+    no_tests_matched: bool = False
     tests_run: int = 0
     tests_failed: int = 0
     test_errors: List[str] = field(default_factory=list)
@@ -68,8 +73,13 @@ class VerificationResult:
                 "passed": self.lint_passed,
                 "errors": self.lint_errors,
             },
+            "compile": {
+                "passed": self.compile_passed,
+                "errors": self.compile_errors,
+            },
             "tests": {
                 "passed": self.tests_passed,
+                "no_tests_matched": self.no_tests_matched,
                 "run": self.tests_run,
                 "failed": self.tests_failed,
                 "errors": self.test_errors,
@@ -87,14 +97,13 @@ class VerificationResult:
 
 class CausalSliceVerifier:
     """
-    Verifies diffs by checking only the affected code paths.
+    Verifies a diff in a full copy of the repository, running the checks chosen for it.
 
-    Instead of running the full test suite, we:
-    1. Apply the diff to a temporary workspace
-    2. Identify affected modules from the causal chain
-    3. Type check only those modules
-    4. Lint only those files
-    5. Run only tests that touch the affected code
+    1. Apply the diff to a temporary copy of the whole repository
+    2. Identify affected modules from the causal chain (or the diff's file names)
+    3. Compile the changed Python files
+    4. Type check those modules and lint those files
+    5. Run the tests matched to them by name, plus changed test files; none matched fails closed
     """
 
     def __init__(
@@ -104,6 +113,7 @@ class CausalSliceVerifier:
         typecheck_cmd: Optional[List[str]] = None,
         lint_cmd: Optional[List[str]] = None,
         test_cmd: Optional[List[str]] = None,
+        require_tests: bool = True,
     ):
         """
         Initialize verifier.
@@ -114,16 +124,19 @@ class CausalSliceVerifier:
             typecheck_cmd: Command for type checking (default: mypy)
             lint_cmd: Command for linting (default: ruff)
             test_cmd: Command for running tests (default: pytest)
+            require_tests: A diff no test matched is not verified (default). False lets it pass
+                on the other checks alone; for harnesses that stub the test command out.
         """
         self.repo_path = Path(repo_path)
         self.python_path = python_path
         self.typecheck_cmd = typecheck_cmd or ["mypy", "--no-error-summary"]
         self.lint_cmd = lint_cmd or ["ruff", "check"]
         self.test_cmd = test_cmd or ["pytest", "-x", "-q"]
+        self.require_tests = require_tests
 
     def verify(self, diff: Diff, causal_chain: Optional[CausalChain] = None) -> VerificationResult:
         """
-        Verify a diff using causal slice checking.
+        Verify a diff: compile, typecheck, lint, and run the tests matched to it.
 
         Args:
             diff: The diff to verify
@@ -160,8 +173,19 @@ class CausalSliceVerifier:
                 modules = self._extract_modules_from_diff(diff)
                 test_files = self._find_tests_for_modules(workspace, modules)
 
+            # A changed test file is a test of this diff, whatever its name matches
+            repo = workspace / "repo"
+            changed_tests = [f for f in sorted(diff.all_affected_files())
+                             if _is_test_file(f) and (repo / f).exists()]
+            test_files = list(dict.fromkeys([*test_files, *changed_tests]))
+
             result.modules_checked = modules
             result.tests_executed = test_files
+
+            # Compile every changed Python file, so a syntax error fails even when no test runs
+            result.compile_passed, result.compile_errors = self._run_compile(
+                workspace, diff.all_affected_files()
+            )
 
             # Run type checking
             result.typecheck_passed, result.typecheck_errors = self._run_typecheck(
@@ -179,11 +203,15 @@ class CausalSliceVerifier:
                     self._run_tests(workspace, test_files)
                 )
             else:
-                # No tests to run - that's okay for some changes
-                result.tests_passed = True
+                # Nothing checked the behavior, so this is not a pass: fail closed (T-e4)
+                result.no_tests_matched = True
+                if self.require_tests:
+                    result.tests_passed = False
+                    result.test_errors = ["No tests matched the changed modules: not verified"]
 
         # Overall result
         result.passed = (
+            result.compile_passed and
             result.typecheck_passed and
             result.lint_passed and
             result.tests_passed
@@ -282,6 +310,20 @@ class CausalSliceVerifier:
                             test_files.append(rel_path)
 
         return test_files
+
+    def _run_compile(self, workspace: Path, files: Set[str]) -> tuple[bool, List[str]]:
+        """Compile each changed Python file in place (no bytecode written). Deleted files are skipped."""
+        repo = workspace / "repo"
+        errors = []
+        for f in sorted(files):
+            path = repo / f
+            if not f.endswith(".py") or not path.is_file():
+                continue
+            try:
+                compile(path.read_bytes(), f, "exec", dont_inherit=True)
+            except (SyntaxError, ValueError) as e:
+                errors.append(f"{f}: {e}")
+        return not errors, errors
 
     def _run_typecheck(
         self,
@@ -397,7 +439,6 @@ class CausalSliceVerifier:
 
             # Parse pytest output for counts
             # Look for "X passed" or "X failed" in output
-            import re
             passed_match = re.search(r"(\d+) passed", result.stdout)
             failed_match = re.search(r"(\d+) failed", result.stdout)
 
@@ -419,6 +460,11 @@ class CausalSliceVerifier:
             return False, 0, 0, ["pytest not found"]
 
 
+def _is_test_file(path: str) -> bool:
+    name = path.replace("\\", "/").rsplit("/", 1)[-1]
+    return name.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
+
+
 def extract_causal_chain(diff: Diff, repo_path: Path) -> CausalChain:
     """
     Extract the causal chain from a diff.
@@ -436,7 +482,6 @@ def extract_causal_chain(diff: Diff, repo_path: Path) -> CausalChain:
 
     # Extract function names from diff (look for def/class lines)
     affected_functions = []
-    import re
     for line in diff.content.split("\n"):
         if line.startswith("+") and not line.startswith("+++"):
             # Look for function/class definitions

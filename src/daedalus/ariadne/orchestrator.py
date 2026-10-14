@@ -42,6 +42,12 @@ from .tracker import Tracker
 from ..config import get_daedalus_email, load_config
 
 
+def _only_untested(v: VerificationResult) -> bool:
+    """Every check passed, but no test matched the diff, so its behavior went unverified (T-e4)."""
+    return (v.no_tests_matched and not v.tests_passed
+            and v.compile_passed and v.typecheck_passed and v.lint_passed)
+
+
 def _commit_args(message: str, paths: Optional[List[str]] = None) -> List[str]:
     """
     Build the `git commit` argument list honoring the configured git.authorship.
@@ -321,6 +327,21 @@ class AriadneOrchestrator:
                 )
                 verified_diffs.append(diff)
                 result.diffs_verified += 1
+            elif _only_untested(verification):
+                # It compiles and checks clean, but no test exercised it: a human decides (T-e4, #15)
+                review = SemanticReviewResult(
+                    diff_id=diff.id, verdict=ReviewVerdict.NEEDS_HUMAN, reviewer="verifier",
+                    reasoning="No tests matched the changed modules, so nothing verified its behavior.",
+                )
+                self.bus.update_diff_status(
+                    diff.id,
+                    DiffStatus.NEEDS_REVIEW,
+                    verification_result=verification.to_dict(),
+                    semantic_review=review.to_dict(),
+                )
+                if self.tracker:
+                    self.tracker.complete_feature(self._plan_id_for_diff(diff))
+                result.diffs_needs_review += 1
             else:
                 self.bus.update_diff_status(
                     diff.id,
