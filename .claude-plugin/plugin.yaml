@@ -1,5 +1,5 @@
 name: daedalus-claude-plugin
-version: 0.1.0
+version: 0.2.0
 description: >
   Daedalus - Claude Code extensions for AI-assisted development.
   Includes Mind Palace (Labyrinth) navigation, Icarus parallel workers,
