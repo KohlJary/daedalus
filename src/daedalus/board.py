@@ -218,7 +218,20 @@ def _commit_files(repo: Path, parent: Optional[str], files: dict[str, str], mess
             _git(repo, "update-index", "--add", "--cacheinfo", f"100644,{blob},{path}", env=env)
         tree = _git(repo, "write-tree", env=env).strip()
     args = ["commit-tree", tree, "-m", message] + (["-p", parent] if parent else [])
-    return _git(repo, *args).strip()
+    return _git(repo, *args, env=_identity_env(repo)).strip()
+
+
+def _identity_env(repo: Path) -> dict:
+    """Board commits need an author; when git has none configured (CI, fresh machines), use a fallback."""
+    env = {}
+    for key, var_name, var_email in (("user.name", "GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"),
+                                     ("user.email", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL")):
+        if os.environ.get(var_name) and os.environ.get(var_email):
+            continue
+        if not _git(repo, "config", key, check=False).strip():
+            value = "Daedalus board" if key == "user.name" else "board@daedalus.invalid"
+            env[var_name] = env[var_email] = value
+    return env
 
 
 def _publish(repo: Path, build, message: str, attempts: int = 4) -> str:

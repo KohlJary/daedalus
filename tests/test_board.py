@@ -312,3 +312,19 @@ def test_doctor_notices_a_missing_ask_rule(team, thread):
     from daedalus.doctor import run_checks
     a, _ = team
     assert "board-ask-rule-missing" in [f.name for f in run_checks(a)[0]]
+
+
+
+def test_posts_without_a_configured_git_identity(team, monkeypatch, tmp_path):
+    """CI runners and fresh machines have no user.name/user.email; posting must still work."""
+    a, _ = team
+    for var in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "home" / ".config"))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    git(a, "config", "--unset", "user.name")
+    git(a, "config", "--unset", "user.email")
+    thread, post_id = board.post(a, board.draft(a, "kohl", "no identity here", title="t", topic="general"), "kohl")
+    assert post_id == "0001-kohl"
+    assert "Daedalus board" in git(a, "log", "-1", "--format=%an", "refs/heads/daedalus/board")
