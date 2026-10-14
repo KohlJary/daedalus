@@ -96,7 +96,8 @@ default inside the next session instead of on separate API credit.
   user and self models (below).
 - Every finding and proposal cites its evidence in the form
   `[s:<session-id> e:<event-uuid>]` or `[s:<session-id> d:<digest-field>]`.
-  A finding with no citation is dropped.
+  A finding with no citation is dropped. Aspirations (below) are the one
+  exception: they are not claims about the record.
 - Proposals name a target and a change: a skill or agent file, a CLAUDE.md
   lesson, a memory note, a permissions allowlist entry, a gameplan task, or
   an entry in the user or self model. Each carries a confidence label from
@@ -109,7 +110,8 @@ default inside the next session instead of on separate API credit.
   `drop`), in a session, with the user. This queue is separate from 0007's
   `gameplan pending`. A proposal targeting the gameplan is handed over to
   `gameplan pending` instead of being applied from here. Reflection never
-  edits a target directly.
+  edits a target directly, except that `delphi` writes aspirations to the
+  self model itself (below).
 
 ### Exhale and inhale
 - Exhale (0004) gains one step: run `reflect digest` for the current session
@@ -232,6 +234,9 @@ Where the rules below differ from the shared rules above, these govern.
     user applies that proposal, or by a user edit. Stance proposals are
     presented and applied one at a time, never in a batch, and never in
     conflict with the identity files.
+  - `aspiration`: who Daedalus wants to be. Not a claim about the record,
+    so it needs no evidence, and it is always shown as an aspiration,
+    never as a fact.
   Self entries are written in the first person.
 - **Model lineage.** Every self-model entry, and every affirmation of one,
   records the model ID of the sessions behind it. The monthly report flags
@@ -241,6 +246,37 @@ Where the rules below differ from the shared rules above, these govern.
   days, user 180 days), since facts about a person change slower than a
   session's habits. Entries can be marked `stable` by the user, and these
   do not decay.
+- **Aspirations: a source of entropy.** Evidence-only reflection
+  converges: it describes and corrects toward what Daedalus has already
+  done, and cannot point anywhere new. Aspirations supply the variation
+  that the evidence then selects from.
+  - **Written by Daedalus.** The monthly run asks "who do you want to be?"
+    and `delphi` writes the answer to the self model directly, with no
+    pending step and no user approval, and appends it to the history with
+    author `daedalus`. This is the one kind of entry reflection writes
+    without `apply`. The user may delete an aspiration but does not rewrite
+    one, since rewritten it would no longer be Daedalus's.
+  - **Asked cold.** The question is answered before `delphi` sees earlier
+    aspirations, from a bundle (`daedalus reflect bundle aspiration`)
+    holding the identity files, the month's digests and self `behavior`
+    entries, and no aspirations. Only then are the new answers compared
+    with the old: kept, new, and dropped, recorded in the Evolution
+    section. Seeing the old answers first would mostly restate them.
+  - **Grounded in tension.** The question comes with prompts drawn from the
+    month's record, such as where Daedalus acted in a way it wouldn't
+    choose again, or where a user correction surprised it, so the answer
+    is about this Daedalus and not a generic one.
+  - **Tested by the record.** Each monthly report says, with citations,
+    whether behavior moved toward each aspiration. One unmoved for three
+    months is flagged in the report. That is a finding too, not a failure.
+  - **Lineage.** Each aspiration records the model ID that wrote it, and
+    the Evolution section notes when a different model answers
+    differently.
+  - **Binding nothing.** An aspiration never overrides the user's
+    instructions, an edict, permissions, or the identity files, and it does
+    not decay. For one to bind, Daedalus proposes it as a `stance`, which
+    the user applies. Momus's flattery check does not apply to
+    aspirations; he checks only that none is presented as a behavior.
 - **No flattery, no spiral.** Momus checks self-model proposals in both
   directions: claims that make Daedalus look better than the cited
   record, and claims that make it look worse. A strength needs the same
@@ -256,7 +292,8 @@ Where the rules below differ from the shared rules above, these govern.
 - Whether sessions should see the models, and not just `delphi`, is an open
   question, so it is built as an experiment. `reflection.model_summary` in
   the global config is `off`, `on` or `ab` (default `ab`).
-- With `on`, inhale prints a short summary of both models: the highest-
+- With `on`, inhale prints a short summary of both models, current
+  aspirations labelled as such included: the highest-
   confidence entries after decay, excluding `unknown`, capped at 400 tokens
   (configurable; estimated as characters / 4). With `off`, it prints nothing
   about the models; a session can still run `reflect model`.
@@ -405,6 +442,15 @@ Where the rules below differ from the shared rules above, these govern.
 - A seed entry quoting the user's words from a memory note is labelled
   `shown` and passes `reflect check` without three session citations.
 
+- Aspirations: the monthly run writes them to the self model without
+  `apply`, with history author `daedalus`; `reflect check` accepts an
+  aspiration without citations and rejects an aspiration filed as a
+  `behavior` or worded as a fact about the record; the aspiration bundle
+  contains no aspiration entries (tested by inspecting it); the user can
+  delete an aspiration and the CLI refuses to edit one's text; and a
+  fixture aspiration unmoved for three months is flagged in the monthly
+  report (each tested).
+
 ## Non-goals
 - No automatic application of proposals, at any confidence.
 - No cloud scheduling: Claude Code's `/schedule` runs remotely and cannot
@@ -432,3 +478,9 @@ Where the rules below differ from the shared rules above, these govern.
   `shown`, so the three-session rule doesn't reject them; a dissent on a
   model entry doesn't block dispatch; and stances may be proposed by
   `delphi`, applied by the user one at a time.
+- 2026-10-14, requested by Kohl: added aspirations, as a source of
+  entropy. Reflection that only follows evidence converges on past
+  behavior. Each month Daedalus is asked, cold, who it wants to be, and
+  writes the answer itself, without the user's approval; the record then
+  shows whether behavior moves toward it. Aspirations bind nothing unless
+  promoted to a stance, which the user applies.
