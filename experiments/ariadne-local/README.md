@@ -14,6 +14,7 @@ Gameplan: T-e5 (local backends), T-e10 (planner), T-e11 (CLI loop). Results writ
 | `gate_exp/mutate.py` | Mutation test of the judge: oracle-verified bugs injected into correct diffs, for large-n catch and false-reject rates |
 | `gate_exp/tasks_new.py`, `collide.py` | Pilot-design ticket types: behaviour-preserving refactors, ambiguous tickets, colliding pairs |
 | `gate_exp/make_ariadne_src.py` | Rebuilds the pinned Ariadne code the runs use (BASE_COMMIT + PR #24's atomic-commit fix) |
+| `greenfield/` | Kohl's idea: local Ariadne builds a greenfield spec's shape, Claude polishes; two specs with validated hidden oracles; Claude steps in RUNBOOK.md |
 | `mature/` | Same conditions on this repo itself, with three real gameplan tasks; `RUNBOOK.md` has the Claude steps |
 
 Design: `docs/experiments/ariadne-local-pilot.md` (PR #20). Tonight's runs use a bare worker prompt, so they are that design's arm D; arm A (Icarus identity) is `exp.py gen --arm A`.

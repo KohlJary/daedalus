@@ -5,3 +5,7 @@ mature/claude/review/
 *.log
 gate_exp/ariadne_src/
 gate_exp/_src_tmp/
+greenfield/results/artifacts/
+greenfield/claude/solo/
+greenfield/claude/plan/
+greenfield/claude/polish/
