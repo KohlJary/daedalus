@@ -15,25 +15,77 @@ from typing import List, Optional, Tuple
 from .languages import AnchorPattern, CodeElement, LanguageSupport
 
 CODE_BLOCK = re.compile(r"@(?:code|functions)\s*\{|@\{")
-COMPONENT_TAG = re.compile(r"<([A-Z]\w*)(?=[\s/>])")
-HANDLER = re.compile(r"@(?:on\w+|bind\w*(?::\w+)?)\s*=\s*\"\s*(?:\(\)\s*=>\s*)?@?([A-Za-z_]\w*)")
-EXPRESSION_CALL = re.compile(r"@\(?\s*([A-Za-z_]\w*)\s*\(")
+COMPONENT_TAG = re.compile(r"<([A-Z][\w.]*)(?=[\s/>]|<)")
+HANDLER = re.compile(r"@on\w+(?::\w+)?\s*=\s*\"([^\"]*)\"")
+CALL = re.compile(r"(?<![\w.])([A-Za-z_]\w*)\s*\(")
 RAZOR_KEYWORDS = {"if", "foreach", "for", "while", "switch", "using", "code", "functions", "page", "inject",
                   "model", "inherits", "implements", "layout", "attribute", "typeparam", "namespace", "await",
-                  "section", "RenderBody", "RenderSection", "Html", "Url", "nameof", "typeof"}
+                  "async", "section", "RenderBody", "RenderSection", "Html", "Url", "nameof", "typeof", "new",
+                  "var", "in", "return", "catch", "lock", "default", "sizeof", "checked", "unchecked"}
 
 
 def _close(text: str, open_at: int) -> int:
-    """Index of the brace closing the one at open_at (strings and comments are not special-cased)."""
+    """Index of the brace closing the one at open_at, skipping C# strings ("", @"", $"", '') and comments."""
     depth = 0
-    for i in range(open_at, len(text)):
-        if text[i] == "{":
+    i = open_at
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if c == "/" and text.startswith("//", i):
+            i = text.find("\n", i)
+            i = n if i < 0 else i
+            continue
+        if c == "/" and text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            i = n if end < 0 else end + 2
+            continue
+        if c == '"':
+            verbatim = i > 0 and text[i - 1] == "@" or (i > 1 and text[i - 2:i] in ("@$", "$@"))
+            i += 1
+            while i < n:
+                if text[i] == "\\" and not verbatim:
+                    i += 2
+                    continue
+                if text[i] == '"':
+                    if verbatim and text.startswith('""', i):
+                        i += 2
+                        continue
+                    break
+                i += 1
+            i += 1
+            continue
+        if c == "'":
+            end = text.find("'", i + 3 if text[i + 1:i + 2] == "\\" else i + 1)
+            i = n if end < 0 else end + 1
+            continue
+        if c == "{":
             depth += 1
-        elif text[i] == "}":
+        elif c == "}":
             depth -= 1
             if depth == 0:
                 return i
-    return len(text) - 1
+        i += 1
+    return n - 1
+
+
+def markup_references(markup: str) -> List[str]:
+    """Names the markup calls: component tags (<Counter />, <Layout.Header />, <Item<int> />), handler
+    values (@onclick="Save", "@(() => Save())", "async () => await Load()"), and calls in Razor
+    expressions and control flow (@Format(x), @(Total()), @foreach (var i in GetItems())). @bind values
+    are fields, not calls; member calls (item.ToString()) are left out."""
+    refs = set()
+    for tag in COMPONENT_TAG.findall(markup):
+        refs.add(tag.split(".")[-1])
+    for value in HANDLER.findall(markup):
+        value = value.strip().lstrip("@")
+        if re.fullmatch(r"[A-Za-z_]\w*", value):
+            refs.add(value)
+        else:
+            refs.update(CALL.findall(value))
+    for m in re.finditer(r"@", markup):
+        line_end = markup.find("\n", m.end())
+        refs.update(CALL.findall(markup[m.end(): len(markup) if line_end < 0 else line_end]))
+    return sorted(refs - RAZOR_KEYWORDS)
 
 
 class RazorSupport(LanguageSupport):
@@ -91,9 +143,7 @@ class RazorSupport(LanguageSupport):
         cls.is_test = False
         elements = [cls]
 
-        refs = set(COMPONENT_TAG.findall(markup)) | set(HANDLER.findall(markup)) | set(EXPRESSION_CALL.findall(markup))
-        refs -= RAZOR_KEYWORDS
-        for name in sorted(refs):
+        for name in markup_references(markup):
             cls.calls.append(name)
             cls.call_sites.append(("", name))
 

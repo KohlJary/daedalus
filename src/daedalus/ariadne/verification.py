@@ -226,9 +226,10 @@ class CausalSliceVerifier:
                 workspace, modules
             )
             if self.build_gate and any(f.endswith(BUILD_SOURCES) for f in changed):
-                built, build_errors = dotnet_build(repo, changed)
+                built, build_errors, build_skipped = dotnet_build(repo, changed)
                 result.typecheck_passed = result.typecheck_passed and built
                 result.typecheck_errors.extend(build_errors)
+                result.skipped_checks.extend(build_skipped)
 
             # Run linting
             result.lint_passed, result.lint_errors = self._run_lint(

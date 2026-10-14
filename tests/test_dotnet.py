@@ -209,3 +209,51 @@ def test_dotnet_failing_test_fails_verification(dotnet_repo):
     result = CausalSliceVerifier(dotnet_repo, typecheck_cmd=NOOP, lint_cmd=NOOP, build_gate=False).verify(
         _diff(dotnet_repo, "Shop/Calc.cs", CALC.replace("x * 2", "x * 3")))
     assert not result.passed and result.tests_failed == 1
+
+
+def test_a_method_named_like_a_type_keeps_its_own_link(tmp_path):
+    g = graph(tmp_path, {
+        "T.cs": "namespace N { public class Total { } public class Order { } }\n",
+        "Y.cs": "namespace N { public class Two {\n  int Total() => 1;\n  int Order() => 2;\n"
+                "  public int U() => Total();\n  public int V() => Order();\n} }\n",
+    })
+    assert "Y.cs.Two.Total" in g.nodes["Y.cs.Two.U"].calls  # its own method, not only `new Total()`
+    assert "Y.cs.Two.Order" in g.nodes["Y.cs.Two.V"].calls
+
+
+def test_razor_blocks_survive_braces_in_strings_and_comments(tmp_path):
+    write(tmp_path, {"Page.razor": "<h1>@Title()</h1>\n@code {\n    string close = \"}\";\n    char open = '{';\n"
+                                   "    // a stray } in a comment\n    string Title() => \"x\";\n    void Save() { }\n}\n"})
+    languages._registry = None
+    razor = languages.get_language_registry().get_by_extension(tmp_path / "Page.razor")
+    names = {e.name for e in razor.analyze_file(tmp_path / "Page.razor", tmp_path)}
+    assert {"Page.Title", "Page.Save"} <= names
+
+
+def test_razor_markup_references_in_lambdas_and_control_flow():
+    from daedalus.labyrinth.razor import markup_references
+    markup = ('<button @onclick="@(() => Save())">s</button>\n<button @onclick="async () => await Load()">l</button>\n'
+              '<input @bind="name" />\n@foreach (var item in GetItems())\n{\n  <span>@item.ToString()</span>\n}\n'
+              '@if (IsAdmin()) { <Layout.Header /> }\n<Grid<int> />\n')
+    refs = set(markup_references(markup))
+    assert {"Save", "Load", "GetItems", "IsAdmin", "Header", "Grid"} <= refs
+    assert not {"name", "async", "ToString", "foreach", "if"} & refs
+
+
+def test_build_gate_reports_what_it_could_not_build(tmp_path):
+    from daedalus.ariadne.test_runners import dotnet_build
+    write(tmp_path, {"tools/Loose.cs": "class Loose {}\n",
+                     "Game/ProjectSettings/ProjectVersion.txt": "m_EditorVersion: 2022.3",
+                     "Game/Assembly-CSharp.csproj": "<Project/>", "Game/Assets/P.cs": "class P {}\n"})
+    passed, errors, skipped = dotnet_build(tmp_path, ["tools/Loose.cs", "Game/Assets/P.cs"])
+    assert passed and errors == []
+    assert any("tools/Loose.cs (no .csproj owns it)" in s for s in skipped)
+    assert any("Unity project" in s for s in skipped)
+
+
+def test_dotnet_filter_uses_the_classes_the_file_defines(tmp_path):
+    write(tmp_path, {"Shop.Tests/Shop.Tests.csproj": "<Project/>",
+                     "Shop.Tests/CalcTests.cs": "public class MathSpecs { [Fact] public void Adds() {} }\n"})
+    languages._registry = None
+    runs, _ = plan_runs(tmp_path, ["Shop.Tests/CalcTests.cs"], ["pytest"])
+    assert runs[0].command[-1] == "FullyQualifiedName~MathSpecs"

@@ -204,3 +204,16 @@ def test_custom_output_the_runner_cannot_read_is_not_a_pass(tmp_path):
                                 "tests/test_core.py": "from app.core import f\n\ndef test_f():\n    assert f() == 1\n"})
     result = verifier(repo, test_cmd=NOOP).verify(diff_for(repo, "app/core.py", "def f():\n    return 2\n"))
     assert not result.passed and result.no_tests_matched  # NOOP prints nothing: we can't tell a test ran
+
+
+@pytest.mark.skipif(shutil.which("npm") is None or shutil.which("node") is None, reason="needs node and npm")
+def test_npm_script_projects_with_node_test_verify(tmp_path):
+    pytest.importorskip("tree_sitter_javascript")
+    files = {"package.json": json.dumps({"name": "x", "type": "module", "scripts": {"test": "node --test"}}),
+             "src/sum.js": "export function sum(a, b) { return a + b; }\n",
+             "src/sum.test.js": "import { test } from 'node:test';\nimport assert from 'node:assert';\n"
+                                "import { sum } from './sum.js';\ntest('sums', () => { assert.equal(sum(1, 2), 3); });\n"}
+    repo = make_repo(tmp_path, files)
+    result = verifier(repo).verify(diff_for(repo, "src/sum.js", "export function sum(a, b) { return b + a; }\n"))
+    assert result.passed, result.to_dict()
+    assert result.tests_run == 1

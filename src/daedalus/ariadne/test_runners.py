@@ -96,6 +96,18 @@ def _rel_to(path: str, base: str) -> str:
     return path if base in ("", ".") else Path(path).relative_to(base).as_posix()
 
 
+def _csharp_test_classes(repo: Path, rel_file: str) -> List[str]:
+    """The classes a C# test file defines (by the palace's analyzer), else its file name."""
+    from ..labyrinth.languages import get_language_registry
+    support = get_language_registry().get_by_extension(Path(rel_file))
+    try:
+        elements = support.analyze_file(repo / rel_file, repo) if support is not None else []
+    except Exception:
+        elements = []
+    names = sorted({e.simple_name for e in elements if e.element_type == "class"})
+    return names or [Path(rel_file).stem]
+
+
 def _nearest_csproj(repo: Path, rel_file: str) -> Optional[str]:
     """The repo-relative path of the .csproj owning a file (the nearest one above it)."""
     parts = Path(rel_file).parent.parts
@@ -117,29 +129,50 @@ def is_unity_project(repo: Path, rel_file: str) -> bool:
 BUILD_SOURCES = (".cs", ".csproj", ".razor", ".cshtml", ".props", ".targets")
 
 
-def dotnet_build(repo: Path, changed: List[str], timeout: int = 600) -> Tuple[bool, List[str]]:
-    """Build each .NET project a diff touches: C# type errors only show at build time. Unity projects are
-    skipped (they build in the Unity editor). Returns (passed, errors)."""
-    projects = []
+def dotnet_build(repo: Path, changed: List[str], timeout: int = 600) -> Tuple[bool, List[str], List[str]]:
+    """Build each .NET project a diff touches: C# type errors only show at build time. A changed
+    Directory.Build.props/.targets builds every project under it. Unity projects (they build in the Unity
+    editor) and files no project owns are reported as skipped. Returns (passed, errors, skipped)."""
+    projects: List[str] = []
+    skipped: List[str] = []
+
+    def add(project: str) -> None:
+        if is_unity_project(repo, project):
+            if f"build: {project} (a Unity project; it builds in the Unity editor)" not in skipped:
+                skipped.append(f"build: {project} (a Unity project; it builds in the Unity editor)")
+        elif project not in projects:
+            projects.append(project)
+
     for f in changed:
         if not f.endswith(BUILD_SOURCES) or not (repo / f).exists():
             continue
+        if f.endswith((".props", ".targets")):
+            base = repo / Path(f).parent
+            found = sorted(p.relative_to(repo).as_posix() for p in base.rglob("*.csproj")
+                           if not ({"bin", "obj", "node_modules"} & set(p.relative_to(repo).parts)))
+            for project in found:
+                add(project)
+            if not found:
+                skipped.append(f"build: {f} (no project under it)")
+            continue
         project = f if f.endswith(".csproj") else _nearest_csproj(repo, f)
-        if project and not is_unity_project(repo, project) and project not in projects:
-            projects.append(project)
+        if project:
+            add(project)
+        else:
+            skipped.append(f"build: {f} (no .csproj owns it)")
     errors: List[str] = []
     for project in projects:
         try:
             r = subprocess.run(["dotnet", "build", project, "--nologo", "-v", "q", "-clp:NoSummary"],
                                cwd=repo, capture_output=True, text=True, timeout=timeout)
         except FileNotFoundError:
-            return False, [f"{project}: dotnet not found; install the .NET SDK or turn off ariadne.build_gate"]
+            return False, [f"{project}: dotnet not found; install the .NET SDK or turn off ariadne.build_gate"], skipped
         except subprocess.TimeoutExpired:
-            return False, [f"{project}: dotnet build timed out"]
+            return False, [f"{project}: dotnet build timed out"], skipped
         if r.returncode != 0:
             lines = [ln.strip() for ln in (r.stdout + r.stderr).splitlines() if re.search(r"\berror\b", ln)]
             errors.extend(dict.fromkeys(lines[:30]) or [f"{project}: dotnet build exited {r.returncode}"])
-    return not errors, errors
+    return not errors, errors, skipped
 
 
 def _js_runner(repo: Path, root: str) -> List[str]:
@@ -231,7 +264,7 @@ def plan_runs(repo: Path, test_files: List[str], python_cmd: List[str],
                                     + (" (a Unity project: run its tests in the Unity editor, or set test_cmds)"
                                        if project else ""))
                     continue
-                classes = sorted({Path(f).stem for f in fs})
+                classes = sorted({c for f in fs for c in _csharp_test_classes(repo, f)})
                 filter_ = "|".join(f"FullyQualifiedName~{c}" for c in classes)
                 runs.append(RunPlan(lang, ".", ["dotnet", "test", project, "--nologo", "--filter", filter_], fs))
         else:
@@ -287,7 +320,7 @@ def _count(language: str, out: str, returncode: int) -> Tuple[Optional[int], int
         return passed + failed, failed
     if language == "JavaScript":
         jest = re.findall(r"^\s*Tests:?\s+(.*)$", out, re.M)  # jest "Tests: 1 failed, 2 passed", vitest "Tests  3 passed (3)"
-        node = re.findall(r"^#\s*(pass|fail)\s+(\d+)", out, re.M)  # node --test
+        node = re.findall(r"^\s*[#ℹ]\s*(pass|fail)\s+(\d+)", out, re.M)  # node --test (TAP "#", spec "ℹ")
         if jest:
             line = jest[-1]
             passed = sum(int(m) for m in re.findall(r"(\d+) passed", line))
@@ -297,6 +330,14 @@ def _count(language: str, out: str, returncode: int) -> Tuple[Optional[int], int
             passed = sum(int(n) for k, n in node if k == "pass")
             failed = sum(int(n) for k, n in node if k == "fail")
             return passed + failed, failed
+        mocha = re.search(r"(\d+) passing", out)
+        if mocha:  # mocha: "3 passing", "1 failing", "2 pending"
+            failed = num(r"(\d+) failing")
+            return int(mocha.group(1)) + failed, failed
+        ava = re.search(r"(\d+) tests? passed", out)
+        if ava:
+            failed = num(r"(\d+) tests? failed")
+            return int(ava.group(1)) + failed, failed
         if re.search(r"No tests found|No test files found", out):
             return 0, 0
         return None, 0

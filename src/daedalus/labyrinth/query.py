@@ -247,6 +247,9 @@ class ImportResolver:
                 ns = self._cs_namespace(node["file"])
                 self.cs_types.setdefault((ns, node["simple_name"]), []).append(node_id)
         self.cs_type_names = {name for _, name in self.cs_types}
+        self.file_nodes: Dict[str, List[str]] = {}
+        for node_id, node in raw.items():
+            self.file_nodes.setdefault(node["file"], []).append(node_id)
 
     def _cs_namespace(self, file: str) -> str:
         return self.imports.get(file, {}).get("__namespace__", ("cs:", None))[0][3:]
@@ -269,6 +272,11 @@ class ImportResolver:
         """A type name the file can see: `new Foo()` -> Foo, `Foo.Bar()` -> Foo.Bar (any partial). Anything
         else (a variable, an inherited method, a type it can't see) is left to the name-based rules."""
         if qualifier == "":
+            # `Total()` may be the enclosing class's own method rather than `new Total()`: when the file defines
+            # a method of that name, leave it to the name-based rules (which link both)
+            if any(self.raw[n]["file"] == node["file"] and self.raw[n]["simple_name"] == call
+                   and self.raw[n]["type"] == "method" for n in self.file_nodes.get(node["file"], ())):
+                return None
             types = self._cs_types(node["file"], call) if call in self.cs_type_names else []
             return set(types) or None
         if qualifier in ("?", "self"):
