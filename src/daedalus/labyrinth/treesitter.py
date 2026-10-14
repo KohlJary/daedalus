@@ -56,7 +56,9 @@ class Grammar:
     test_marker: Optional[str] = None      # regex on a definition's text before its name (@Test, [Fact])
     package_markers: Tuple[str, ...] = ()  # files that stand for their directory (index.ts, mod.rs)
     doc_files: Tuple[str, ...] = ()        # files holding a directory's documentation (Go's doc.go)
-    imports: Optional[str] = None          # import syntax we resolve: "js", "go", "java" (others: name-based)
+    imports: Optional[str] = None          # import syntax we resolve: "js", "go", "java", "cs" (others: name-based)
+    skip_kinds: Tuple[str, ...] = ()       # definition kinds that aren't code units (C# namespaces)
+    top_level_node: bool = False           # give top-level statements a node (C#'s Program.cs)
     implicit_self: bool = True             # False: a plain `name()` can't reach a method (needs obj./this./self.)
 
 
@@ -83,8 +85,9 @@ GRAMMARS: List[Grammar] = [
             test_file=r"(^|/)src/test/|Tests?\.java$|(^|/)Test[A-Z]\w*\.java$",
             test_candidates=("{testdir}/{stem}Test.java", "{testdir}/{stem}Tests.java", "{dir}/{stem}Test.java")),
     Grammar("C#", [".cs"], wheel="tree_sitter_c_sharp", pack="csharp", constructor_is_class_name=True,
-            vendored_tags="c_sharp-tags.scm", supplement="c_sharp-supplement.scm",
-            test_marker=r"\[\s*(Test|TestMethod|TestCase|Fact|Theory)\b",
+            vendored_tags="c_sharp-tags.scm", supplement="c_sharp-supplement.scm", imports="cs",
+            skip_kinds=("module",), top_level_node=True,
+            test_marker=r"\[\s*(Test|TestMethod|TestCase|TestCaseSource|Fact|Theory|UnityTest)\b",
             test_file=r"(^|/)[^/]*Tests?/|Tests?\.cs$"),
     Grammar("C", [".c", ".h"], wheel="tree_sitter_c", pack="c", test_file=r"(^|/)tests?/|_test\.c$|^test_"),
     Grammar("C++", [".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx"], wheel="tree_sitter_cpp", pack="cpp",
@@ -285,7 +288,8 @@ class TreeSitterSupport(LanguageSupport):
         except OSError:
             return {}
         rel = Path(file_path).relative_to(project_root).as_posix()
-        return {"js": _js_imports, "go": _go_imports, "java": _java_imports}[kind](tree.root_node, rel)
+        return {"js": _js_imports, "go": _go_imports, "java": _java_imports,
+                "cs": _cs_imports}[kind](tree.root_node, rel)
 
     def constructor_of(self, class_name: str) -> Tuple[str, ...]:
         names = self.grammar.constructor_names
@@ -360,6 +364,8 @@ def extract_elements(support: TreeSitterSupport, source: bytes, rel: str, tree=N
             element_type = "class"
         if not callable_ and enclosing(d.node, CALLABLE_KINDS):
             continue  # a type declared inside a function body
+        if not callable_ and d.kind in support.grammar.skip_kinds:
+            continue  # a C# namespace is a scope, not a code unit
         full = f"{class_name}.{d.name}" if (class_name and (element_type == "method" or in_module)) else d.name
         # The definition's first source line, from its start (so `type Calc struct`, not `Calc struct`)
         row = d.node.start_point[0]
@@ -401,14 +407,14 @@ def extract_elements(support: TreeSitterSupport, source: bytes, rel: str, tree=N
 
     # Test files whose tests are calls, not definitions (describe/it, RSpec): one node for the file's
     # top-level code, so tests-for can reach what it calls.
-    if is_test_file and top_level:
+    if top_level and (is_test_file or support.grammar.top_level_node):
         stem = Path(rel).name
         el = CodeElement(name=f"<{stem}>", element_type="module", file=rel, line=1, signature=rel,
                          calls=sorted(top_level), simple_name=f"<{stem}>")
         el.end_line = None
         el.member_calls = sorted(top_level_member)
         el.call_sites = sorted(top_level_sites)
-        el.is_test = True
+        el.is_test = is_test_file
         elements.append(el)
     return elements
 
@@ -534,6 +540,39 @@ def _java_imports(root, rel: str) -> Dict[str, Tuple[str, Optional[str]]]:
             out[parts[-1]] = ("java:" + "/".join(parts[:-1]), parts[-2] + "." + parts[-1])
         else:
             out[parts[-1]] = ("java:" + "/".join(parts), parts[-1])
+    return out
+
+
+def _cs_imports(root, rel: str) -> Dict[str, Tuple[str, Optional[str]]]:
+    """C# imports namespaces, not files. Recorded as "using:<ns>" entries (global ones as "global:<ns>"),
+    `using X = A.B.C;` aliases, and the file's own namespace under "__namespace__"; query.py resolves type
+    names against the namespaces a file can see."""
+    out: Dict[str, Tuple[str, Optional[str]]] = {}
+
+    def visit(node, namespace: str):
+        for child in node.named_children:
+            if child.type == "using_directive":
+                text = _text(child)
+                if re.search(r"\busing\s+static\b", text):
+                    continue
+                alias = child.child_by_field_name("name")
+                target = next((c for c in child.named_children if c.type in ("qualified_name", "identifier")
+                               and c != alias), None)
+                if target is None:
+                    continue
+                name = _text(target)
+                if alias is not None:  # using Json = Newtonsoft.Json.JsonConvert;
+                    head, _, last = name.rpartition(".")
+                    out[_text(alias)] = ("cs:" + head, last)
+                else:
+                    out[("global:" if text.lstrip().startswith("global") else "using:") + name] = ("cs:" + name, None)
+            elif child.type in ("namespace_declaration", "file_scoped_namespace_declaration"):
+                name = _text(child.child_by_field_name("name"))
+                full = f"{namespace}.{name}" if namespace else name
+                out.setdefault("__namespace__", ("cs:" + full, None))
+                body = child.child_by_field_name("body")
+                visit(body if body is not None else child, full)
+    visit(root, "")
     return out
 
 

@@ -113,7 +113,18 @@ LANGUAGE_ENTRY_POINTS: Dict[str, Set[str]] = {
     "Kotlin": {"main", "toString", "equals", "hashCode", "compareTo", "invoke", "run", "close", "onCreate",
                "onStart", "onResume", "onPause", "onDestroy"},
     "C#": {"Main", "ToString", "Equals", "GetHashCode", "Dispose", "DisposeAsync", "CompareTo", "GetEnumerator",
-           "Configure", "ConfigureServices"},
+           "Configure", "ConfigureServices", "ExecuteAsync", "StartAsync", "StopAsync", "InvokeAsync", "Invoke",
+           # Blazor component lifecycle
+           "OnInitialized", "OnInitializedAsync", "OnParametersSet", "OnParametersSetAsync", "OnAfterRender",
+           "OnAfterRenderAsync", "SetParametersAsync", "ShouldRender", "BuildRenderTree",
+           # Unity messages
+           "Awake", "Start", "Update", "FixedUpdate", "LateUpdate", "OnEnable", "OnDisable", "OnDestroy",
+           "OnValidate", "Reset", "OnGUI", "OnDrawGizmos", "OnDrawGizmosSelected", "OnApplicationQuit",
+           "OnApplicationPause", "OnApplicationFocus", "OnBecameVisible", "OnBecameInvisible",
+           "OnTriggerEnter", "OnTriggerExit", "OnTriggerStay", "OnTriggerEnter2D", "OnTriggerExit2D",
+           "OnTriggerStay2D", "OnCollisionEnter", "OnCollisionExit", "OnCollisionStay", "OnCollisionEnter2D",
+           "OnCollisionExit2D", "OnCollisionStay2D", "OnMouseDown", "OnMouseUp", "OnMouseEnter", "OnMouseExit",
+           "OnAnimatorMove", "OnAnimatorIK", "OnRenderObject", "OnPreRender", "OnPostRender"},
     "Scala": {"main", "apply", "unapply", "toString", "equals", "hashCode"},
     "Ruby": {"initialize", "to_s", "to_h", "to_a", "inspect", "call", "method_missing", "respond_to_missing?",
              "each", "<=>", "==", "perform"},
@@ -140,6 +151,12 @@ def _classify_by_language(name: str, node: dict) -> Optional[Tuple[bool, str, st
             return False, "low", "React component"
     if language == "Ruby" and file.endswith("_controller.rb") and name in RAILS_ACTIONS:
         return False, "low", "Rails controller action"
+    if language == "C#":
+        owner = node.get("name", "").rsplit(".", 1)[0] if "." in node.get("name", "") else ""
+        if owner.endswith("Controller") and node["type"] == "method":
+            return False, "low", "ASP.NET controller action"
+        if re.match(r"^On(Get|Post|Put|Delete|Patch)\w*(Async)?$", name):
+            return False, "low", "Razor Pages handler"
     if language == "Go" and name[:1].isupper():
         return True, "medium", "Exported identifier - may be used by other packages"
     return None

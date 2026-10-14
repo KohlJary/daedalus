@@ -54,7 +54,7 @@ def _language(file: str):
     return _LANGUAGE_CACHE[key]
 
 
-FAMILIES = {"TypeScript": "JavaScript", "TSX": "JavaScript", "C++": "C"}  # languages that call each other's code
+FAMILIES = {"TypeScript": "JavaScript", "TSX": "JavaScript", "C++": "C", "Razor": "C#"}  # languages that call each other's code
 
 
 def _family(file: str) -> str:
@@ -225,6 +225,45 @@ class ImportResolver:
                     self.py_suffix.setdefault(".".join(parts[i:]), []).append(m)
             self.dir_modules.setdefault(posixpath.dirname(f), []).append(m)
         self.go_mods = self._go_modules(project_root)
+        # C#: types by (namespace, name), partial classes across files included, and global usings
+        self.cs_types: Dict[Tuple[str, str], List[str]] = {}
+        self.cs_global: Set[str] = set()
+        for f, bindings in imports.items():
+            if f.endswith(".cs"):
+                self.cs_global |= {k.split(":", 1)[1] for k in bindings if k.startswith("global:")}
+        for node_id, node in raw.items():
+            if node["file"].endswith(".cs") and node["type"] == "class":
+                ns = self._cs_namespace(node["file"])
+                self.cs_types.setdefault((ns, node["simple_name"]), []).append(node_id)
+        self.cs_type_names = {name for _, name in self.cs_types}
+
+    def _cs_namespace(self, file: str) -> str:
+        return self.imports.get(file, {}).get("__namespace__", ("cs:", None))[0][3:]
+
+    def _cs_visible(self, file: str) -> List[str]:
+        """Namespaces a C# file sees: its own and every enclosing one, its usings, the project's global usings."""
+        ns = self._cs_namespace(file)
+        parts = ns.split(".") if ns else []
+        chain = [".".join(parts[:i]) for i in range(len(parts), -1, -1)]
+        usings = [k.split(":", 1)[1] for k in self.imports.get(file, {}) if k.startswith("using:")]
+        return list(dict.fromkeys([*chain, *usings, *sorted(self.cs_global)]))
+
+    def _cs_types(self, file: str, name: str) -> List[str]:
+        binding = self.imports.get(file, {}).get(name)
+        if binding is not None and binding[0].startswith("cs:") and binding[1]:  # using Alias = A.B.Type;
+            return self.cs_types.get((binding[0][3:], binding[1]), [])
+        return [t for ns in self._cs_visible(file) for t in self.cs_types.get((ns, name), [])]
+
+    def _resolve_cs(self, node: dict, qualifier: str, call: str) -> Optional[Set[str]]:
+        """A type name the file can see: `new Foo()` -> Foo, `Foo.Bar()` -> Foo.Bar (any partial). Anything
+        else (a variable, an inherited method, a type it can't see) is left to the name-based rules."""
+        if qualifier == "":
+            types = self._cs_types(node["file"], call) if call in self.cs_type_names else []
+            return set(types) or None
+        if qualifier in ("?", "self"):
+            return None
+        hits = {f"{t}.{call}" for t in self._cs_types(node["file"], qualifier) if f"{t}.{call}" in self.raw}
+        return hits or None
 
     def _go_modules(self, project_root: Path) -> List[Tuple[str, str]]:
         """(directory, module path) for each go.mod above a Go file, nearest first."""
@@ -310,7 +349,9 @@ class ImportResolver:
         undecided = False
         for qualifier in sites:
             result = None
-            if qualifier == "":
+            if node["file"].endswith(".cs"):
+                result = self._resolve_cs(node, qualifier, call)
+            elif qualifier == "":
                 binding = imports.get(call)
                 if binding and binding[1] is not None:
                     result = self.symbol(binding[0], binding[1], call, node["file"])

@@ -585,6 +585,10 @@ class LanguageRegistry:
             # If its grammar fails to load, fall back to whatever handled these files before
             language.fallback = self._extension_map.get(language.extensions[0].lower())
             self.register(language)
+        csharp = self._languages.get("c#")
+        if csharp is not None:  # Razor's C# blocks parse with the C# grammar
+            from .razor import RazorSupport
+            self.register(RazorSupport(csharp))
 
     def register(self, language: LanguageSupport) -> None:
         """Register a language support implementation."""

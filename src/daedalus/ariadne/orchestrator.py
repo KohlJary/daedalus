@@ -139,7 +139,9 @@ class AriadneOrchestrator:
         self.repo_path = Path(repo_path)
         self.bus = bus or AriadneBus()
         self.conflict_detector = ConflictDetector()
-        self.verifier = CausalSliceVerifier(repo_path)
+        ariadne_config = load_config().ariadne
+        self.verifier = CausalSliceVerifier(repo_path, build_gate=ariadne_config.build_gate,
+                                            test_cmds=ariadne_config.test_cmds or None)
         self.autonomy = autonomy
         # Model casting (edict 0002): the judge plays the configured model, or the SDK default
         self.semantic_reviewer = semantic_reviewer or LLMJudge(model=load_config().ariadne.judge_model)

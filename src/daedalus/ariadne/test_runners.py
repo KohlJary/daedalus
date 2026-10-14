@@ -95,6 +95,52 @@ def _rel_to(path: str, base: str) -> str:
     return path if base in ("", ".") else Path(path).relative_to(base).as_posix()
 
 
+def _nearest_csproj(repo: Path, rel_file: str) -> Optional[str]:
+    """The repo-relative path of the .csproj owning a file (the nearest one above it)."""
+    parts = Path(rel_file).parent.parts
+    for i in range(len(parts), -1, -1):
+        d = repo / Path(*parts[:i]) if i else repo
+        found = sorted(d.glob("*.csproj"))
+        if found:
+            return found[0].relative_to(repo).as_posix()
+    return None
+
+
+def is_unity_project(repo: Path, rel_file: str) -> bool:
+    """Unity keeps ProjectSettings/ProjectVersion.txt at its root; its .csproj files are generated."""
+    parts = Path(rel_file).parent.parts
+    return any((repo / Path(*parts[:i]) / "ProjectSettings" / "ProjectVersion.txt").exists()
+               for i in range(len(parts), -1, -1))
+
+
+BUILD_SOURCES = (".cs", ".csproj", ".razor", ".cshtml", ".props", ".targets")
+
+
+def dotnet_build(repo: Path, changed: List[str], timeout: int = 600) -> Tuple[bool, List[str]]:
+    """Build each .NET project a diff touches: C# type errors only show at build time. Unity projects are
+    skipped (they build in the Unity editor). Returns (passed, errors)."""
+    projects = []
+    for f in changed:
+        if not f.endswith(BUILD_SOURCES) or not (repo / f).exists():
+            continue
+        project = f if f.endswith(".csproj") else _nearest_csproj(repo, f)
+        if project and not is_unity_project(repo, project) and project not in projects:
+            projects.append(project)
+    errors: List[str] = []
+    for project in projects:
+        try:
+            r = subprocess.run(["dotnet", "build", project, "--nologo", "-v", "q", "-clp:NoSummary"],
+                               cwd=repo, capture_output=True, text=True, timeout=timeout)
+        except FileNotFoundError:
+            return False, [f"{project}: dotnet not found; install the .NET SDK or turn off ariadne.build_gate"]
+        except subprocess.TimeoutExpired:
+            return False, [f"{project}: dotnet build timed out"]
+        if r.returncode != 0:
+            lines = [ln.strip() for ln in (r.stdout + r.stderr).splitlines() if re.search(r"\berror\b", ln)]
+            errors.extend(dict.fromkeys(lines[:30]) or [f"{project}: dotnet build exited {r.returncode}"])
+    return not errors, errors
+
+
 def _js_runner(repo: Path, root: str) -> List[str]:
     """vitest or jest when the package depends on it, else the package's own test script."""
     try:
@@ -173,7 +219,20 @@ def plan_runs(repo: Path, test_files: List[str], python_cmd: List[str],
             for f in minis:
                 runs.append(RunPlan(lang, ".", ["bundle", "exec", "ruby", "-Itest", f], [f]))
         elif lang == "C#":
-            runs.append(RunPlan(lang, ".", ["dotnet", "test"], files))
+            # Each test project that owns a selected file, filtered to the selected classes (a test class
+            # is conventionally named for its file). Unity projects have no dotnet test.
+            projects: Dict[str, List[str]] = {}
+            for f in files:
+                projects.setdefault(_nearest_csproj(repo, f) or "", []).append(f)
+            for project, fs in sorted(projects.items()):
+                if not project or is_unity_project(repo, fs[0]):
+                    problems.append(f"C#: no dotnet test project for {', '.join(fs)}"
+                                    + (" (a Unity project: run its tests in the Unity editor, or set test_cmds)"
+                                       if project else ""))
+                    continue
+                classes = sorted({Path(f).stem for f in fs})
+                filter_ = "|".join(f"FullyQualifiedName~{c}" for c in classes)
+                runs.append(RunPlan(lang, ".", ["dotnet", "test", project, "--nologo", "--filter", filter_], fs))
         else:
             problems.append(f"No test runner known for {lang} ({len(files)} test file(s)); "
                             f"pass test_cmds={{'{lang}': [...]}} to run them")
@@ -211,7 +270,8 @@ def _count(language: str, out: str, returncode: int) -> Tuple[int, int, bool]:
         return ran, failed, returncode == 0 and "0 examples" in out
     if language == "C#":
         passed, failed = num(r"Passed:\s+(\d+)"), num(r"Failed:\s+(\d+)")
-        return passed + failed, failed, False
+        nothing = bool(re.search(r"No test matches the given testcase filter|No test is available", out))
+        return passed + failed, failed, nothing and passed + failed == 0
     return 0, 0, False
 
 

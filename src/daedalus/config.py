@@ -45,6 +45,10 @@ class AriadneConfig:
     # Model casting (edict 0002): None means the SDK default. "none" or "default" also unset.
     worker_model: Optional[str] = None
     judge_model: Optional[str] = None
+    # Verification: build the .NET projects a diff touches (dotnet build) as their type check
+    build_gate: bool = True
+    # Per-language test commands replacing the built-in runners, e.g. {"TypeScript": ["pnpm", "vitest", "run"]}
+    test_cmds: dict = field(default_factory=dict)
 
 
 @dataclass

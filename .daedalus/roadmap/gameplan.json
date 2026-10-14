@@ -248,6 +248,13 @@
         "status": "pending",
         "details": "T-e23 resolves calls bound by imports (from x import f; mod.f(); pkg.F(); Foo.bar()). Calls through a field or variable (self.reviewer.review(), s.mu.Lock(), store.save()) still use the name-based rule, so interface-heavy code over-links: snapd's Lock() keeps ~2,666 callers. Fix with light type information: constructor assignments (self.x = Foo(...), x := Foo{}), annotated parameters and fields (reviewer: LLMJudge, mu sync.Mutex), Go struct field types. Measure with the T-e18 harness (experiments/palace-recall/measure.sh on exp/ariadne-local). Note from the T-e23 measurement: on this repo the remaining extras are mostly path-sensitivity (ConflictDetector.analyze_all has one definition) and injected fakes (LLMJudge.review), which types won't fix either. daedalus-d9 (2026-10-14): this feeds test selection, where extras cost time but misses cost safety; never drop a test today's name-based link finds unless the type information is certain. Guard the recall column.",
         "updated": "2026-10-14"
+      },
+      {
+        "id": "T-e25",
+        "title": ".NET: C#, Razor/Blazor, Unity in the palace and Ariadne",
+        "status": "pending",
+        "details": "Kohl 2026-10-14: .NET is an important target. Scope (Kohl): C# only; ASP.NET Core APIs, Blazor/Razor, libraries/services, Unity; xUnit; dotnet build gate on by default.",
+        "updated": "2026-10-14"
       }
     ],
     "deferred": []

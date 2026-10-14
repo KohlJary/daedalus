@@ -30,7 +30,7 @@ from typing import List, Dict, Optional, Set
 from datetime import datetime, timezone
 
 from .diff_bus import Diff, CausalChain, DiffStatus
-from .test_runners import plan_runs, run_tests, select_tests
+from .test_runners import BUILD_SOURCES, dotnet_build, plan_runs, run_tests, select_tests
 
 
 @dataclass
@@ -124,6 +124,7 @@ class CausalSliceVerifier:
         test_cmd: Optional[List[str]] = None,
         require_tests: bool = True,
         test_cmds: Optional[Dict[str, List[str]]] = None,
+        build_gate: bool = True,
     ):
         """
         Initialize verifier.
@@ -138,6 +139,8 @@ class CausalSliceVerifier:
                 on the other checks alone; for harnesses that stub the test command out.
             test_cmds: Per-language test commands, keyed by language name ("Go", "TypeScript", ...),
                 replacing the built-in runner; the selected test files are appended.
+            build_gate: Build the .NET projects a diff touches (`dotnet build`) as their type check;
+                C# type errors only show at build time. Config: ariadne.build_gate.
         """
         self.repo_path = Path(repo_path)
         self.python_path = python_path
@@ -145,6 +148,7 @@ class CausalSliceVerifier:
         self.lint_cmd = lint_cmd or ["ruff", "check"]
         self.test_cmd = test_cmd or ["pytest", "-x", "-q"]
         self.require_tests = require_tests
+        self.build_gate = build_gate
         self.test_cmds = dict(test_cmds or {})
         if test_cmd is not None:  # an explicit test_cmd stands for every language (harnesses stub it out)
             self.test_cmds.setdefault("*", list(test_cmd))
@@ -208,10 +212,14 @@ class CausalSliceVerifier:
                 workspace, diff.all_affected_files()
             )
 
-            # Run type checking
+            # Run type checking: mypy for Python, `dotnet build` for the .NET projects the diff touches
             result.typecheck_passed, result.typecheck_errors = self._run_typecheck(
                 workspace, modules
             )
+            if self.build_gate and any(f.endswith(BUILD_SOURCES) for f in changed):
+                built, build_errors = dotnet_build(repo, changed)
+                result.typecheck_passed = result.typecheck_passed and built
+                result.typecheck_errors.extend(build_errors)
 
             # Run linting
             result.lint_passed, result.lint_errors = self._run_lint(
