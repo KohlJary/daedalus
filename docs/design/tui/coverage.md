@@ -30,10 +30,10 @@ everything that isn't → or –.
 | hydrate | | hydrate (as a Health fix) | | | |
 | palace | | | callers, callees, impact, path, tests-for | status, languages | init |
 | reconstruct | | | check, gather | | |
-| config | | | | config | |
+| config | config | | | | |
 | digest | | | | digest | |
 | init, hook | | | | | init, hook board/capture/session-start |
-| **Total** | **13** | **4** | **22** | **6** | **5** |
+| **Total** | **14** | **4** | **22** | **5** | **5** |
 
 ## Beyond the CLI (11 surfaces)
 
@@ -55,9 +55,9 @@ everything that isn't → or –.
 
 | | ● | ◐ | ○ | Direct coverage (● / ●+◐) |
 |---|---|---|---|---|
-| CLI (23 in scope) | 13 | 4 | 6 | 57% / 74% |
+| CLI (23 in scope) | 14 | 4 | 5 | 61% / 78% |
 | Beyond CLI (9 in scope) | 3 | 2 | 4 | 33% / 56% |
-| **All (32 in scope)** | **16** | **6** | **10** | **50% / 69%** |
+| **All (32 in scope)** | **17** | **6** | **9** | **53% / 72%** |
 
 ## Legibility
 
@@ -82,6 +82,7 @@ The design adds things the program doesn't have yet:
 | 2026-10-14 | 28 | 31 | 45% / 61% | 0 | First design draft (8c89c93) |
 | 2026-10-14 | 34 | 32 | 50% / 69% | 13 | Newcomer goal: Story, Explain, first run, glossary |
 | 2026-10-14 | 36 | 32 | 50% / 69% | 14 | Extensibility: Sources screen, tracker-import proposal; roadmap carded as intake |
+| 2026-10-14 | 39 | 32 | 53% / 72% | 14 | Config screen: layers, edit modal, secrets in the keyring |
 
 ## Refreshing the CLI inventory
 

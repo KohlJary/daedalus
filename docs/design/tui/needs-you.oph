@@ -10,7 +10,7 @@ GP (pending gameplan proposal). Plugins add kinds with their own tag.
 │ Needs you                    4 │
 ├────────────────────────────────┤
 │ ▸ PR #38 feat/tui-shell        │
-│   ED 0011 Daedalus TUI         │
+│   ED 0013 (example proposal)   │
 │   BD kannon: 0009 scope?       │
 │   GP T-e5 → done               │
 └────────────────────────────────┘
@@ -32,7 +32,7 @@ note: shows as many rows as fit; the count is the full total.
 │ all 4 · PR 1 · edicts 1 · dissents 0 · board 1 · gameplan 1                                      │
 ├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
 │ ▸ PR  #38  feat/tui-shell         2d │ ◆NeedsDetail                                              │
-│   ED  0011 Daedalus TUI           5h │                                                           │
+│   ED  0013 (example proposal)    5h  │                                                           │
 │   BD  kannon: 0009 scope?         1h │                                                           │
 │   GP  T-e5 → done                10m │                                                           │
 │                                      │                                                           │
@@ -51,7 +51,7 @@ note: list then detail, lazygit-style; the selection drives the detail.
 │ Needs you                                       esc back │
 ├──────────────────────────────────────────────────────────┤
 │ ▸ PR  #38  feat/tui-shell         2d                     │
-│   ED  0011 Daedalus TUI           5h                     │
+│   ED  0013 (example proposal)    5h                      │
 │   BD  kannon: 0009 scope?         1h                     │
 │   GP  T-e5 → done                10m                     │
 ├──────────────────────────────────────────────────────────┤
@@ -69,11 +69,11 @@ note: at narrow widths the list stacks above the detail.
 @pr
 ┌───────────────────────────────────────────────────────────┐
 │ PR #38 · feat/tui-shell → main                            │
-│ Shell layout and focus model (edict 0011)                 │
+│ Shell layout and focus model (edict 0012)                 │
 │                                                           │
 │ ✓ CI passing   ✓ Momus: holds   12 files +640 −12         │
 │                                                           │
-│ Implements edict 0011. Adds the Textual app shell,        │
+│ Implements edict 0012. Adds the Textual app shell,        │
 │ four panels, and the ctrl+] focus chord.                  │
 ├───────────────────────────────────────────────────────────┤
 │ o open in browser · d diff · s send to Claude             │
@@ -82,8 +82,8 @@ note: merging stays on GitHub. The TUI shows the PR; it does not merge it.
 
 @edict
 ┌───────────────────────────────────────────────────────────┐
-│ Edict 0011 · proposed · PR #39                            │
-│ Daedalus TUI                                              │
+│ Edict 0013 · proposed · PR #39                            │
+│ (example proposal)                                        │
 │                                                           │
 │ ## Acceptance criteria                                    │
 │ (rendered edict body, scrollable)                         │

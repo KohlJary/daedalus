@@ -1,0 +1,63 @@
+# Config
+
+Every setting `daedalus config` can read or write, shown with where its value
+comes from. Layers: D default → U user (~/.config/daedalus) → P project
+(.daedalus/config.json). Writes go through the same library as the CLI.
+
+@browse
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Config                                                                                  esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ sources.ado ▾   [all] · changed only · search /                                                  │
+├──────────────────────────┬─────────────────────────────────────────────┬─────────────────────────┤
+│ user                     │  organization           org       P         │ on_conflict             │
+│ git                      │▸ on_conflict            propose   P         │                         │
+│ ariadne                  │  sync_interval          15m       U         │ When ADO and the        │
+│ edicts                   │  write_back             ask       D         │ gameplan disagree.      │
+│ doctor                   │  credentials            keyring ✓ U         │                         │
+│ hooks                    │                                             │ propose · source ·      │
+│ board                    │                                             │ local                   │
+│ reconstruct              │                                             │                         │
+│▸sources.ado              │                                             │ D propose → P propose   │
+│ tui                      │                                             │                         │
+├──────────────────────────┴─────────────────────────────────────────────┴─────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: groups → keys → detail. The letter after a value says which layer set it.
+
+## ◆EditSetting
+
+@modal
+┌────────────────────────────────────────────────────────┐
+│ sources.ado.on_conflict                     esc cancel │
+├────────────────────────────────────────────────────────┤
+│                                                        │
+│ When ADO and the gameplan disagree:                    │
+│                                                        │
+│ ( ) source   ADO wins, the gameplan is overwritten     │
+│ (•) propose  the difference becomes a pending          │
+│              proposal (default)                        │
+│ ( ) local    the gameplan wins; ADO is left alone      │
+│                                                        │
+│ Save to:  [project]  user                              │
+│                                                        │
+├────────────────────────────────────────────────────────┤
+│ ←/→ layer · enter save · x reset to inherited          │
+└────────────────────────────────────────────────────────┘
+note: choices come from the setting's schema. Every key carries a description
+(it is its Explain card), a type, and a default.
+
+@secret
+┌────────────────────────────────────────────────────────┐
+│ sources.ado.credentials                     esc cancel │
+├────────────────────────────────────────────────────────┤
+│                                                        │
+│ Personal access token for dev.azure.com/org            │
+│                                                        │
+│ Stored in: system keyring  ✓ set                       │
+│                                                        │
+│ r replace · d delete                                   │
+│                                                        │
+├────────────────────────────────────────────────────────┤
+│ never shown, never written to a config file            │
+└────────────────────────────────────────────────────────┘

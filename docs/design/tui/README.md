@@ -36,6 +36,7 @@ PR #38, edict 0011 and the board threads don't exist.
 | `explain.oph` | The `?` card shown on any panel, and the first-run welcome |
 | `glossary.md` | Draft text for every Explain card |
 | `sources.oph` | Source plugins (ADO, Jira, …): sync health, mapping, write-back |
+| `config.oph` | Every setting, the layer it comes from, editing, and secrets |
 | `coverage.md` | How much of Daedalus the design shows, tracked over time |
 
 ## Screen map
@@ -49,6 +50,7 @@ shell ── 1 / enter ─▶ needs-you (expanded) ── PR/ED/DS/BD item ─�
       ── e ─────────▶ edicts        ── b ─▶ board
       ── s (anywhere with a selection) ─▶ send-to-Claude modal
       ── ? (any panel) ─▶ explain card ── g ─▶ glossary
+      ── , ─────────▶ config (also from Sources: c configure)
 esc returns to the shell from any expanded screen.
 ```
 
@@ -76,6 +78,10 @@ esc returns to the shell from any expanded screen.
    command behind it, so a reader can leave the TUI and keep going.
 9. **Owner-neutral.** The design never assumes the owner is Kohl: "Needs you",
    not "Needs Kohl".
+10. **Config is editable, secrets are not visible.** Every setting can be
+    changed from the TUI, at the layer you choose (user or project), through
+    the same library as `daedalus config`. Credentials live in the system
+    keyring and are never shown or written to a config file.
 
 ## Extensibility: sources and plugins
 
@@ -123,9 +129,10 @@ The shell layout itself is not pluggable. A fixed home screen is part of what
 keeps it legible.
 
 **Open questions for this layer:**
-- Is it its own edict? Probably yes, separate from the TUI.
-- Conflicts: when both sides change, does the source win, or does the change
-  become a proposal?
+- Its own edict? Yes: sources and roadmap intake are one edict, the TUI is
+  another (decided 2026-10-14).
+- Conflicts: configurable per source (`on_conflict`: `propose` (default),
+  `source` or `local`). Decided 2026-10-14.
 - Credentials: never in the repo, but keyring or environment variables?
 - Write-back granularity: state only, or also comments with the resolution?
 

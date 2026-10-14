@@ -47,7 +47,7 @@ note: border is $accent when focused, $panel when not; the strip shows idle/work
 │ From: PR #38 feat/tui-shell                            │
 │                                                        │
 │ Review PR #38 (feat/tui-shell) against edict           │
-│ 0011's acceptance criteria. Report gaps; don't         │
+│ 0012's acceptance criteria. Report gaps; don't         │
 │ fix them.                                              │
 │                                                        │
 ├────────────────────────────────────────────────────────┤

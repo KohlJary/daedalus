@@ -15,7 +15,7 @@ broken source is a kind of drift.
 │                                      │       Task → gameplan task                                │
 │                                      │ Writes back: state on task done (asks first)              │
 │                                      ├───────────────────────────────────────────────────────────┤
-│                                      │ r sync now · c configure · ? explain                      │
+│                                      │ r sync now · c configure (opens Config) · ? explain       │
 ├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
 │ ◆KeyBar                                                                                          │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
