@@ -24,80 +24,39 @@ every definition of that name, so test lists are a superset (good for picking wh
 caller list). Calls through dispatch (CLI runners, callbacks) are invisible, so run the full suite when
 `tests-for` finds nothing, which it tells you to do.
 
-Use the keeper entities below for the why and the watch-outs that a call graph can't show.
+## Keeper entities: the why and the watch-outs
 
+A call graph shows how code connects; it can't say why it's built that way or what bites. A project
+with a Mind Palace (`daedalus palace init`, then `daedalus palace status`) keeps that knowledge in
+keeper entities, one per subsystem.
 
-Query keeper entities for codebase knowledge. Each entity guards a subsystem and knows HOW it works, WHY it's designed that way, and WATCH_OUT warnings.
+- **List them:** read `.mind-palace/palace.yaml`.
+- **Query one:** read `.mind-palace/entities/<entity-slug>.yaml`.
+- **Find the right one:** grep `.mind-palace/entities/*.yaml` for a keyword, then read the match.
 
-## Quick Reference
+Each entity has topics with `how`, `why` and `watch_out`:
 
-**List entities**: Read `.mind-palace/palace.yaml` for entity names
-
-**Query an entity**: Read `.mind-palace/entities/<entityname>.yaml` (lowercase)
-
-**Available Keepers** (22 total):
-- MemoryKeeper - ChromaDB, summaries, retrieval
-- SchedulingKeeper - Day phases, decision engine
-- AgentKeeper - Claude SDK, Temple-Codex, tool execution
-- SelfModelKeeper - Identity, observations, growth edges
-- GoalsKeeper - Unified goals, hierarchies, approval workflow
-- ConversationKeeper - Message persistence, threading
-- And 16 more...
-
-## Entity Format
-
-Each entity YAML contains:
 ```yaml
-name: MemoryKeeper
-slug: memorykeeper          # Deterministic ID for cross-agent refs
-location: memory
-role: "Guardian of hierarchical vector memory..."
+name: StorageKeeper
+slug: storagekeeper
+location: storage
+role: "Guardian of persistence..."
 topics:
-  - name: semantic search
-    how: "Vector-based memory using ChromaDB..."
-    why: "Finding relevant context requires semantic understanding..."
-    watch_out: "Attractor basins use specific marker format..."
+  - name: write path
+    how: "..."
+    why: "..."
+    watch_out: "..."
 ```
 
-## Slug System
+Read the `watch_out` entries before changing a subsystem.
 
-All palace elements have deterministic slugs for cross-agent communication:
-- **Entities**: `memorykeeper`, `schedulingkeeper`
-- **Rooms**: `memory-add-message` (file-function pattern)
-- **Buildings**: `memory` (file stem)
-- **Regions**: `backend` (directory)
+## Slugs
 
-Path format: `{region}/{building}/{room}` → `backend/memory/memory-add-message`
+Palace elements have deterministic slugs that survive regeneration, so agents can refer to them:
+entities (`storagekeeper`), rooms (`<building>-<function>`), buildings (file stem), regions
+(directory). A room's path is `{region}/{building}/{room}`.
 
-Slugs survive regeneration - same codebase produces same slugs.
+Large projects can have a sub-palace per major directory (`<dir>/.mind-palace/`), with shared entities
+in the root `.mind-palace/`.
 
-## Sub-Palaces
-
-Each major directory has its own sub-palace:
-- `backend/.mind-palace/` - Python backend
-- `admin-frontend/.mind-palace/` - React admin UI
-- `tui-frontend/.mind-palace/` - Textual TUI
-- `mobile-frontend/.mind-palace/` - React Native mobile
-
-Root `.mind-palace/` contains shared entities (Keepers). Sub-palaces contain regions/buildings/rooms for their scope.
-
-## Usage Examples
-
-**Before modifying the scheduler:**
-1. Read `.mind-palace/entities/schedulingkeeper.yaml`
-2. Check topics for "day phases", "phase queues", "decision engine"
-3. Note the WATCH_OUT warnings
-
-**Understanding memory system:**
-1. Read `.mind-palace/entities/memorykeeper.yaml`
-2. Topics cover semantic search, hierarchical retrieval, journals, context sources
-
-**Finding the right entity:**
-1. Grep `.mind-palace/entities/*.yaml` for keyword
-2. Read matched entity for full context
-
-## Files
-
-- `.mind-palace/palace.yaml` - Palace index with entity list
-- `.mind-palace/entities/*.yaml` - Individual entity definitions
-- `backend/mind_palace/` - Palace implementation code
+If the project has no palace yet, the call-graph commands above still work.

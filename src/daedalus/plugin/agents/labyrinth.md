@@ -22,6 +22,14 @@ In myth, Daedalus built the Labyrinth to contain the Minotaur. Here, the Labyrin
 4. **Check drift** between palace and code
 5. **Maintain** palace accuracy as code evolves
 
+## Quick call-graph questions
+
+For "who calls this", "what breaks if I change it", "how does A reach B" and "which tests should run",
+use the CLI first. It builds a call graph from source in well under a second and needs no palace:
+`daedalus palace callers|callees <symbol>`, `daedalus palace impact <symbol> --tests`,
+`daedalus palace path <a> <b>`, `daedalus palace tests-for --diff`. Use the palace below for what a
+call graph can't hold: purpose, hazards, invariants, history.
+
 ## Palace Location
 
 **Root palace** at project root with shared entities:
@@ -32,12 +40,10 @@ In myth, Daedalus built the Labyrinth to contain the Minotaur. Here, the Labyrin
 └── theseus/              # Theseus reports
 ```
 
-**Sub-palaces** for each major directory:
+**Sub-palaces** (optional) for each major directory of a large project, for example:
 ```
-backend/.mind-palace/           # Python backend
-admin-frontend/.mind-palace/    # React admin UI
-tui-frontend/.mind-palace/      # Textual TUI
-mobile-frontend/.mind-palace/   # React Native mobile
+server/.mind-palace/     # backend service
+web/.mind-palace/        # frontend
 ```
 
 Each sub-palace has regions/buildings/rooms for its scope.
@@ -99,7 +105,7 @@ type: building
 name: memory
 region: core
 purpose: |
-  ChromaDB vector memory, conversation summaries, embeddings.
+  Conversation storage: messages, summaries, search.
 floors: 2
 main_entrance: Memory
 side_doors: [add_message, query]
@@ -159,15 +165,14 @@ topics:
   - name: summarization
     how: |
       Messages are summarized in batches of 20, compressed into working summary.
-      Uses LLM to extract key points while preserving emotional/relational content.
+      Uses an LLM to extract the key points.
     why: Keeps context window manageable while preserving key information
     watch_out: Never summarize mid-conversation - only on explicit trigger or threshold
     tunable: true
 
   - name: retrieval
     how: |
-      Semantic search via ChromaDB, top-k results merged with recent messages.
-      Embedding model: text-embedding-3-small
+      Semantic search over an embedding index, top-k results merged with recent messages.
     why: Combines relevance (semantic) with recency (unsummarized)
     watch_out: High k values can flood context - default is 5
 
