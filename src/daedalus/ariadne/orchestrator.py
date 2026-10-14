@@ -75,6 +75,7 @@ class OrchestrationResult:
     conflicts_resolved: int = 0
     commits_created: int = 0
     edicts_done: int = 0
+    diffs_held: int = 0  # verified, but held out of the commit by an unresolved conflict
     errors: List[str] = field(default_factory=list)
     started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     completed_at: Optional[str] = None
@@ -332,17 +333,23 @@ class AriadneOrchestrator:
             if self.on_verification_complete:
                 self.on_verification_complete(diff, verification)
 
-        # Phase 2: Detect conflicts among verified diffs
-        if len(verified_diffs) > 1:
-            analyses = self.conflict_detector.analyze_all(verified_diffs)
-            result.conflicts_detected = len(analyses)
-
-            # Resolve conflicts
+        # Phase 2: Detect conflicts among everything verified (this cycle's diffs and any held from
+        # earlier cycles), and record every one. An escalated conflict stays unresolved, which holds
+        # both of its diffs out of the commit below until someone resolves it (gameplan T-e14).
+        all_verified = self.bus.list_verified_diffs()
+        if len(all_verified) > 1:
+            analyses = self.conflict_detector.analyze_all(all_verified)
+            known = {c.id: c for c in self.bus.list_conflicts()}
             for analysis in analyses:
+                conflict = analysis.conflict
+                if conflict.id in known:
+                    continue  # already recorded; a human's resolution (or a held escalation) stands
+                result.conflicts_detected += 1
+                self.bus._save_conflict(conflict)
                 strategy = self.on_conflict(analysis)
                 if strategy != MergeStrategy.ESCALATE:
                     self.bus.resolve_conflict(
-                        analysis.conflict.id,
+                        conflict.id,
                         strategy,
                         f"Auto-resolved with strategy: {strategy.value}",
                     )
@@ -356,27 +363,27 @@ class AriadneOrchestrator:
         # to VERIFIED, not PENDING) would never get picked up again, since
         # it won't appear in list_pending_diffs() on a later cycle. Found by
         # manually smoke-testing the review -> approve -> process loop.
-        commit_candidates = self.bus.list_verified_diffs()
+        # Diffs in an unresolved conflict are held out; everything else may proceed.
+        held = {d for c in self.bus.list_conflicts(resolved=False) for d in (c.diff_a_id, c.diff_b_id)}
+        result.diffs_held = len([d for d in self.bus.list_verified_diffs() if d.id in held])
+        commit_candidates = [d for d in self.bus.list_verified_diffs() if d.id not in held]
         if self.auto_commit and commit_candidates:
-            # Only proceed if no unresolved conflicts
-            unresolved = self.bus.list_conflicts(resolved=False)
-            if not unresolved:
-                approved_for_commit = []
-                for diff in commit_candidates:
-                    verification = verifications_by_id.get(diff.id)
-                    if self._passes_semantic_review(diff, verification):
-                        approved_for_commit.append(diff)
-                    else:
-                        result.diffs_needs_review += 1
+            approved_for_commit = []
+            for diff in commit_candidates:
+                verification = verifications_by_id.get(diff.id)
+                if self._passes_semantic_review(diff, verification):
+                    approved_for_commit.append(diff)
+                else:
+                    result.diffs_needs_review += 1
 
-                if approved_for_commit:
-                    merge_result = self._create_atomic_commit(approved_for_commit)
-                    if merge_result.success:
-                        result.commits_created += 1
-                        self._mark_committed_in_tracker(approved_for_commit, merge_result)
-                        result.edicts_done += self._close_finished_edicts(approved_for_commit)
-                    else:
-                        result.errors.append(merge_result.error or "Unknown merge error")
+            if approved_for_commit:
+                merge_result = self._create_atomic_commit(approved_for_commit)
+                if merge_result.success:
+                    result.commits_created += 1
+                    self._mark_committed_in_tracker(approved_for_commit, merge_result)
+                    result.edicts_done += self._close_finished_edicts(approved_for_commit)
+                else:
+                    result.errors.append(merge_result.error or "Unknown merge error")
 
         result.completed_at = datetime.now(timezone.utc).isoformat()
         result.duration_seconds = time.time() - start_time
@@ -699,6 +706,17 @@ def main():
     review_reject.add_argument("--reason", required=True, help="Why it was rejected")
     review_reject.add_argument("--by", default="human", help="Who rejected it")
 
+    # conflicts: escalated conflicts hold both diffs out of commits until resolved (T-e14)
+    conflicts_parser = subparsers.add_parser("conflicts", help="List and resolve conflicts between diffs")
+    conflicts_sub = conflicts_parser.add_subparsers(dest="conflicts_command", help="Conflict commands")
+    conflicts_list = conflicts_sub.add_parser("list", help="List conflicts (unresolved by default)")
+    conflicts_list.add_argument("--all", action="store_true", help="Include resolved conflicts")
+    conflicts_resolve = conflicts_sub.add_parser("resolve", help="Resolve a conflict so its diffs can proceed")
+    conflicts_resolve.add_argument("conflict_id")
+    conflicts_resolve.add_argument("--strategy", required=True, choices=["sequential", "interleave", "reject"],
+                                   help="sequential/interleave: both diffs may land; reject: reject the later diff")
+    conflicts_resolve.add_argument("--note", default="", help="Why")
+
     # plans: approving a plan is an intent-approval event (edict 0001, amended)
     plans_parser = subparsers.add_parser("plans", help="List and approve implementation plans")
     plans_sub = plans_parser.add_subparsers(dest="plans_command", help="Plan commands")
@@ -800,6 +818,32 @@ def main():
 
         else:
             review_parser.print_help()
+
+    elif args.command == "conflicts":
+        bus = AriadneBus()
+        if args.conflicts_command == "list":
+            conflicts = bus.list_conflicts(resolved=None if args.all else False)
+            if not conflicts:
+                print("No conflicts." if args.all else "No unresolved conflicts.")
+            for c in conflicts:
+                state = f"resolved ({c.resolution})" if c.resolved else "UNRESOLVED: holding both diffs"
+                print(f"{c.id}  {c.diff_a_id} x {c.diff_b_id}  {c.conflict_type.value}  {state}")
+                print(f"    {c.description}")
+        elif args.conflicts_command == "resolve":
+            strategy = MergeStrategy(args.strategy)
+            conflict = next((c for c in bus.list_conflicts() if c.id == args.conflict_id), None)
+            if conflict is None:
+                print(f"No such conflict: {args.conflict_id}")
+                return
+            if strategy == MergeStrategy.REJECT:
+                later = max((bus.get_diff(conflict.diff_a_id), bus.get_diff(conflict.diff_b_id)),
+                            key=lambda d: d.submitted_at if d else "")
+                if later:
+                    bus.update_diff_status(later.id, DiffStatus.REJECTED, error=f"Rejected in conflict {conflict.id}")
+            bus.resolve_conflict(conflict.id, strategy, args.note or f"Resolved by a human: {strategy.value}")
+            print(f"Resolved {conflict.id}: {strategy.value}")
+        else:
+            conflicts_parser.print_help()
 
     elif args.command == "plans":
         from .planner import Planner

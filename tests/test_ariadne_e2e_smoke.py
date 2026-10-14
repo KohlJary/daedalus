@@ -165,8 +165,10 @@ def test_conflicting_diffs_are_blocked_from_auto_commit(repo, bus):
     diff_a = _capture_worker_diff(repo, "file_a.py", "def a():\n    return 'from worker 1'\n")
     diff_b = _capture_worker_diff(repo, "file_a.py", "def a():\n    return 'from worker 2'\n")
 
-    bus.submit_diff(Diff.from_git_diff("work-a", "worker-1", diff_a, "Worker 1 edits a()"))
-    bus.submit_diff(Diff.from_git_diff("work-b", "worker-2", diff_b, "Worker 2 edits a()"))
+    # Approved intent for both, so the conflict gate (not the intent gate) is what stops the merge
+    plan = approved_plan(repo, "Edit a()", packages=("wp-a", "wp-b"))
+    bus.submit_diff(tag(Diff.from_git_diff("work-a", "worker-1", diff_a, "Worker 1 edits a()"), plan, "wp-a"))
+    bus.submit_diff(tag(Diff.from_git_diff("work-b", "worker-2", diff_b, "Worker 2 edits a()"), plan, "wp-b"))
 
     orchestrator = AriadneOrchestrator(repo, bus=bus, auto_commit=True, semantic_reviewer=_ApproveAllReviewer())
     orchestrator.verifier = _noop_verifier(repo)
@@ -176,6 +178,7 @@ def test_conflicting_diffs_are_blocked_from_auto_commit(repo, bus):
     assert result.diffs_verified == 2  # each diff is individually valid
     assert result.conflicts_detected >= 1
     assert result.commits_created == 0  # escalated conflict must block the merge
+    assert result.diffs_held == 2 and len(bus.list_conflicts(resolved=False)) == 1
 
     # The repo's working tree is untouched -- no partial/unsafe merge happened.
     assert "def a():\n    return 1\n" == (repo / "file_a.py").read_text(encoding="utf-8")
