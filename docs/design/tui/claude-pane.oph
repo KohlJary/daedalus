@@ -1,0 +1,56 @@
+# ClaudePane
+
+A Claude Code session in tmux, rendered through a PTY and pyte (prior art:
+cass-vessel tui-frontend/widgets/daedalus/). Sessions survive TUI restarts
+and can be attached from a plain terminal.
+
+@attached
+┌─────────────────────────────────────────────────────────────────┐
+│ Claude · tmux daedalus-main                           ● working │
+├─────────────────────────────────────────────────────────────────┤
+│ > diagram NeedsKohl's internals                                 │
+│                                                                 │
+│ ● Reading docs/design/tui/shell.oph                             │
+│ ● Writing docs/design/tui/needs-kohl.oph                        │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+│ > _                                                             │
+└─────────────────────────────────────────────────────────────────┘
+note: border is $accent when focused, $panel when not; the strip shows idle/working.
+
+@no-session
+┌─────────────────────────────────────────────────────────────────┐
+│ Claude                                             ○ no session │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│   No Claude session for this project.                           │
+│                                                                 │
+│   n  new session in ~/cass/cass-vessel/daedalus                 │
+│   a  attach an existing one (2 found)                           │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+## ◆SendToClaude
+
+@modal
+┌────────────────────────────────────────────────────────┐
+│ Send to Claude                                         │
+├────────────────────────────────────────────────────────┤
+│                                                        │
+│ From: PR #38 feat/tui-shell                            │
+│                                                        │
+│ Review PR #38 (feat/tui-shell) against edict           │
+│ 0011's acceptance criteria. Report gaps; don't         │
+│ fix them.                                              │
+│                                                        │
+├────────────────────────────────────────────────────────┤
+│ e edit · enter paste into prompt · esc cancel          │
+└────────────────────────────────────────────────────────┘
+note: pastes into Claude's input but never submits; Kohl presses enter in the pane.

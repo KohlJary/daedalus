@@ -1,0 +1,32 @@
+# Health
+
+`daedalus doctor`, rerun whenever a watched file changes.
+
+@compact-ok
+┌────────────────────────────────┐
+│ Health               ✓ in sync │
+└────────────────────────────────┘
+
+@compact-drift
+┌────────────────────────────────┐
+│ Health                     ⚠ 1 │
+├────────────────────────────────┤
+│ board-ask-rule-missing         │
+└────────────────────────────────┘
+
+@expanded
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Health                                                                                  esc back │
+├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
+│▸ ⚠ board-ask-rule-missing            │ board-ask-rule-missing                                    │
+│                                      │                                                           │
+│                                      │ This checkout uses the board, but no permissions          │
+│                                      │ ask rule makes `daedalus board post` ask first.           │
+│                                      │                                                           │
+│                                      │ Suggested fix: daedalus hydrate                           │
+│                                      ├───────────────────────────────────────────────────────────┤
+│                                      │ f run fix (asks first) · s send to Claude · r recheck     │
+├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: f only exists when doctor names a command, and always confirms in a modal.

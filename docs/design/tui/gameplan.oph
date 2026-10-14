@@ -1,0 +1,53 @@
+# Gameplan
+
+Reads the committed gameplan and workstreams; uses the CLI's own status marks
+([x] done, [>] in progress, [ ] pending) so the TUI and CLI read the same.
+
+@compact
+┌────────────────────────────────┐
+│ Gameplan            p1 · 10/23 │
+├────────────────────────────────┤
+│ [>] T-e5  local backends       │
+│ [>] T-e20 palace tree-sitter   │
+│ [ ] T-e6  housekeeping         │
+│ [ ] T-e10 planner drops reqs   │
+└────────────────────────────────┘
+note: in-progress first, then pending in plan order; done is hidden.
+
+@expanded
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Gameplan                                                                                esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ [Plan] · Workstreams · Roadmap                                                                   │
+├──────────────────────────┬──────────────────────────────────┬────────────────────────────────────┤
+│ [x] p0  exhale/inhale    │ [>] T-e5  local backends         │ T-e20 · in_progress                │
+│▸[>] p1  edicts+ariadne   │▸[>] T-e20 palace tree-sitter     │ Palace beyond Python:              │
+│ [x] p2  memory backbone  │ [ ] T-e6  housekeeping           │ tree-sitter frontend               │
+│ [x] p2b reconstruction   │ [ ] T-e10 planner drops reqs     │                                    │
+│ [ ] p3  theseus index    │ [ ] T-e11 ariadne cli loop       │ PR #37 · merged 2723ee0            │
+│ [ ] p4  evidence         │ [ ] T-e12 test backlog           │                                    │
+│ [x] p5  workstreams      │ ─ done (10) ─                    │ Resolution:                        │
+│ [ ] p6  agent board      │ [x] T-e18 palace query cli       │ —                                  │
+│ [ ] p7  reflection       │ [x] T-e14 escalated conflicts    ├────────────────────────────────────┤
+│ [ ] p8  tui (no edict)   │ …                                │ s send to Claude · e edict         │
+├──────────────────────────┴──────────────────────────────────┴────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: phases → tasks → detail, each column driving the next.
+
+@workstreams
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Gameplan                                                                                esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Plan · [Workstreams] · Roadmap                                                                   │
+├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
+│▸ default   person   p1 ▸ T-e5        │ default · owner: person (Kohl)                            │
+│                                      │ plan: .daedalus/roadmap/gameplan.json                     │
+│                                      │ claims: (none)                                            │
+│                                      │ collisions: none                                          │
+│                                      ├───────────────────────────────────────────────────────────┤
+│                                      │ s send to Claude                                          │
+├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: one row per `daedalus workstream list` entry; collisions come from claims.

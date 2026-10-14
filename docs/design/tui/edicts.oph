@@ -1,0 +1,24 @@
+# Edicts
+
+Read-only browser over docs/edicts/. Kohl writes and accepts edicts through
+git; the TUI only shows them and where the gameplan tracks them.
+
+@expanded
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Edicts                                                                                  esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ [Edicts] · Dissents                                                                              │
+├────────────────────────────────────────┬─────────────────────────────────────────────────────────┤
+│ 0001 done      intent from edicts      │ 0010 · accepted · phase p7-reflection [planned]         │
+│ 0002 done      model casting           │ Reflection over session logs                            │
+│ 0003 done      dissent                 │                                                         │
+│ 0004 done      exhale/inhale           │ (rendered edict body, scrollable)                       │
+│ 0005 done      edicts opt-in           │                                                         │
+│ 0006 done      reconstruction          │                                                         │
+│ 0007 done      memory backbone         │                                                         │
+│ 0008 done      workstreams             │                                                         │
+│ 0009 accepted  agent board             ├─────────────────────────────────────────────────────────┤
+│▸0010 accepted  reflection              │ r read full · s send to Claude                          │
+├────────────────────────────────────────┴─────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
