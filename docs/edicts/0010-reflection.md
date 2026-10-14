@@ -193,6 +193,65 @@ default inside the next session instead of on separate API credit.
   "Evolution" section: what was added, revised and retired that month, and
   why, with citations.
 
+### Where the two models differ
+The two models share a file shape and the rules above, but they are not the
+same kind of memory. The user model is a record about someone else, who is
+the authority on themselves. The self model is read back by the thing it
+describes, and reading it changes how that thing behaves: "I check before I
+push" is a description the first time and an instruction every time after.
+Where the rules below differ from the shared rules above, these govern.
+
+- **Scope.** Every entry in both models carries a `scope`: `personal`,
+  `work`, or `any`. A project's config marks it `work` or `personal`
+  (unset is `work`, matching `machine.employer`). Reflection on a `work`
+  project proposes only `work` or `any` entries. The inhale summary in a
+  `work` project shows no `personal` entries, and in a `personal` project
+  no `work` entries.
+- **What the user model may hold.** Only what the user said or plainly did
+  (`shown`), and working preferences inferred from repeated behavior
+  (`inferred`, with at least three sessions cited). Never inferences about
+  the user's character, health, mood, or private life. Seed entries that
+  quote the user's own words in a memory note are `shown`; the
+  three-session rule applies to entries `delphi` infers from digests.
+- **Forgetting the user.** `daedalus reflect model user forget <id>`
+  removes the entry and leaves a tombstone (entry ID, date, "forgotten by
+  user") so it is not proposed again. What happens to the entry's history
+  is set by `reflection.forget` in the global config:
+  - `purge` (default): every history record for the entry is removed,
+    leaving only the tombstone. This is the one exception to append-only
+    history: the user's right to be forgotten outranks the record.
+  - `retain`: the history is kept and the tombstone is appended, so the
+    history stays append-only.
+  The self model has no `forget`.
+- **Kinds of self entry.** Each self-model entry is one of:
+  - `behavior`: what Daedalus did, from digests. May be `shown`.
+  - `interpretation`: why, or what it is like. Always `inferred`, and must
+    cite at least one `behavior` entry by ID.
+  - `stance`: something Daedalus holds or commits to. `delphi` may propose
+    one, like any other entry, and it is added or revised only when the
+    user applies that proposal, or by a user edit. Stance proposals are
+    presented and applied one at a time, never in a batch, and never in
+    conflict with the identity files.
+  Self entries are written in the first person.
+- **Model lineage.** Every self-model entry, and every affirmation of one,
+  records the model ID of the sessions behind it. The monthly report flags
+  self entries whose evidence comes only from models no longer in use. A
+  behavior seen under one model is not assumed to hold under another.
+- **Decay differs.** Each model has its own half-life (defaults: self 60
+  days, user 180 days), since facts about a person change slower than a
+  session's habits. Entries can be marked `stable` by the user, and these
+  do not decay.
+- **No flattery, no spiral.** Momus checks self-model proposals in both
+  directions: claims that make Daedalus look better than the cited
+  record, and claims that make it look worse. A strength needs the same
+  evidence as a failing.
+- **Daedalus may dissent on its self model.** A session that believes an
+  applied self entry is wrong files a dissent (0003) naming the entry. It
+  never edits, revises, or retires the entry itself. `delphi` may propose a
+  `revise` or `retire`, as for any entry. A dissent against a model entry
+  is surfaced in the next monthly report and does not block dispatch of
+  this or any edict, unlike a dissent against an edict.
+
 ### Model summary at inhale (an A/B test)
 - Whether sessions should see the models, and not just `delphi`, is an open
   question, so it is built as an experiment. `reflection.model_summary` in
@@ -299,8 +358,10 @@ default inside the next session instead of on separate API credit.
 - Editing a model file by hand is detected on the next read by its content
   hash and recorded in the history as a user edit (tested by changing the
   file directly).
-- History is append-only: after every operation, the file's previous bytes
-  are an exact prefix of its new contents (tested for each operation).
+- History is append-only: after every operation except `forget` with
+  `reflection.forget: purge`, the file's previous bytes are an exact prefix
+  of its new contents (tested for each operation, and for `forget` with
+  `retain`).
 - With `model_summary: ab`, the arm comes from `daedalus reflect arm`
   (tested with a seeded generator, and the seed is logged); the summary is
   printed only in the `on` arm, excludes `unknown` entries, and stays under
@@ -321,6 +382,28 @@ default inside the next session instead of on separate API credit.
   `headless` is refused; with it `false`, both are allowed.
 - `doctor` reports undigested sessions inside the cleanup warning window,
   using `cleanupPeriodDays` from settings when present.
+- Scope: reflection on a fixture `work` project rejects a `personal`
+  proposal at `reflect check`; the inhale summary in a `work` project omits
+  `personal` entries, and the reverse (tested).
+- `reflect check` rejects a user-model proposal labelled `inferred` that is
+  not a working preference or cites fewer than three sessions; a self
+  `interpretation` that cites no `behavior` entry; and a `stance` that
+  conflicts with the identity files (each tested). A `stance` proposal
+  cannot be applied as part of a batch (tested).
+- `reflect model user forget <id>` with `reflection.forget: purge` leaves
+  no history record for the entry except its tombstone; with `retain` it
+  keeps them and appends the tombstone. Either way, a later proposal for
+  the same observation is rejected. The same command on the self model is
+  refused (tested).
+- Self-model entries and affirmations record model IDs; a fixture whose
+  only evidence is from a retired model is flagged in the monthly report.
+- With a fixed clock, user and self entries decay by their own half-lives,
+  and a `stable` entry does not decay (tested).
+- `daedalus edict dissent` accepts a self-model entry ID as its target; that
+  dissent appears in the next monthly report and does not block dispatch
+  (tested).
+- A seed entry quoting the user's words from a memory note is labelled
+  `shown` and passes `reflect check` without three session citations.
 
 ## Non-goals
 - No automatic application of proposals, at any confidence.
@@ -331,3 +414,21 @@ default inside the next session instead of on separate API credit.
 - No changes to the template's Context as Breath wording, which is Kohl's.
 - The benchmark for whether reflection works is designed separately, not in
   this edict.
+
+## Amendments
+- 2026-10-14, requested by Kohl: added "Where the two models differ".
+  The user and self models had identical rules, but a memory of self is
+  read back by what it describes, so it is prescriptive as well as
+  descriptive. Added: scope tags, so the user model's personal context
+  stays out of work sessions (the inhale summary would otherwise show it
+  there); limits on what the user model may infer; a forget command that
+  overrides append-only history for the user model only; behavior,
+  interpretation and stance kinds for the self model; model lineage on
+  self entries; separate half-lives and a `stable` flag; Momus checking
+  self proposals for flattery and for self-criticism the record doesn't
+  support; and dissent against self entries. Then, from Kohl's review in
+  the Code session: `forget` purges or retains history per
+  `reflection.forget` (default `purge`); user seeds quoting the user are
+  `shown`, so the three-session rule doesn't reject them; a dissent on a
+  model entry doesn't block dispatch; and stances may be proposed by
+  `delphi`, applied by the user one at a time.
