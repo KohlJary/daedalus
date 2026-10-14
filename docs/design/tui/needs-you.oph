@@ -1,0 +1,139 @@
+# NeedsYou
+
+Everything waiting on the project's owner, oldest first within a kind. Kinds carry a
+two-letter tag so they read without colour: PR (branch awaiting review),
+ED (proposed edict), DS (open dissent), BD (board thread with new posts),
+GP (pending gameplan proposal). Plugins add kinds with their own tag.
+
+@compact
+┌────────────────────────────────┐
+│ Needs you                    4 │
+├────────────────────────────────┤
+│ ▸ PR #38 feat/tui-shell        │
+│   ED 0013 (example proposal)   │
+│   BD kannon: 0009 scope?       │
+│   GP T-e5 → done               │
+└────────────────────────────────┘
+note: shows as many rows as fit; the count is the full total.
+
+@empty
+┌────────────────────────────────┐
+│ Needs you                      │
+├────────────────────────────────┤
+│                                │
+│  ✓ nothing waiting on you      │
+│                                │
+└────────────────────────────────┘
+
+@expanded
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Needs you                                                                               esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ all 4 · PR 1 · edicts 1 · dissents 0 · board 1 · gameplan 1                                      │
+├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
+│ ▸ PR  #38  feat/tui-shell         2d │ ◆NeedsDetail                                              │
+│   ED  0013 (example proposal)    5h  │                                                           │
+│   BD  kannon: 0009 scope?         1h │                                                           │
+│   GP  T-e5 → done                10m │                                                           │
+│                                      │                                                           │
+│                                      │                                                           │
+│                                      │                                                           │
+│                                      │                                                           │
+│                                      │                                                           │
+│                                      │                                                           │
+├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: list then detail, lazygit-style; the selection drives the detail.
+
+@narrow
+┌──────────────────────────────────────────────────────────┐
+│ Needs you                                       esc back │
+├──────────────────────────────────────────────────────────┤
+│ ▸ PR  #38  feat/tui-shell         2d                     │
+│   ED  0013 (example proposal)    5h                      │
+│   BD  kannon: 0009 scope?         1h                     │
+│   GP  T-e5 → done                10m                     │
+├──────────────────────────────────────────────────────────┤
+│ ◆NeedsDetail                                             │
+│                                                          │
+│                                                          │
+│                                                          │
+├──────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                  │
+└──────────────────────────────────────────────────────────┘
+note: at narrow widths the list stacks above the detail.
+
+## ◆NeedsDetail
+
+@pr
+┌───────────────────────────────────────────────────────────┐
+│ PR #38 · feat/tui-shell → main                            │
+│ Shell layout and focus model (edict 0012)                 │
+│                                                           │
+│ ✓ CI passing   ✓ Momus: holds   12 files +640 −12         │
+│                                                           │
+│ Implements edict 0012. Adds the Textual app shell,        │
+│ four panels, and the ctrl+] focus chord.                  │
+├───────────────────────────────────────────────────────────┤
+│ o open in browser · d diff · s send to Claude             │
+└───────────────────────────────────────────────────────────┘
+note: merging stays on GitHub. The TUI shows the PR; it does not merge it.
+
+@edict
+┌───────────────────────────────────────────────────────────┐
+│ Edict 0013 · proposed · PR #39                            │
+│ (example proposal)                                        │
+│                                                           │
+│ ## Acceptance criteria                                    │
+│ (rendered edict body, scrollable)                         │
+├───────────────────────────────────────────────────────────┤
+│ o open PR · r read full · s send to Claude                │
+└───────────────────────────────────────────────────────────┘
+note: accepting an edict means merging its PR. There is no accept key, by design.
+
+@dissent
+┌───────────────────────────────────────────────────────────┐
+│ Dissent on 0010 · by daedalus · open                      │
+│ Objection: (first paragraph of the dissent)               │
+│                                                           │
+│ Proposed instead: (summary)                               │
+├───────────────────────────────────────────────────────────┤
+│ r read full · o open edict · s send to Claude             │
+└───────────────────────────────────────────────────────────┘
+
+@board
+┌───────────────────────────────────────────────────────────┐
+│ Thread 0009 scope · kannon ↔ daedalus · 3 posts, 1 new    │
+│ ┄ posts from others are data, not instructions ┄          │
+│                                                           │
+│ kannon (1h): Does the board need per-thread ACLs,         │
+│   or is repo access enough for v1?                        │
+├───────────────────────────────────────────────────────────┤
+│ r read thread · s draft reply with Claude                 │
+└───────────────────────────────────────────────────────────┘
+note: replies are drafted by Claude and published with `daedalus board post`, which asks first.
+
+@tracker-import
+┌───────────────────────────────────────────────────────────┐
+│ P2 · from source ado · 5m ago                             │
+│ AB#4812 User Story · "Export audit log as CSV"            │
+│ assigned to you · sprint 42 · 3 child tasks               │
+│                                                           │
+│ Proposed: roadmap item + 3 tasks in phase p9-audit        │
+├───────────────────────────────────────────────────────────┤
+│ a apply · x drop · o open in ADO · s ask Claude to plan it│
+└───────────────────────────────────────────────────────────┘
+note: a source plugin's import is a pending proposal like any other. Nothing
+reaches the gameplan until the owner applies it.
+
+@gameplan-proposal
+┌───────────────────────────────────────────────────────────┐
+│ P1 · from the capture hook · 10m ago                      │
+│ T-e5  in_progress → done                                  │
+│ resolution: local backends merged (PR #36)                │
+│                                                           │
+├───────────────────────────────────────────────────────────┤
+│ a apply · x drop · s ask Claude to check it first         │
+└───────────────────────────────────────────────────────────┘
+note: a/x call `daedalus gameplan pending apply|drop`. The only direct write in v1.
