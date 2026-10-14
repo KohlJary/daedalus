@@ -88,6 +88,8 @@ def append(path: Path, rec: dict):
 def chat(model, messages, tools=None, temperature=0.6):
     body = {"model": model, "messages": messages, "stream": False,
             "options": {"num_ctx": NUM_CTX, "temperature": temperature}}
+    if os.environ.get("EXP_NUM_PREDICT"):  # cap tokens per response (feature/mature runs) so a runaway can't hang a run
+        body["options"]["num_predict"] = int(os.environ["EXP_NUM_PREDICT"])
     if tools:
         body["tools"] = tools
     r = httpx.post(f"{OLLAMA}/api/chat", json=body, timeout=900)
