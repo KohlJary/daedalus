@@ -43,14 +43,16 @@ class Grammar:
     wheel: Optional[str] = None            # importable module of the per-language wheel
     wheel_fn: str = "language"             # function in that module returning the language pointer
     pack: Optional[str] = None             # tree-sitter-language-pack name
-    extra_query: Optional[str] = None      # vendored query appended to (or standing in for) the tags query
+    vendored_tags: Optional[str] = None    # queries/ file used when the grammar ships no tags query of its own
+    supplement: Optional[str] = None       # queries/ file always appended (calls upstream doesn't capture)
     base_query_from: Optional[str] = None  # wheel whose TAGS_QUERY this grammar's query extends
     constructor_names: Tuple[str, ...] = ()
     constructor_is_class_name: bool = False
     test_file: Optional[str] = None        # regex on the repo-relative path (forward slashes)
     test_symbol: Optional[str] = None      # regex on the simple name; None means "any symbol in a test file"
     test_candidates: Tuple[str, ...] = ()  # templates: {dir} {stem} {ext}
-    attribute_tests: bool = False          # Rust: #[test] fns and anything inside `mod tests`
+    attribute_tests: bool = False          # Rust: #[test], #[tokio::test], #[rstest] functions
+    test_marker: Optional[str] = None      # regex on a definition's text before its name (@Test, [Fact])
     implicit_self: bool = True             # False: a plain `name()` can't reach a method (needs obj./this./self.)
 
 
@@ -62,19 +64,23 @@ GRAMMARS: List[Grammar] = [
     Grammar("JavaScript", [".js", ".jsx", ".mjs", ".cjs"], wheel="tree_sitter_javascript", pack="javascript",
             constructor_names=("constructor",), test_file=JS_TEST_FILE, test_candidates=JS_CANDIDATES, implicit_self=False),
     Grammar("TypeScript", [".ts", ".mts", ".cts"], wheel="tree_sitter_typescript", wheel_fn="language_typescript",
-            pack="typescript", extra_query="typescript-tags.scm", base_query_from="tree_sitter_javascript",
+            pack="typescript", vendored_tags="typescript-tags.scm", base_query_from="tree_sitter_javascript",
             constructor_names=("constructor",), test_file=JS_TEST_FILE, test_candidates=JS_CANDIDATES, implicit_self=False),
     Grammar("TSX", [".tsx"], wheel="tree_sitter_typescript", wheel_fn="language_tsx", pack="tsx",
-            extra_query="typescript-tags.scm", base_query_from="tree_sitter_javascript",
+            vendored_tags="typescript-tags.scm", base_query_from="tree_sitter_javascript",
             constructor_names=("constructor",), test_file=JS_TEST_FILE, test_candidates=JS_CANDIDATES, implicit_self=False),
     Grammar("Go", [".go"], wheel="tree_sitter_go", pack="go", test_file=r"_test\.go$",
             test_symbol=r"^(Test|Benchmark|Example|Fuzz)", test_candidates=("{dir}/{stem}_test.go",), implicit_self=False),
     Grammar("Rust", [".rs"], wheel="tree_sitter_rust", pack="rust", constructor_names=("new",),
+            supplement="rust-supplement.scm",
             test_file=r"(^|/)tests/", attribute_tests=True, test_candidates=("tests/{stem}.rs",), implicit_self=False),
     Grammar("Java", [".java"], wheel="tree_sitter_java", pack="java", constructor_is_class_name=True,
+            test_marker=r"@(Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate)\b",
             test_file=r"(^|/)src/test/|Tests?\.java$|(^|/)Test[A-Z]\w*\.java$",
             test_candidates=("{testdir}/{stem}Test.java", "{testdir}/{stem}Tests.java", "{dir}/{stem}Test.java")),
     Grammar("C#", [".cs"], wheel="tree_sitter_c_sharp", pack="csharp", constructor_is_class_name=True,
+            vendored_tags="c_sharp-tags.scm", supplement="c_sharp-supplement.scm",
+            test_marker=r"\[\s*(Test|TestMethod|TestCase|Fact|Theory)\b",
             test_file=r"(^|/)[^/]*Tests?/|Tests?\.cs$"),
     Grammar("C", [".c", ".h"], wheel="tree_sitter_c", pack="c", test_file=r"(^|/)tests?/|_test\.c$|^test_"),
     Grammar("C++", [".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx"], wheel="tree_sitter_cpp", pack="cpp",
@@ -86,6 +92,7 @@ GRAMMARS: List[Grammar] = [
     # Swift (its tags query has no call references, so no call graph) and Elixir (reports def/defmodule
     # as calls).
     Grammar("Kotlin", [".kt", ".kts"], pack="kotlin", constructor_is_class_name=True,
+            test_marker=r"@(Test|ParameterizedTest)\b",
             test_file=r"(^|/)src/test/|Tests?\.kt$"),
     Grammar("PHP", [".php"], pack="php", constructor_names=("__construct",), test_file=r"(^|/)tests?/|Test\.php$"),
     Grammar("Scala", [".scala"], pack="scala", test_file=r"(^|/)src/test/|(Spec|Test|Suite)\.scala$"),
@@ -125,6 +132,7 @@ class TreeSitterSupport(LanguageSupport):
         self._failed = False
         self._parser = None
         self._query = None
+        self.fallback: Optional[LanguageSupport] = None  # e.g. the regex TypeScript analyzer
 
     @property
     def name(self) -> str:
@@ -144,40 +152,49 @@ class TreeSitterSupport(LanguageSupport):
         if self._loaded or self._failed:
             return self._loaded
         try:
+            import tree_sitter
             from tree_sitter import Language, Parser, Query
+            if not hasattr(tree_sitter, "QueryCursor"):
+                raise RuntimeError(f"tree-sitter {getattr(tree_sitter, '__version__', '?')} is too old; need >= 0.25")
             g = self.grammar
-            language, tags = None, None
-            if g.wheel and importlib.util.find_spec(g.wheel) is not None:
+            wheel = g.wheel and importlib.util.find_spec(g.wheel) is not None
+            if wheel:
                 mod = importlib.import_module(g.wheel)
                 language = Language(getattr(mod, g.wheel_fn)())
-                tags = getattr(mod, "TAGS_QUERY", None)
-                if g.base_query_from:
-                    tags = getattr(importlib.import_module(g.base_query_from), "TAGS_QUERY", "") + "\n" + (tags or "")
+                own = getattr(mod, "TAGS_QUERY", None)
+                base = getattr(importlib.import_module(g.base_query_from), "TAGS_QUERY", None) if g.base_query_from else None
             elif g.pack and _pack() is not None:
                 pack = _pack()
                 language = pack.get_language(g.pack)  # may download the grammar
-                tags = pack.get_tags_query(g.pack)
-                if g.base_query_from:
-                    tags = (pack.get_tags_query("javascript") or "") + "\n" + (tags or "")
-            if language is None:
+                own = pack.get_tags_query(g.pack)
+                base = pack.get_tags_query("javascript") if g.base_query_from else None
+            else:
                 raise RuntimeError("no grammar installed")
-            if g.extra_query and g.wheel and importlib.util.find_spec(g.wheel) is not None:
-                tags = (tags or "") + "\n" + (QUERY_DIR / g.extra_query).read_text()
-            if not tags or not tags.strip():
+            if not own and g.vendored_tags:
+                own = (QUERY_DIR / g.vendored_tags).read_text()
+            tags = "\n".join(q for q in (base, own) if q)
+            if not tags.strip():
                 raise RuntimeError("grammar has no tags query")
+            if g.supplement:
+                tags += "\n" + (QUERY_DIR / g.supplement).read_text()
             self._parser = Parser(language)
             self._query = Query(language, tags)
             self._loaded = True
-        except Exception as e:  # missing grammar, failed download, query that doesn't compile
+        except Exception as e:  # missing grammar, failed download, query that doesn't compile, old tree-sitter
             self._failed = True
-            logger.warning(f"palace: {self.grammar.name} unavailable ({e}); its files are skipped")
+            fallback = f"; using {self.fallback.name}'s basic analyzer" if self.fallback else "; its files are skipped"
+            logger.warning(f"palace: {self.grammar.name} unavailable ({e}){fallback}")
         return self._loaded
+
+    def available(self) -> bool:
+        """Load the grammar now (a pack grammar may download) and report whether it works."""
+        return self._load()
 
     # -- analysis ------------------------------------------------------------------------------
 
     def analyze_file(self, file_path: Path, project_root: Path) -> List[CodeElement]:
         if not self._load():
-            return []
+            return self.fallback.analyze_file(file_path, project_root) if self.fallback else []
         try:
             source = Path(file_path).read_bytes()
         except OSError as e:
@@ -255,7 +272,7 @@ def extract_elements(support: TreeSitterSupport, source: bytes, rel: str) -> Lis
                 if existing is None or (existing.kind == "function" and kind == "method"):
                     doc = [d.text.decode("utf-8", "replace") for d in caps.get("doc", [])]
                     defs[key] = _Def(node, names[0].text.decode("utf-8", "replace"), kind, names[0], doc)
-            elif cap in ("reference.call", "reference.class"):
+            elif cap in ("reference.call", "reference.send", "reference.class"):
                 calls.append((nodes[0], names[0], _kind(cap)))
 
     def_nodes = {(d.node.start_byte, d.node.end_byte): d for d in defs.values()}
@@ -277,14 +294,17 @@ def extract_elements(support: TreeSitterSupport, source: bytes, rel: str) -> Lis
         if callable_ and enclosing(d.node, CALLABLE_KINDS):
             continue  # nested functions belong to their parent, as in the Python analyzer
         container = enclosing(d.node, CONTAINER_KINDS) if callable_ else None
+        # A function in a Rust mod or TS namespace is a function (plain calls reach it), named with its module
+        in_module = container is not None and container.kind == "module" and (
+            d.kind != "method" or not support.grammar.implicit_self)
         class_name = container.name if container else (_receiver(d.node) if callable_ else None)
         if callable_:
-            element_type = "method" if (class_name or d.kind == "method") else "function"
+            element_type = "function" if in_module else ("method" if (class_name or d.kind == "method") else "function")
         else:
             element_type = "class"
         if not callable_ and enclosing(d.node, CALLABLE_KINDS):
             continue  # a type declared inside a function body
-        full = f"{class_name}.{d.name}" if (class_name and element_type == "method") else d.name
+        full = f"{class_name}.{d.name}" if (class_name and (element_type == "method" or in_module)) else d.name
         # The definition's first source line, from its start (so `type Calc struct`, not `Calc struct`)
         row = d.node.start_point[0]
         raw_line = lines[row] if row < len(lines) else b""
@@ -306,7 +326,7 @@ def extract_elements(support: TreeSitterSupport, source: bytes, rel: str) -> Lis
     top_level_member: Set[str] = set()
     for ref, name_node, kind in calls:
         callee = name_node.text.decode("utf-8", "replace")
-        through_object = kind == "call" and _through_object(ref, name_node)
+        through_object = kind in ("call", "send") and _through_object(ref, name_node)
         owners = [el for (a, b, el) in spans if a <= ref.start_byte < b]
         for el in owners:
             if callee not in el.calls:
@@ -347,8 +367,8 @@ def _receiver(node) -> Optional[str]:
     recv = node.child_by_field_name("receiver")
     if recv is not None:  # go: func (s *S) Run()
         ids = [n for n in _walk(recv) if n.type == "type_identifier"]
-        if ids:
-            return ids[-1].text.decode("utf-8", "replace")
+        if ids:  # the first one: Stack in `(s *Stack[T])`, not the type parameter T
+            return ids[0].text.decode("utf-8", "replace")
     parent = node.parent
     while parent is not None:
         if parent.type == "impl_item":  # rust: impl Trait for Type { fn ... }
@@ -364,24 +384,28 @@ def _is_test(support: TreeSitterSupport, d: _Def, in_test_file: bool) -> bool:
     g = support.grammar
     if g.attribute_tests and _rust_test(d.node):
         return True
+    if g.test_marker and d.name_node is not None:
+        head = d.node.text[: max(0, d.name_node.start_byte - d.node.start_byte)].decode("utf-8", "replace")
+        prev = d.node.prev_named_sibling  # C# attributes and some annotations sit just before the node
+        if prev is not None and prev.type in ("attribute_list", "annotation", "marker_annotation"):
+            head = prev.text.decode("utf-8", "replace") + head
+        if re.search(g.test_marker, head):
+            return True
     if not in_test_file:
         return False
     return bool(re.search(g.test_symbol, d.name)) if g.test_symbol else True
 
 
+RUST_TEST_ATTR = re.compile(r"^#\[\s*(?:[\w:]+::)?(?:test|rstest)\b")  # #[test], #[tokio::test], #[rstest]
+
+
 def _rust_test(node) -> bool:
+    """A #[test]-style attribute directly on the function (#[cfg(not(test))] is not one)."""
     prev = node.prev_named_sibling
-    while prev is not None and prev.type == "attribute_item":
-        if re.search(r"\b(test|tokio::test|rstest)\b", prev.text.decode("utf-8", "replace")):
+    while prev is not None and prev.type in ("attribute_item", "line_comment", "block_comment"):
+        if prev.type == "attribute_item" and RUST_TEST_ATTR.search(prev.text.decode("utf-8", "replace")):
             return True
         prev = prev.prev_named_sibling
-    parent = node.parent
-    while parent is not None:
-        if parent.type == "mod_item":
-            name = parent.child_by_field_name("name")
-            if name is not None and name.text == b"tests":
-                return True
-        parent = parent.parent
     return False
 
 

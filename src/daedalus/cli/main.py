@@ -728,7 +728,9 @@ def palace_languages():
         source = grammar_source(g)
         exts = " ".join(g.extensions)
         if source == "wheel":
-            click.echo(f"{g.name:13} {exts}  (tree-sitter)")
+            support = registry.get_by_extension(Path("x" + g.extensions[0]))
+            works = getattr(support, "available", lambda: False)()
+            click.echo(f"{g.name:13} {exts}  ({'tree-sitter' if works else 'tree-sitter, but the grammar failed to load'})")
         elif source == "pack":
             click.echo(f"{g.name:13} {exts}  (tree-sitter-language-pack; downloads the grammar on first use)")
         elif g.name == "TypeScript" or g.name == "JavaScript":

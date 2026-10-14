@@ -493,6 +493,8 @@ class LanguageRegistry:
         self.register(TypeScriptSupport())
         from .treesitter import tree_sitter_languages
         for language in tree_sitter_languages():
+            # If its grammar fails to load, fall back to whatever handled these files before
+            language.fallback = self._extension_map.get(language.extensions[0].lower())
             self.register(language)
 
     def register(self, language: LanguageSupport) -> None:

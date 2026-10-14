@@ -27,6 +27,7 @@ C/C++ and Ruby (see treesitter.py). Test conventions (which files and symbols ar
 file's tests usually live) come from each language's support class.
 """
 
+import logging
 import os
 import re
 import subprocess
@@ -36,11 +37,12 @@ from typing import Dict, List, Set, Tuple
 
 from .pathfinding import CallGraph, GraphNode
 
-SKIP_DIRS = {"node_modules", "venv", ".venv", "env", "__pycache__", ".git", "dist", "build", ".mind-palace",
-             # build output and vendored dependencies of other ecosystems
-             ".next", ".nuxt", ".svelte-kit", ".output", "bower_components", "target", "vendor", "coverage",
-             ".gradle", "Pods", "DerivedData"}
-MAX_FILE_BYTES = 1_000_000  # larger sources are generated or minified bundles, not code to navigate
+SKIP_DIRS = {"node_modules", "venv", ".venv", "env", "__pycache__", ".git", "dist", "build", ".mind-palace"}
+# Build output and vendored dependencies of other ecosystems. Applied to non-Python files only, so Python
+# results stay as they were; .gitignore usually covers these anyway.
+OTHER_SKIP_DIRS = {".next", ".nuxt", ".svelte-kit", ".output", "bower_components", "target", "vendor", "coverage",
+                   ".gradle", "Pods", "DerivedData"}
+MAX_FILE_BYTES = 1_000_000  # non-Python sources this big are generated or minified bundles
 
 
 def _language(file: str):
@@ -83,6 +85,9 @@ class QueryGraph:
     skipped: Dict[str, int] = field(default_factory=dict)  # bare name -> number of definitions (over the cap)
 
 
+PYTHON_EXTS = (".py", ".pyi")
+
+
 def _git_ignored(project_root: Path) -> Set[str]:
     """Untracked paths git ignores, relative to project_root (directories end in /). Empty outside git.
     Tracked files are never listed, even when they match an ignore rule."""
@@ -91,7 +96,11 @@ def _git_ignored(project_root: Path) -> Set[str]:
                            cwd=project_root, capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.SubprocessError):
         return set()
-    return set(filter(None, r.stdout.split("\0"))) if r.returncode == 0 else set()
+    if r.returncode != 0:
+        if (project_root / ".git").exists():  # a repo git couldn't read (dubious ownership, ...): say so
+            logging.getLogger(__name__).warning(f"palace: git ls-files failed, .gitignore not applied: {r.stderr.strip()}")
+        return set()
+    return set(filter(None, r.stdout.split("\0")))
 
 
 def _collect_nodes(project_root: Path) -> Dict[str, dict]:
@@ -101,7 +110,7 @@ def _collect_nodes(project_root: Path) -> Dict[str, dict]:
 
     # analyze_file reads only source; the palace argument is used by palace-building methods
     cart = Cartographer(None, PalaceStorage(project_root))  # type: ignore[arg-type]
-    exts = {e.lower() for e in cart.language_registry.supported_extensions()}
+    exts = set(cart.language_registry.supported_extensions())  # case-sensitive, as the old rglob was
     ignored = _git_ignored(project_root)
     files = []
     # One walk that never enters skipped or git-ignored directories (an rglob per extension walked
@@ -111,22 +120,25 @@ def _collect_nodes(project_root: Path) -> Dict[str, dict]:
         prefix = "" if rel_dir == "." else rel_dir + "/"
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and f"{prefix}{d}/" not in ignored]
         files.extend(Path(dirpath) / n for n in filenames
-                     if os.path.splitext(n)[1].lower() in exts and f"{prefix}{n}" not in ignored)
+                     if os.path.splitext(n)[1] in exts and f"{prefix}{n}" not in ignored)
     raw: Dict[str, dict] = {}
     for f in sorted(set(files)):
-        if f.name.endswith((".min.js", ".bundle.js")):
-            continue
-        try:
-            if f.stat().st_size > MAX_FILE_BYTES:
+        if f.suffix not in PYTHON_EXTS:
+            if f.name.endswith((".min.js", ".bundle.js")) or OTHER_SKIP_DIRS & set(f.relative_to(project_root).parts):
                 continue
-        except OSError:
-            continue
+            try:
+                if f.stat().st_size > MAX_FILE_BYTES:
+                    continue
+            except OSError:
+                continue
         try:
             elements, _ = cart.analyze_file(f)
         except Exception:
             continue
         rel = f.relative_to(project_root)
-        module = str(rel.with_suffix("")).replace("/", ".")
+        # Python modules are dotted paths; other languages keep their extension, so view.ts can't overwrite
+        # (or be overwritten by) view.py's nodes
+        module = str(rel.with_suffix("") if rel.suffix in PYTHON_EXTS else rel).replace("/", ".")
         family = _family(str(rel))
         language = _language(str(rel))
         implicit_self = language.implicit_self if language else True
