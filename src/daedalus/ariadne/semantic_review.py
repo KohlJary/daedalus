@@ -95,7 +95,7 @@ what it claims to do, completely and correctly.
 
 ## Stated intent
 {intent}
-
+{package}
 ## Diff
 ```diff
 {diff_content}
@@ -160,8 +160,10 @@ class LLMJudge:
                 reviewer="llm-judge",
             )
 
+        package = diff.metadata.get("package") if isinstance(diff.metadata, dict) else None
         prompt = _REVIEW_PROMPT_TEMPLATE.format(
             intent=intent or "(no stated intent provided)",
+            package=(f"\n## Work package as dispatched to the worker\n{package}\n" if package and package not in (intent or "") else ""),
             diff_content=diff.content,
             verification_summary=_verification_summary(verification),
         )

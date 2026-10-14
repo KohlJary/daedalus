@@ -202,7 +202,16 @@ their own steps in CLAUDE.md, in a paragraph beginning "In this repo, exhaling c
 daedalus init --edicts        # turn edicts on here; creates docs/edicts/README.md and dissents/
 daedalus edict list           # every edict, its status, and where the gameplan tracks it
 daedalus edict show 7         # one edict, plus the gameplan entries that cite it
+daedalus edict dissent 7 --objection "..." --why "..." --instead "..."   # pauses work on 7
+daedalus edict dissents       # open dissents (--all for resolved ones too)
+daedalus edict resolve-dissent 0007-daedalus --outcome overruled --note "..."   # the owner's call
 ```
+
+Ariadne only auto-commits diffs with **approved intent**: an accepted edict's Intent and
+Acceptance criteria, or a work package from an approved plan
+(`python -m daedalus.ariadne.orchestrator plans approve <plan> --by <you or the main session>`).
+The judge grades against that, never against the worker's own description; anything without it
+goes to human review. Editing a plan after approval voids the approval.
 
 Edicts are off by default, so CLAUDE.md doesn't tell Daedalus to wait for them in projects whose
 designs live in tickets or issues. A project that already has `docs/edicts/` keeps them (hydrate

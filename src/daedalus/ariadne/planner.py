@@ -35,6 +35,7 @@ class FeatureRequest:
     tags: List[str] = field(default_factory=list)
     priority: str = "P2"  # P0-P3
     roadmap_item_id: Optional[str] = None  # Link to existing roadmap item
+    edict: Optional[str] = None  # The accepted edict this request implements (edict 0001)
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     created_by: str = "daedalus"
 
@@ -43,6 +44,21 @@ class FeatureRequest:
         """Create a new feature request with generated ID."""
         feature_id = f"feat-{hashlib.sha256(f'{title}{datetime.now().isoformat()}'.encode()).hexdigest()[:8]}"
         return cls(id=feature_id, title=title, description=description, **kwargs)
+
+    @classmethod
+    def from_edict(cls, repo_path: Path, number: str, **kwargs) -> "FeatureRequest":
+        """
+        A request built from an accepted edict: its approved intent becomes the description, and
+        its number travels with the plan to every diff. Refuses an edict that isn't accepted or
+        has an open dissent.
+        """
+        from ..edicts import approved_intent, dispatch_block, load_edict
+
+        block = dispatch_block(repo_path, number)
+        if block:
+            raise ValueError(block)
+        edict = load_edict(repo_path, number)
+        return cls.create(edict.title, approved_intent(edict), edict=edict.number, **kwargs)
 
 
 @dataclass
@@ -62,6 +78,16 @@ class WorkPackageSpec:
     constraints: List[str] = field(default_factory=list)
     depends_on: List[str] = field(default_factory=list)  # Other package IDs
     tags: List[str] = field(default_factory=list)
+    edict: str = ""  # The edict the plan implements, if any
+
+    def package_text(self) -> str:
+        """The full package: what a worker is asked to do and what the judge grades against."""
+        lines = [f"Work package {self.id}: {self.title}", "", self.description]
+        if self.files:
+            lines += ["", "Files: " + ", ".join(self.files)]
+        if self.constraints:
+            lines += ["", "Constraints:"] + [f"- {c}" for c in self.constraints]
+        return "\n".join(lines)
 
 
 @dataclass
@@ -111,6 +137,21 @@ class ImplementationPlan:
     # Status
     status: str = "draft"  # draft, pending_approval, approved, dispatched, completed
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    # Intent (edict 0001): where the plan came from, and a digest of what was approved
+    edict: Optional[str] = None
+    source: str = ""  # the edict's approved intent, or the feature request's description
+    approved_digest: Optional[str] = None
+
+    def digest(self) -> str:
+        """Fingerprint of what an approval covers: the packages, the source, and the edict."""
+        body = json.dumps({"work_packages": [asdict(wp) for wp in self.work_packages],
+                           "source": self.source, "edict": self.edict}, sort_keys=True)
+        return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+    def approval_valid(self) -> bool:
+        """Approved, and unchanged since (an edit after approval voids it)."""
+        return bool(self.approved and self.approved_digest and self.approved_digest == self.digest())
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for storage."""
@@ -231,7 +272,11 @@ class Planner:
             requires_approval=requires_approval,
             approval_reasons=approval_reasons,
             status="draft" if not requires_approval else "pending_approval",
+            edict=request.edict,
+            source=request.description,
         )
+        for wp in plan.work_packages:
+            wp.edict = request.edict or ""
 
         # Save plan
         self._save_plan(plan)
@@ -535,17 +580,29 @@ class Planner:
                 plans.append(plan)
         return sorted(plans, key=lambda p: p.created_at, reverse=True)
 
+    def save_plan(self, plan: ImplementationPlan) -> None:
+        """Store a plan, e.g. after a planner or a person edited its work packages."""
+        self._save_plan(plan)
+
     def approve_plan(
         self,
-        plan_id: str,
+        plan_id,
         approved_by: str = "daedalus",
     ) -> Optional[ImplementationPlan]:
-        """Mark a plan as approved."""
+        """
+        Mark a plan as approved: an intent-approval event (edict 0001, amended). Records who and
+        when, and a digest of what was approved; later edits void the approval. Pass the plan
+        object itself to approve (and store) exactly what will be dispatched, edits included.
+        """
+        if isinstance(plan_id, ImplementationPlan):
+            self._save_plan(plan_id)
+            plan_id = plan_id.id
         plan = self.load_plan(plan_id)
         if plan:
             plan.approved = True
             plan.approved_by = approved_by
             plan.approved_at = datetime.now(timezone.utc).isoformat()
+            plan.approved_digest = plan.digest()
             plan.status = "approved"
             self._save_plan(plan)
         return plan

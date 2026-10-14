@@ -194,7 +194,7 @@ class IcarusWorker:
         if removed.returncode != 0:
             self._log(f"Could not remove worktree {path}: {removed.stderr.strip()}")
 
-    def submit_diff_to_ariadne(self, description: str) -> Optional[str]:
+    def submit_diff_to_ariadne(self, description: str, metadata: Optional[dict] = None) -> Optional[str]:
         """
         Generate a diff of current changes and submit to Ariadne.
 
@@ -204,6 +204,8 @@ class IcarusWorker:
 
         Args:
             description: Description of what this diff does
+            metadata: Provenance from the work package (plan_id, spec_id, edict, package) that the
+                orchestrator uses to find the diff's approved intent (edict 0001)
 
         Returns:
             Diff ID if submitted, None if no changes or Ariadne unavailable
@@ -233,6 +235,8 @@ class IcarusWorker:
                 diff_content=diff_content,
                 description=description,
             )
+            if metadata:
+                diff.metadata.update({k: v for k, v in metadata.items() if v})
 
             # Extract causal chain for verification
             causal_chain = extract_causal_chain(diff, Path(self.work_dir))
@@ -603,7 +607,8 @@ class IcarusWorker:
             )
             if self.use_ariadne and result.get("success"):
                 title = work.description.strip().splitlines()[0] if work.description.strip() else work.id
-                result["diff_id"] = self.submit_diff_to_ariadne(description=title.lstrip("# "))
+                provenance = {k: work.inputs.get(k) for k in ("plan_id", "spec_id", "edict", "package")}
+                result["diff_id"] = self.submit_diff_to_ariadne(description=title.lstrip("# "), metadata=provenance)
         finally:
             if self.isolate:
                 self._leave_worktree()

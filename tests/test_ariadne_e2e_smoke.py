@@ -26,6 +26,8 @@ from pathlib import Path
 
 import pytest
 
+from ariadne_intent import approved_plan, tag
+
 from daedalus.ariadne.diff_bus import AriadneBus, Diff
 from daedalus.ariadne.orchestrator import AriadneOrchestrator
 from daedalus.ariadne.semantic_review import ReviewVerdict, SemanticReviewResult
@@ -117,8 +119,9 @@ def test_non_overlapping_diffs_are_verified_merged_and_committed(repo, bus):
     diff_a = _capture_worker_diff(repo, "file_a.py", "def a():\n    return 100\n")
     diff_b = _capture_worker_diff(repo, "file_b.py", "def b():\n    return 200\n")
 
-    bus.submit_diff(Diff.from_git_diff("work-a", "worker-1", diff_a, "Update a()"))
-    bus.submit_diff(Diff.from_git_diff("work-b", "worker-2", diff_b, "Update b()"))
+    plan = approved_plan(repo, "Update a() and b()", packages=("wp-a", "wp-b"))
+    bus.submit_diff(tag(Diff.from_git_diff("work-a", "worker-1", diff_a, "Update a()"), plan, "wp-a"))
+    bus.submit_diff(tag(Diff.from_git_diff("work-b", "worker-2", diff_b, "Update b()"), plan, "wp-b"))
 
     orchestrator = AriadneOrchestrator(repo, bus=bus, auto_commit=True, semantic_reviewer=_ApproveAllReviewer())
     orchestrator.verifier = _noop_verifier(repo)
@@ -190,8 +193,9 @@ def test_rejected_diff_is_excluded_from_the_commit(repo, bus, monkeypatch):
     diff_a = _capture_worker_diff(repo, "file_a.py", "def a():\n    return 999\n")
     diff_b = _capture_worker_diff(repo, "file_b.py", "def b():\n    return 999\n")
 
-    diff_obj_a = Diff.from_git_diff("work-a", "worker-1", diff_a, "Good change")
-    diff_obj_b = Diff.from_git_diff("work-b", "worker-2", diff_b, "Change that fails verification")
+    plan = approved_plan(repo, "Two changes", packages=("wp-a", "wp-b"))
+    diff_obj_a = tag(Diff.from_git_diff("work-a", "worker-1", diff_a, "Good change"), plan, "wp-a")
+    diff_obj_b = tag(Diff.from_git_diff("work-b", "worker-2", diff_b, "Change that fails verification"), plan, "wp-b")
     bus.submit_diff(diff_obj_a)
     bus.submit_diff(diff_obj_b)
 

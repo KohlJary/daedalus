@@ -27,6 +27,8 @@ from daedalus.ariadne.semantic_review import HAS_AGENT_SDK, LLMJudge, ReviewVerd
 from daedalus.ariadne.tracker import Tracker
 from daedalus.ariadne.verification import CausalSliceVerifier
 
+from ariadne_intent import approved_plan, tag
+
 
 def _run_git(repo: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
@@ -93,6 +95,7 @@ def bus(tmp_path: Path) -> AriadneBus:
 def _submit_diff(repo, bus, intent="Add feature X") -> Diff:
     diff_content = _capture_worker_diff(repo, "file_a.py", "def a():\n    return 42\n")
     diff = Diff.from_git_diff("work-1", "worker-1", diff_content, intent)
+    tag(diff, approved_plan(repo, intent))  # approved intent, so the judge's verdict decides (0001)
     bus.submit_diff(diff)
     return diff
 
@@ -167,6 +170,7 @@ def test_supervised_autonomy_always_queues_review_even_if_approved(repo, bus):
 def test_hybrid_autonomy_queues_review_for_flagged_tags_even_if_approved(repo, bus):
     diff_content = _capture_worker_diff(repo, "file_a.py", "def a():\n    return 42\n")
     diff = Diff.from_git_diff("work-1", "worker-1", diff_content, "Change the schema")
+    tag(diff, approved_plan(repo, "Change the schema"))
     diff.metadata["tags"] = ["database"]
     bus.submit_diff(diff)
 
@@ -329,7 +333,7 @@ def test_tracker_queues_feature_for_review_when_diff_is_queued(repo, bus, tracke
 def test_tracker_resolves_to_done_after_commit(repo, bus, tracker):
     diff_content = _capture_worker_diff(repo, "file_a.py", "def a():\n    return 42\n")
     diff = Diff.from_git_diff("plan-1", "worker-1", diff_content, "Do the thing")
-    diff.metadata["plan_id"] = "plan-1"
+    tag(diff, approved_plan(repo, "Do the thing", plan_id="plan-1"))
     bus.submit_diff(diff)
 
     _start_tracked_feature(tracker, "plan-1")

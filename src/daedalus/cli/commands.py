@@ -253,6 +253,32 @@ def _enable_edicts(project_dir: Path):
     click.echo("  Edicts enabled for this project (edicts.enabled = true)")
 
 
+def _ensure_dissent_ask_rule(project_dir: Path, dry_run: bool = False):
+    """With edicts on, resolving a dissent always prompts the human (edict 0003): an `ask` rule."""
+    from ..config import edicts_setting
+    from ..edicts import RESOLVE_PERMISSION
+
+    if not edicts_setting(project_dir)[0]:
+        return
+    path = project_dir / ".claude" / "settings.json"
+    try:
+        settings = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except json.JSONDecodeError:
+        return
+    perms = settings.setdefault("permissions", {}) if isinstance(settings, dict) else None
+    if not isinstance(perms, dict) or not isinstance(perms.get("ask", []), list):
+        return
+    if RESOLVE_PERMISSION in perms.get("ask", []):
+        return
+    if dry_run:
+        click.echo(f"Permission rule that would be added: ask {RESOLVE_PERMISSION}")
+        return
+    perms.setdefault("ask", []).append(RESOLVE_PERMISSION)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    click.echo("  Resolving a dissent now asks first (permissions.ask in .claude/settings.json)")
+
+
 def _register_hooks(project_dir: Path, dry_run: bool = False):
     """Register the hooks enabled in config (hooks.session_start, hooks.capture) in .claude/settings.json."""
     from ..config import get_project_settings
@@ -265,6 +291,7 @@ def _register_hooks(project_dir: Path, dry_run: bool = False):
     if error:
         click.echo(f"  Warning: {error}", err=True)
         return
+    _ensure_dissent_ask_rule(project_dir, dry_run)
     if dry_run:
         click.echo("Hooks that would be registered: " + (", ".join(added) if added else "none"))
         if removed:

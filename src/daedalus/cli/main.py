@@ -244,6 +244,56 @@ def edict_show(number: str):
     show_edict(Path.cwd(), number)
 
 
+@edict.command("dissent")
+@click.argument("number")
+@click.option("--agent", default="daedalus", show_default=True, help="Who is dissenting")
+@click.option("--objection", required=True, help="What the dissent objects to")
+@click.option("--why", required=True, help="Why")
+@click.option("--instead", required=True, help="What it would do instead")
+def edict_dissent(number: str, agent: str, objection: str, why: str, instead: str):
+    """File a dissent on an edict (edict 0003). Work on it pauses until the owner resolves it."""
+    from ..edicts import EdictError, file_dissent
+
+    try:
+        path = file_dissent(Path.cwd(), number, agent, objection, why, instead)
+    except EdictError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(1)
+    click.echo(f"Filed {path.relative_to(Path.cwd())}. Work on edict {number.zfill(4)} is paused until it is resolved.")
+
+
+@edict.command("dissents")
+@click.option("--all", "show_all", is_flag=True, help="Include resolved dissents")
+def edict_dissents(show_all: bool):
+    """List open dissents (or all, with --all)."""
+    from ..edicts import list_dissents
+
+    dissents = list_dissents(Path.cwd(), open_only=not show_all)
+    if not dissents:
+        click.echo("No open dissents." if not show_all else "No dissents.")
+        return
+    for d in dissents:
+        outcome = f" ({d.outcome})" if d.outcome else ""
+        click.echo(f"{d.path.stem}  edict {d.edict}  {d.status}{outcome}  by {d.agent}, filed {d.filed}")
+
+
+@edict.command("resolve-dissent")
+@click.argument("name")
+@click.option("--outcome", required=True, type=click.Choice(["amended", "overruled", "withdrawn"]))
+@click.option("--note", required=True, help="The resolution, in a sentence or two")
+def edict_resolve_dissent(name: str, outcome: str, note: str):
+    """Resolve a dissent with a recorded outcome. Only the project owner resolves dissents; the
+    session asks before running this. The dissent stays on record."""
+    from ..edicts import EdictError, resolve_dissent
+
+    try:
+        path = resolve_dissent(Path.cwd(), name, outcome, note)
+    except EdictError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(1)
+    click.echo(f"Resolved {path.name}: {outcome}.")
+
+
 @main.command("doctor")
 @click.option("--json", "as_json", is_flag=True, help="Print findings as JSON")
 def doctor(as_json: bool):
