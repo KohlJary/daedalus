@@ -318,3 +318,46 @@ def test_headless_runs_only_where_allowed_and_inhale_presents_its_report(project
     out = run("reflect", "inhale").output
     assert "report ready" in out and "monthly-2026-09.md" in out
     assert "report ready" not in run("reflect", "inhale").output  # presented once
+
+
+def test_digests_record_mode_and_seed_and_bundles_hide_the_arm(project):
+    from daedalus.reflection.arms import assign_arm
+    from daedalus.reflection.bundle import build_bundle
+
+    assign_arm(project, INTERRUPT_SESSION, "ab", seed=3)
+    run("reflect", "digest")
+    d = json.loads((project / ".daedalus/reflection/sessions" / f"{INTERRUPT_SESSION}.json").read_text(encoding="utf-8"))
+    assert d["model_summary_mode"] == "ab" and d["model_summary_seed"] == 3
+    bundle = build_bundle(project, "monthly", "2026-10", {"half_life_self": 60, "half_life_user": 180}, "work")
+    assert all("model_summary_arm" not in x and "model_summary_seed" not in x for x in bundle["digests"])
+
+
+def test_a_failing_headless_run_is_not_retried_every_tick(project, monkeypatch):
+    import subprocess as sp
+
+    from daedalus.reflection import tick as tk
+
+    calls = []
+
+    def hang(project_dir, prompt, timeout=1800):
+        calls.append(1)
+        raise sp.TimeoutExpired("claude", timeout)
+
+    monkeypatch.setattr("daedalus.reflection.runners.run_headless", hang)
+    monkeypatch.setattr("daedalus.reflection.runners.find_claude", lambda: "/usr/bin/claude")
+    run("config", "machine.employer", "false")
+    run("config", "reflection.runner", "headless")
+    for _ in range(4):
+        assert tk.run_due_headless(project) is False
+    assert len(calls) == 2
+
+
+def test_headless_runs_with_a_bounded_tool_list(monkeypatch, tmp_path):
+    from daedalus.reflection import runners
+
+    seen = {}
+    monkeypatch.setattr(runners, "find_claude", lambda: "claude")
+    monkeypatch.setattr(runners.subprocess, "run", lambda args, **kw: seen.setdefault("args", args))
+    runners.run_headless(tmp_path, "go")
+    assert seen["args"][:3] == ["claude", "-p", "go"] and seen["args"][3] == "--allowedTools"
+    assert "Bash(daedalus reflect:*)" in seen["args"][4] and "Bash " not in seen["args"][4] + " "

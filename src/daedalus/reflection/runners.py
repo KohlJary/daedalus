@@ -58,9 +58,14 @@ def find_claude() -> Optional[str]:
     return shutil.which("claude")
 
 
+# What an unattended /reflect may use: read anything, write reports, run the reflect CLI and
+# read-only jq, and hand work to delphi and Momus. Nothing else.
+HEADLESS_TOOLS = "Read Grep Glob Write Agent Bash(daedalus reflect:*) Bash(jq:*)"
+
+
 def run_headless(project_dir: Path, prompt: str, timeout: int = 1800) -> subprocess.CompletedProcess:
     claude = find_claude()
     if not claude:
         raise RuntimeError("claude is not on PATH")
-    return subprocess.run([claude, "-p", prompt], cwd=project_dir, capture_output=True, text=True,
-                          encoding="utf-8", timeout=timeout)
+    return subprocess.run([claude, "-p", prompt, "--allowedTools", HEADLESS_TOOLS], cwd=project_dir,
+                          capture_output=True, text=True, encoding="utf-8", timeout=timeout)

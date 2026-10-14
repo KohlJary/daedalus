@@ -178,3 +178,20 @@ def test_dissent_on_a_self_entry_is_recorded_without_touching_it(root):
     d = m.file_dissent(s["id"], "daedalus", "Too absolute", "Some pushes are pre-approved", "Ask unless approved", root)
     assert d["status"] == "open" and m.load_dissents(root, open_only=True)[0]["entry_id"] == s["id"]
     assert m.model_path("self", root).read_bytes() == before
+
+
+def test_entries_without_model_ids_are_flagged_and_a_bom_is_tolerated(root):
+    bare = add(root, "self", kind="behavior", observation="No lineage")
+    assert bare["id"] in m.lineage_flags({"claude-new"}, root)
+    path = m.model_path("self", root)
+    path.write_bytes(b"\xef\xbb\xbf" + path.read_bytes())  # saved by Notepad
+    assert m.find(m.load("self", root), bare["id"])
+
+
+def test_a_model_written_by_hand_before_any_save_is_recorded_as_the_users(root):
+    path = m.model_path("user", root)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"entries": [{"id": "u001", "observation": "Uses they/them"}]}), encoding="utf-8")
+    m.load("user", root)
+    rec = m.load_history(root, "user", "u001")
+    assert rec and rec[0]["kind"] == "user-edit" and rec[0]["by"] == "user"

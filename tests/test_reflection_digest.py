@@ -236,3 +236,35 @@ def test_events_carry_details_and_prompt_approvals():
     assert all("exit_code" in x for x in bash)  # "Exit code N" kept by the scrubber
     for uuid in d["events"]["approved_at_prompt"]:
         assert d["details"][uuid]["tool"]
+
+
+def test_secrets_are_redacted_from_details(tmp_path):
+    b = Builder(str(tmp_path))
+    b.prompt()
+    b.call("Bash", "t1", command="curl -H 'Authorization: Bearer abcdef123456789' https://x")
+    b.result("t1", "Exit code 1\nbad key sk-ant-api03-ABCDEFGHIJKLMNOP", is_error=True)
+    d = dg.build_digest(write_session(tmp_path / "t", b.session_id, b.events))
+    detail = d["details"][d["events"]["failures"][0]]
+    assert "abcdef123456789" not in detail["call"] and "[secret]" in detail["call"]
+    assert "sk-ant" not in detail["summary"] and detail["exit_code"] == 1
+
+
+def test_the_retry_window_comes_from_config(tmp_path, monkeypatch):
+    project = make_project(tmp_path / "proj")
+    b = Builder(str(project), "s-retry")
+    b.prompt()
+    b.call("Bash", "t1", command="make")
+    b.result("t1", "Exit code 2", is_error=True)
+    for i in range(2, 5):
+        b.call("Bash", f"t{i}", command=f"echo {i}")
+        b.result(f"t{i}", "ok")
+    b.call("Bash", "t9", command="make")  # 4 calls after the failure
+    b.result("t9", "ok")
+    write_session(claude_home() / "projects" / "x", "s-retry", b.events)
+    (project / ".daedalus" / "config.json").write_text(json.dumps({"reflection": {"retry_window": 3}}), encoding="utf-8")
+    dg.digest_project(project)
+    assert json.loads(dg.digest_path(project, "s-retry").read_text(encoding="utf-8"))["counts"]["retries"] == 0
+    (project / ".daedalus" / "config.json").write_text(json.dumps({"reflection": {"retry_window": 5}}), encoding="utf-8")
+    dg.digest_path(project, "s-retry").unlink()
+    dg.digest_project(project)
+    assert json.loads(dg.digest_path(project, "s-retry").read_text(encoding="utf-8"))["counts"]["retries"] == 1

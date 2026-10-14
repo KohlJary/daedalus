@@ -89,22 +89,47 @@ def unpresented_path(project_dir: Path) -> Path:
     return reflection_dir(project_dir) / "unpresented.json"
 
 
+MAX_HEADLESS_ATTEMPTS = 2
+
+
 def run_due_headless(project_dir: Path) -> bool:
-    """The headless runner: one `claude -p` run of /reflect. Callers check the runner first."""
-    from .fsutil import write_json
+    """
+    The headless runner: one `claude -p` run of /reflect. Callers check the runner first. A due
+    set that has failed twice is not retried on every tick (it stays due for the next session).
+    """
+    import subprocess
+
+    from .due import load_state
+    from .fsutil import file_lock, write_json
     from .paths import reports_dir
     from .runners import resolve_runner, run_headless
 
     if resolve_runner().effective != "headless":
         raise RuntimeError("The headless runner is not allowed on this machine")
+    state = load_state(project_dir)
+    key = ",".join(f"{d['level']}:{d['period']}" for d in state.get("due", []))
+    attempts = state.get("headless_attempts", {})
+    if attempts.get(key, 0) >= MAX_HEADLESS_ATTEMPTS:
+        return False
     before = {p.name for p in reports_dir(project_dir).glob("*.md")} if reports_dir(project_dir).is_dir() else set()
-    result = run_headless(project_dir, HEADLESS_PROMPT)
+    try:
+        result = run_headless(project_dir, HEADLESS_PROMPT)
+        ok = result.returncode == 0
+    except (subprocess.TimeoutExpired, OSError):
+        ok = False
+    if not ok:
+        from .due import due_path
+
+        with file_lock(due_path(project_dir)):
+            state = load_state(project_dir)
+            state.setdefault("headless_attempts", {})[key] = state.get("headless_attempts", {}).get(key, 0) + 1
+            write_json(due_path(project_dir), state)
     after = sorted(p for p in reports_dir(project_dir).glob("*.md") if p.name not in before) \
         if reports_dir(project_dir).is_dir() else []
     if after:
         listed = read_json(unpresented_path(project_dir), []) or []
         write_json(unpresented_path(project_dir), listed + [str(p) for p in after])
-    return result.returncode == 0
+    return ok
 
 
 def take_unpresented(project_dir: Path) -> list[str]:

@@ -130,7 +130,7 @@ def _load_locked(model: str, root: Optional[Path]) -> dict:
             _save_locked(model, data, root)
             return data
         return _empty(model)
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8-sig")
     try:
         data = json.loads(text)
     except json.JSONDecodeError as e:
@@ -141,6 +141,9 @@ def _load_locked(model: str, root: Optional[Path]) -> dict:
         _record_hand_edit(root, model, mine.get("snapshot") or _empty(model), data)
         _save_locked(model, data, root)
     elif not mine.get("hash"):
+        if data["entries"]:
+            # Written by hand before reflection ever saved it: the user's entries
+            _record_hand_edit(root, model, _empty(model), data)
         _save_state(root, model, text, data)
     return data
 
@@ -161,9 +164,14 @@ def _record_hand_edit(root: Optional[Path], model: str, before: dict, after: dic
             record(root, model, entry_id, "user-delete", entry, None, by="user", note="deleted by hand")
 
 
+def _text_hash(text: str) -> str:
+    return _hash(normalise(text))
+
+
 def _tombstone(entry: dict, reason: str) -> dict:
+    """Enough to refuse the same observation again, and nothing more: the text itself is gone."""
     return {"id": entry.get("id"), "date": date.today().isoformat(), "reason": reason,
-            "observation": normalise(entry.get("observation", ""))}
+            "observation_hash": _text_hash(entry.get("observation", ""))}
 
 
 def _save_state(root: Optional[Path], model: str, text: str, data: dict) -> None:
@@ -187,8 +195,8 @@ def find(data: dict, entry_id: str) -> Optional[dict]:
 
 
 def is_tombstoned(data: dict, entry_id: Optional[str] = None, observation: Optional[str] = None) -> bool:
-    text = normalise(observation or "")
-    return any((entry_id and t.get("id") == entry_id) or (text and t.get("observation") == text)
+    digest = _text_hash(observation) if normalise(observation or "") else None
+    return any((entry_id and t.get("id") == entry_id) or (digest and t.get("observation_hash") == digest)
                for t in data.get("tombstones", []))
 
 
@@ -410,15 +418,15 @@ def lineage_flags(in_use_models: set[str], root: Optional[Path] = None) -> list[
     """Self entries whose evidence comes only from models no longer in use."""
     data = load("self", root)
     return [e["id"] for e in active_entries(data)
-            if e.get("kind") != "aspiration" and e.get("model_ids")
-            and not set(e["model_ids"]) & in_use_models]
+            if e.get("kind") != "aspiration" and not set(e.get("model_ids") or []) & in_use_models]
 
 
 def unmoved_aspirations(today: date, root: Optional[Path] = None, days: int = ASPIRATION_UNMOVED_DAYS) -> list[str]:
     """Aspirations older than `days` that no behavior entry cites."""
     data = load("self", root)
-    cited = {ev.get("aspiration") for e in active_entries(data) if e.get("kind") == "behavior"
-             for ev in e.get("evidence", []) if isinstance(ev, dict)}
+    recent = [e for e in active_entries(data) if e.get("kind") == "behavior"
+              and (today - date.fromisoformat((e.get("last_affirmed") or e.get("first_noticed") or "1970-01-01")[:10])).days < days]
+    cited = {ev.get("aspiration") for e in recent for ev in e.get("evidence", []) if isinstance(ev, dict)}
     return [e["id"] for e in active_entries(data) if e.get("kind") == "aspiration"
             and (today - date.fromisoformat(e["first_noticed"][:10])).days >= days and e["id"] not in cited]
 

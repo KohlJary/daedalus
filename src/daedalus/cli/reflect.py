@@ -47,6 +47,8 @@ def reflect_digest(session_id: Optional[str], notes: Optional[str]):
             click.echo(str(e), err=True)
             raise SystemExit(1)
     click.echo(f"Digested {len(result['written'])} session(s); {len(result['unchanged'])} unchanged.")
+    if not current_session_id():
+        click.echo("Note: CLAUDE_CODE_SESSION_ID is not set, so sessions here get no A/B arm (recorded as none).")
     if notes is not None:
         click.echo(f"Notes written to session {session_id}'s digest.")
 
@@ -127,7 +129,7 @@ def reflect_bundle(level: str, period: str):
 @click.option("--bundle", "bundle_file", type=click.Path(exists=True, dir_okay=False), default=None,
               help="The bundle the report was written from (monthly: its lineage and aspirations)")
 def reflect_check(report: str, bundle_file: Optional[str]):
-    """Validate a report's citations, figures and proposals. Writes its Markdown when it passes."""
+    """Validate a report's citations, figures and proposals. Exit 1 on errors."""
     from ..reflection.check import check_report
     from ..reflection.fsutil import atomic_write_text, read_json
     from ..reflection.pending import verdicts_path
@@ -146,9 +148,45 @@ def reflect_check(report: str, bundle_file: Optional[str]):
     if result.errors:
         click.echo(f"{len(result.errors)} error(s)")
         raise SystemExit(1)
+    click.echo("OK. Next: Momus's verdicts, then `daedalus reflect render`.")
+
+
+@reflect.command("render")
+@click.argument("report", type=click.Path(exists=True, dir_okay=False))
+@click.option("--bundle", "bundle_file", type=click.Path(exists=True, dir_okay=False), default=None)
+def reflect_render(report: str, bundle_file: Optional[str]):
+    """Write the Markdown the user reads. Needs a passing check and Momus's verdicts; leaves out contradicted proposals."""
+    from ..reflection.check import check_report
+    from ..reflection.fsutil import atomic_write_text, read_json
+    from ..reflection.pending import VERDICTS, verdicts_path
+    from ..reflection.render import render_report
+
+    project = Path.cwd()
+    data = read_json(Path(report))
+    if not isinstance(data, dict):
+        click.echo(f"{report} is not valid JSON", err=True)
+        raise SystemExit(1)
+    bundle = read_json(Path(bundle_file)) if bundle_file else None
+    if check_report(project, data, bundle=bundle, scope=_settings(project)["scope"]).errors:
+        click.echo("The report doesn't pass `daedalus reflect check`.", err=True)
+        raise SystemExit(1)
+    verdicts = read_json(verdicts_path(Path(report)), None)
+    missing = [p.get("id") for p in data.get("proposals") or []
+               if _verdict(verdicts, p.get("id")) not in VERDICTS]
+    if not isinstance(verdicts, dict) or missing:
+        click.echo(f"No Momus verdict for {', '.join(map(str, missing)) or 'the report'} "
+                   f"({verdicts_path(Path(report)).name}); every proposal is reviewed before it is shown.", err=True)
+        raise SystemExit(1)
     md = Path(report).with_suffix(".md")
-    atomic_write_text(md, render_report(data, read_json(verdicts_path(Path(report)), {})))
-    click.echo(f"OK. Report: {md}")
+    atomic_write_text(md, render_report(data, verdicts))
+    click.echo(f"Report: {md}")
+
+
+def _verdict(verdicts, pid):
+    if not isinstance(verdicts, dict):
+        return None
+    v = verdicts.get(pid)
+    return v.get("verdict") if isinstance(v, dict) else v
 
 
 @reflect.group("pending", invoke_without_command=True)
@@ -378,11 +416,16 @@ def reflect_model_forget(ctx, entry_id):
         raise SystemExit(1)
     mode = load_config().reflection.forget
     try:
-        m.forget(entry_id, mode)
+        entry = m.forget(entry_id, mode)
     except m.ModelError as e:
         click.echo(str(e), err=True)
         raise SystemExit(1)
-    click.echo(f"Forgot {entry_id} ({mode}).")
+    from ..reflection.pending import forget_queued
+
+    dropped = forget_queued(Path.cwd(), entry)
+    click.echo(f"Forgot {entry_id} ({mode})." + (f" Dropped {dropped} queued proposal(s) about it." if dropped else ""))
+    click.echo("Reports and digests written before now may still mention it; delete them under "
+               ".daedalus/reflection/ if they do.")
 
 
 @reflect_model.command("stable")

@@ -55,8 +55,9 @@ def _digests_in(project_dir: Path, start: date, end: date) -> list[dict]:
     from .arms import current_session_id
 
     running = current_session_id()
-    return [d for d in load_digests(project_dir) if (day := session_day(d)) and start <= day <= end
-            and d.get("session_id") != running]
+    hidden = ("model_summary_arm", "model_summary_mode", "model_summary_seed")  # never shown to delphi
+    return [{k: v for k, v in d.items() if k not in hidden} for d in load_digests(project_dir)
+            if (day := session_day(d)) and start <= day <= end and d.get("session_id") != running]
 
 
 def _model_view(model: str, settings: dict, today: date, root: Optional[Path], aspirations: bool = True) -> dict:
@@ -72,24 +73,30 @@ def _model_view(model: str, settings: dict, today: date, root: Optional[Path], a
 
 def in_use_models(project_dir: Path, today: date) -> set[str]:
     since = today - timedelta(days=IN_USE_DAYS)
-    return {model for d in load_digests(project_dir) if (day := session_day(d)) and day >= since
-            for model in d.get("models") or []}
+    digests = load_digests(project_dir)
+    recent = {model for d in digests if (day := session_day(d)) and day >= since for model in d.get("models") or []}
+    if recent or not digests:
+        return recent
+    # A quiet month doesn't retire every model: fall back to the latest session's
+    latest = max(digests, key=lambda d: d.get("end") or "")
+    return set(latest.get("models") or [])
 
 
 def seed_sources(project_dir: Path) -> list[dict]:
     """The identity files and the project's Claude Code memory notes, for the first monthly run."""
     from ..config import get_config_dir
-    from .digest import sessions_for_project
-
     sources = []
     for name in ("identity.md", "identity.json"):
         path = get_config_dir() / name
         if path.exists():
-            sources.append({"source": str(path), "kind": "identity", "text": path.read_text(encoding="utf-8")})
-    folders = {f.parent for f in sessions_for_project(project_dir)}
+            sources.append({"source": str(path), "kind": "identity", "text": path.read_text(encoding="utf-8-sig")})
+    # Memory notes from every project folder whose transcripts map to a project with .daedalus/
+    from .tick import projects_with_sessions
+
+    folders = {f.parent for files in projects_with_sessions().values() for f in files}
     for folder in sorted(folders):
         for note in sorted((folder / "memory").glob("*.md")):
-            sources.append({"source": str(note), "kind": "memory-note", "text": note.read_text(encoding="utf-8")})
+            sources.append({"source": str(note), "kind": "memory-note", "text": note.read_text(encoding="utf-8-sig")})
     return sources
 
 
@@ -108,6 +115,8 @@ def build_bundle(project_dir: Path, level: str, period: str, settings: dict, sco
         bundle["evolution"] = m.evolution(start, end, root)
         bundle["lineage"] = m.lineage_flags(in_use_models(project_dir, today), root)
         bundle["unmoved_aspirations"] = m.unmoved_aspirations(today, root)
+        bundle["aspirations_active"] = [e["id"] for e in m.active_entries(m.load("self", root))
+                                        if e.get("kind") == "aspiration"]
         bundle["model_dissents"] = [d["id"] for d in m.load_dissents(root, open_only=True)]
         bundle["model_dissent_details"] = m.load_dissents(root, open_only=True)
         if not any(bundle["models"][model]["entries"] for model in m.MODELS):
@@ -127,7 +136,7 @@ def build_aspiration_bundle(project_dir: Path, period: str, settings: dict,
     for name in ("identity.md", "identity.json"):
         path = get_config_dir() / name
         if path.exists():
-            identity[name] = path.read_text(encoding="utf-8")
+            identity[name] = path.read_text(encoding="utf-8-sig")
     return {
         "schema": BUNDLE_SCHEMA, "level": "aspiration", "period": period,
         "question": "Who do you want to be?",

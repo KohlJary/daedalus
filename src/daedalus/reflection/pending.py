@@ -40,16 +40,28 @@ def load_pending(project_dir: Path) -> list[dict]:
     return data.get("proposals", []) if isinstance(data, dict) else []
 
 
-def _last_id(project_dir: Path) -> int:
+def _state(project_dir: Path) -> dict:
     data = read_json(pending_path(project_dir), {})
-    return int(data.get("last_id", 0)) if isinstance(data, dict) else 0
+    return data if isinstance(data, dict) else {}
 
 
-def _save(project_dir: Path, proposals: list[dict], last_id: Optional[int] = None) -> None:
+def _last_id(project_dir: Path) -> int:
+    return int(_state(project_dir).get("last_id", 0))
+
+
+def _resolved(project_dir: Path) -> list:
+    """(report, proposal) pairs already applied or dropped: a report can't queue them again."""
+    return [tuple(x) for x in _state(project_dir).get("resolved", [])]
+
+
+def _save(project_dir: Path, proposals: list[dict], last_id: Optional[int] = None,
+          resolved: Optional[list] = None) -> None:
     # IDs never repeat, even after the queue empties: the model history cites them
     last = max(last_id if last_id is not None else _last_id(project_dir),
                max((int(q["id"][1:]) for q in proposals if str(q.get("id", ""))[1:].isdigit()), default=0))
-    write_json(pending_path(project_dir), {"proposals": proposals, "last_id": last})
+    done = resolved if resolved is not None else _resolved(project_dir)
+    write_json(pending_path(project_dir), {"proposals": proposals, "last_id": last,
+                                           "resolved": [list(x) for x in done]})
 
 
 def verdicts_path(report_path: Path) -> Path:
@@ -86,7 +98,7 @@ def import_report(project_dir: Path, report_path: Path, models_root: Optional[Pa
     path = pending_path(project_dir)
     with file_lock(path):
         proposals = load_pending(project_dir)
-        seen = {(q.get("report"), q.get("report_proposal")) for q in proposals}
+        seen = {(q.get("report"), q.get("report_proposal")) for q in proposals} | set(_resolved(project_dir))
         n = max(_last_id(project_dir),
                 max((int(q["id"][1:]) for q in proposals if str(q.get("id", ""))[1:].isdigit()), default=0))
         added = []
@@ -101,10 +113,17 @@ def import_report(project_dir: Path, report_path: Path, models_root: Optional[Pa
     return added, notes
 
 
-def is_stance(p: dict) -> bool:
+def is_stance(p: dict, models_root: Optional[Path] = None) -> bool:
+    """A stance proposal: adding one, or affirming, revising or retiring an existing one."""
     change = p.get("model") or {}
-    return p.get("target") == "model" and ((change.get("entry") or {}).get("kind") == "stance"
-                                           or change.get("kind") == "stance")
+    if p.get("target") != "model":
+        return False
+    if (change.get("entry") or {}).get("kind") == "stance" or change.get("kind") == "stance":
+        return True
+    if change.get("op") != "add" and change.get("model") == "self":
+        entry = m.find(m.load("self", models_root), change.get("id", ""))
+        return bool(entry and entry.get("kind") == "stance")
+    return False
 
 
 def _select(proposals: list[dict], which: str) -> list[dict]:
@@ -121,13 +140,16 @@ def apply(project_dir: Path, which: str, models_root: Optional[Path] = None) -> 
         proposals = load_pending(project_dir)
         chosen = _select(proposals, which)
         applied, notes = [], []
+        resolved = _resolved(project_dir)
         for p in chosen:
-            if which == "all" and is_stance(p):
+            if which == "all" and is_stance(p, models_root):
                 notes.append(f"{p['id']}: a stance; apply it on its own (`daedalus reflect pending apply {p['id']}`)")
                 continue
             _apply_one(project_dir, p, models_root, notes)
             applied.append(p)
-        _save(project_dir, [p for p in proposals if p not in applied])
+            # Saved after each one, so a later failure can't leave an applied proposal queued
+            resolved.append((p.get("report"), p.get("report_proposal")))
+            _save(project_dir, [q for q in proposals if q not in applied], resolved=resolved)
     return applied, notes
 
 
@@ -136,7 +158,8 @@ def drop(project_dir: Path, which: str) -> list[dict]:
     with file_lock(path):
         proposals = load_pending(project_dir)
         chosen = _select(proposals, which)
-        _save(project_dir, [p for p in proposals if p not in chosen])
+        resolved = _resolved(project_dir) + [(p.get("report"), p.get("report_proposal")) for p in chosen]
+        _save(project_dir, [p for p in proposals if p not in chosen], resolved=resolved)
     return chosen
 
 
@@ -174,6 +197,11 @@ def _resolve(project_dir: Path, path: str) -> Path:
 
 
 def _apply_file(project_dir: Path, spec: dict) -> None:
+    from .check import allowed_file_target
+
+    why = allowed_file_target(project_dir, spec.get("path", ""))  # again at apply time
+    if why:
+        raise PendingError(why)
     path = _resolve(project_dir, spec["path"])
     raw = path.read_bytes() if path.exists() else b""
     newline = "\r\n" if b"\r\n" in raw else "\n"  # keep the file's line endings
@@ -190,7 +218,11 @@ def _apply_file(project_dir: Path, spec: dict) -> None:
 
 
 def _apply_permission(project_dir: Path, spec: dict) -> None:
-    path = _resolve(project_dir, spec.get("path") or ".claude/settings.json")
+    from .check import TOO_BROAD
+
+    if spec.get("path") not in (None, ".claude/settings.json") or TOO_BROAD.match(str(spec.get("allow", "")).strip()):
+        raise PendingError("A permission proposal adds one named command to the project's .claude/settings.json")
+    path = Path(project_dir) / ".claude" / "settings.json"
     data = read_json(path, {}) if path.exists() else {}
     if not isinstance(data, dict):
         raise PendingError(f"{path} is not a JSON object")
@@ -198,3 +230,23 @@ def _apply_permission(project_dir: Path, spec: dict) -> None:
     if spec["allow"] not in allow:
         allow.append(spec["allow"])
     atomic_write_text(path, json.dumps(data, indent=2) + "\n")
+
+
+def forget_queued(project_dir: Path, entry: dict) -> int:
+    """After `forget`, drop this project's queued proposals about the forgotten entry."""
+    text = m.normalise(entry.get("observation", ""))
+    path = pending_path(project_dir)
+    if not path.exists():
+        return 0
+    with file_lock(path):
+        proposals = load_pending(project_dir)
+
+        def about(p: dict) -> bool:
+            change = p.get("model") or {}
+            return change.get("model") == "user" and (
+                change.get("id") == entry.get("id")
+                or (text and m.normalise((change.get("entry") or {}).get("observation", "")) == text))
+
+        kept = [p for p in proposals if not about(p)]
+        _save(project_dir, kept)
+    return len(proposals) - len(kept)

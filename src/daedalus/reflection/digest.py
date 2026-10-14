@@ -24,7 +24,7 @@ from .fsutil import read_json, write_json
 from .paths import norm_path, owner_project, projects_dir, sessions_dir
 
 SCHEMA_VERSION = 1
-RETRY_WINDOW = 5  # tool calls after a failure in which the same call counts as a retry
+RETRY_WINDOW = 5  # default; reflection.retry_window in config
 
 KNOWN_TYPES = {
     "user", "assistant", "system", "attachment", "summary", "file-history-snapshot",
@@ -51,6 +51,15 @@ NOTICE_TOKENS = re.compile(r"<subagent_tokens>(\d+)</subagent_tokens>")
 COUNTERS = ("failures", "retries", "re_reads", "denied_by_classifier", "rejected_by_user",
             "approved_at_prompt", "interruptions", "interruptions_before_reply")
 SUMMARY_CHARS = 160
+# Details hold commands and error text. Anything that looks like a credential is redacted first.
+SECRET = re.compile(
+    r"(sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}"
+    r"|xox[abpr]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}"
+    r"|(?i:(?:bearer|token|password|passwd|secret|api[_-]?key)\s*[:=]?\s*)[^\s'\"]{6,})")
+
+
+def redact(text: str) -> str:
+    return SECRET.sub("[secret]", text)
 EXIT_CODE = re.compile(r"^Exit code (\d+)")
 INFERRED = ("retries", "re_reads", "interruptions_before_reply", "approved_at_prompt")
 
@@ -238,7 +247,7 @@ def _hit_rate(tokens: dict) -> Optional[float]:
     return round(tokens["cache_read"] / denominator, 4) if denominator else None
 
 
-def count_stream(s: Stream) -> dict:
+def count_stream(s: Stream, retry_window: int = RETRY_WINDOW) -> dict:
     """Counters, each with the event UUIDs behind it, and a short detail for each event."""
     events = {k: [] for k in COUNTERS}
     details: dict[str, dict] = {}
@@ -251,7 +260,7 @@ def count_stream(s: Stream) -> dict:
         result = s.results.get(call["id"])
         # A retry: the same call again within RETRY_WINDOW calls after a failure
         for f in failed_at:
-            if 0 < i - f <= RETRY_WINDOW and s.calls[f]["tool"] == call["tool"] \
+            if 0 < i - f <= retry_window and s.calls[f]["tool"] == call["tool"] \
                     and _call_key(s.calls[f]) == _call_key(call):
                 events["retries"].append(call["uuid"])
                 failed_at.remove(f)
@@ -265,21 +274,21 @@ def count_stream(s: Stream) -> dict:
             read_paths.discard(inp["file_path"])
         if result is None:
             continue
-        what = _call_key(call).split(":", 1)[-1][:SUMMARY_CHARS]
+        what = redact(_call_key(call).split(":", 1)[-1])[:SUMMARY_CHARS]
         if result["rejected"]:
             events["rejected_by_user"].append(result["uuid"])
             details[result["uuid"]] = {"tool": call["tool"], "call": what}
         elif result["classifier"]:
             events["denied_by_classifier"].append(result["uuid"])
             details[result["uuid"]] = {"tool": call["tool"], "call": what,
-                                       "summary": result["text"][:SUMMARY_CHARS]}
+                                       "summary": redact(result["text"])[:SUMMARY_CHARS]}
         elif result["is_error"]:
             events["failures"].append(result["uuid"])
             t["failures"] += 1
             failed_at.append(i)
             code = EXIT_CODE.match(result["text"])
             details[result["uuid"]] = {"tool": call["tool"], "call": what,
-                                       "summary": result["text"][:SUMMARY_CHARS],
+                                       "summary": redact(result["text"])[:SUMMARY_CHARS],
                                        **({"exit_code": int(code.group(1))} if code else {})}
         if result.get("prompted"):
             events["approved_at_prompt"].append(result["uuid"])
@@ -296,12 +305,13 @@ def count_stream(s: Stream) -> dict:
 # ---------- a session ----------
 
 
-def build_digest(session_file: Path, arms: Optional[dict] = None, previous: Optional[dict] = None) -> dict:
+def build_digest(session_file: Path, arms: Optional[dict] = None, previous: Optional[dict] = None,
+                 retry_window: int = RETRY_WINDOW) -> dict:
     """The digest of one session: the main transcript plus its subagent transcripts."""
     session_file = Path(session_file)
     skipped: dict = {"bad_lines": 0}
     main = parse_stream(iter_events(session_file, skipped))
-    counted = count_stream(main)
+    counted = count_stream(main, retry_window)
     subagents = []
     streams = [(f, parse_stream(iter_events(f, skipped), keep_sidechain=True)) for f in subagent_files(session_file)]
     if main.sidechain_events:
@@ -310,7 +320,7 @@ def build_digest(session_file: Path, arms: Optional[dict] = None, previous: Opti
     missing_usage = main.missing_usage
     for f, sub in streams:
         meta = read_json(f.with_suffix(".meta.json"), {}) if f else {}
-        sub_counted = count_stream(sub)
+        sub_counted = count_stream(sub, retry_window)
         subagents.append({
             "file": f.name if f else "(inline sidechain)",
             "agent_type": meta.get("agentType") if isinstance(meta, dict) else None,
@@ -326,7 +336,8 @@ def build_digest(session_file: Path, arms: Optional[dict] = None, previous: Opti
     stamps = sorted(main.timestamps)
     events = counted["events"]
     session_id = session_file.stem
-    arm = (arms or {}).get(session_id, {}).get("arm", "none")
+    assigned = (arms or {}).get(session_id, {})
+    arm = assigned.get("arm", "none")
     states = [{"file": session_file.name, **transcript_state(session_file)}]
     states += [{"file": f"{session_id}/subagents/{f.name}", **transcript_state(f)} for f in subagent_files(session_file)]
     return {
@@ -366,6 +377,9 @@ def build_digest(session_file: Path, arms: Optional[dict] = None, previous: Opti
         "skipped": {"unknown_types": unknown, "missing_usage": missing_usage, "bad_lines": skipped["bad_lines"]},
         "gaps": ["interruptions of a running tool call are not counted: never captured in a real transcript"],
         "model_summary_arm": arm,
+        # ab: drawn at random from the seed; on/off: forced by config, outside the comparison
+        "model_summary_mode": assigned.get("mode"),
+        "model_summary_seed": assigned.get("seed"),
         "transcripts": states,
         "notes": (previous or {}).get("notes", ""),
         "digested_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -420,8 +434,11 @@ def digest_project(project_dir: Path, claude_projects: Optional[Path] = None,
     """Digest the project's sessions that are new or have grown. Returns {written, skipped}."""
     from .arms import load_arms
 
+    from ..config import get_project_settings
+
     project_dir = Path(project_dir)
     arms = load_arms(project_dir)
+    window = int(get_project_settings(project_dir, "reflection").get("retry_window", RETRY_WINDOW))
     written, unchanged = [], []
     for f in sessions_for_project(project_dir, claude_projects, windows):
         if only_session and f.stem != only_session:
@@ -431,7 +448,7 @@ def digest_project(project_dir: Path, claude_projects: Optional[Path] = None,
         if is_current(previous, f) and (previous or {}).get("model_summary_arm") == arms.get(f.stem, {}).get("arm", "none"):
             unchanged.append(f.stem)
             continue
-        write_json(path, build_digest(f, arms, previous))
+        write_json(path, build_digest(f, arms, previous, window))
         written.append(f.stem)
     return {"written": written, "unchanged": unchanged}
 

@@ -37,7 +37,7 @@ def atomic_write_text(path: Path, text: str, newline: str = "\n") -> None:
             f.write(text)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp, path)
+        _replace(tmp, path)
     except BaseException:
         try:
             os.unlink(tmp)
@@ -46,13 +46,25 @@ def atomic_write_text(path: Path, text: str, newline: str = "\n") -> None:
         raise
 
 
+def _replace(src: str, dst: Path, attempts: int = 10) -> None:
+    """os.replace, retried briefly: on Windows it fails while another process has the file open."""
+    for i in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == attempts - 1:
+                raise
+            time.sleep(0.05 * (i + 1))
+
+
 def write_json(path: Path, data: Any) -> None:
     atomic_write_text(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
 def read_json(path: Path, default: Any = None) -> Any:
     try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
+        return json.loads(Path(path).read_text(encoding="utf-8-sig"))  # a BOM from Notepad or PowerShell
     except (OSError, json.JSONDecodeError):
         return default
 

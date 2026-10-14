@@ -41,7 +41,12 @@ Run it only when the user has said to (inhale asks: run now, or defer?). Deferri
    `<level>-<period>.verdicts.json`: `{"R1": {"verdict": "...", "note": "..."}}`." Proposals he finds contradicted go back to
    delphi to correct or drop; then check again.
 
-7. **Record the run.** `daedalus reflect done <level> <period>`.
+   Add to the prompt: "Check that no aspiration is presented as a behavior, and that each
+   stance's `identity_checked` quotes really support it."
+
+7. **Render and record.** `daedalus reflect render <report> --bundle <bundle>` writes the Markdown
+   the user reads, with the verdicts and without contradicted proposals; it refuses until every
+   proposal has a verdict. Then `daedalus reflect done <level> <period>`.
 
 8. **Present.** Briefly: the period, the headline findings, and each proposal with its label and
    Momus's verdict. At the monthly level, the Evolution section (how the models changed and

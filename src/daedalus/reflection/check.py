@@ -150,7 +150,12 @@ def check_report(project_dir: Path, report: dict, models_root: Optional[Path] = 
     for i, p in enumerate(report.get("proposals") or []):
         result.proposals += 1
         where = f"proposal {p.get('id') or i + 1}"
-        is_seed = _is_seed(p)
+        problems = seed_problems(p) if p.get("target") == "model" else None
+        is_seed = problems is not None
+        for problem in problems or []:
+            err(f"{where}: {problem}")
+        if is_seed and p.get("label") == "shown" and not seed_quotes_the_user(p):
+            err(f"{where}: a seed is shown only when it quotes the user's own words (a memory note)")
         check_citations(where, p.get("text", ""), require=not is_seed)
         if p.get("label") not in m.LABELS:
             err(f"{where}: label must be one of {m.LABELS}")
@@ -163,12 +168,17 @@ def check_report(project_dir: Path, report: dict, models_root: Optional[Path] = 
             spec = p.get("file") or {}
             if spec.get("op") not in FILE_OPS:
                 err(f"{where}: file op must be one of {FILE_OPS}")
-            if not _allowed_path(project_dir, spec.get("path", "")):
-                err(f"{where}: {spec.get('path')} is outside the project and Claude Code's memory notes")
+            why = allowed_file_target(project_dir, spec.get("path", ""))
+            if why:
+                err(f"{where}: {why}")
         elif target == "permission":
             spec = p.get("permission") or {}
             if not spec.get("allow"):
                 err(f"{where}: a permission proposal names the rule to allow")
+            elif TOO_BROAD.match(str(spec["allow"]).strip()):
+                err(f"{where}: {spec['allow']} would allow a whole tool; name the command")
+            if spec.get("path") not in (None, ".claude/settings.json"):
+                err(f"{where}: permission proposals edit only the project's .claude/settings.json")
         elif target == "gameplan":
             spec = p.get("gameplan") or {}
             if spec.get("kind") not in GAMEPLAN_KINDS or not spec.get("task"):
@@ -179,6 +189,13 @@ def check_report(project_dir: Path, report: dict, models_root: Optional[Path] = 
             if not isinstance(report.get(key), list):
                 err(f"monthly report: '{key}' must be a list (empty when there is nothing)")
         if bundle:
+            covered = {a.get("id") for a in report.get("aspiration_movement") or [] if isinstance(a, dict)}
+            for aid in bundle.get("aspirations_active") or []:
+                if aid not in covered:
+                    err(f"monthly report: aspiration_movement says nothing about {aid}")
+            for a in report.get("aspiration_movement") or []:
+                if isinstance(a, dict) and a.get("moved"):
+                    check_citations(f"aspiration_movement {a.get('id')}", a.get("text", ""))
             for key in ("lineage", "unmoved_aspirations", "model_dissents"):
                 expected = sorted(bundle.get(key) or [])
                 if isinstance(report.get(key), list) and sorted(report[key]) != expected:
@@ -196,28 +213,85 @@ def _same(a: Any, b: Any) -> bool:
     return a == b
 
 
-def _is_seed(p: dict) -> bool:
-    """A first-run seed: every evidence item quotes a source file (identity or memory note)."""
-    ev = ((p.get("model") or {}).get("entry") or {}).get("evidence") or []
-    return bool(ev) and all(isinstance(e, dict) and e.get("source") and e.get("quote") for e in ev)
+def identity_files() -> list[Path]:
+    """Both copies of the identity: the package's, and the one init installs in the config dir."""
+    from ..config import get_config_dir
+
+    package = Path(__file__).resolve().parent.parent / "identity" / "data"
+    return [d / name for d in (package, get_config_dir()) for name in ("identity.md", "identity.json")]
 
 
-def _allowed_path(project_dir: Path, path: str) -> bool:
-    if not path:
+def _is_memory_note(path: Path) -> bool:
+    try:
+        rel = path.resolve().relative_to((claude_dir() / "projects").resolve())
+    except (ValueError, OSError):
         return False
-    target = Path(path)
+    return len(rel.parts) == 3 and rel.parts[1] == "memory" and rel.suffix == ".md"
+
+
+def _squash(text: str) -> str:
+    return " ".join(text.split())
+
+
+def seed_problems(p: dict) -> Optional[list[str]]:
+    """
+    None when the proposal is not a seed. Otherwise the list of reasons it is not a valid one
+    (empty when it is): every evidence item quotes an identity file or a Claude Code memory note,
+    and the quote is really in that file.
+    """
+    ev = ((p.get("model") or {}).get("entry") or {}).get("evidence") or []
+    if not ev or not all(isinstance(e, dict) and "source" in e for e in ev):
+        return None
+    problems = []
+    identities = {f.resolve() for f in identity_files()}
+    for e in ev:
+        source = Path(str(e.get("source", ""))).expanduser()
+        if not (source.resolve() in identities or _is_memory_note(source)):
+            problems.append(f"seed source {e.get('source')} is not an identity file or a Claude Code memory note")
+            continue
+        try:
+            text = source.read_text(encoding="utf-8-sig")
+        except OSError:
+            problems.append(f"seed source {e.get('source')} can't be read")
+            continue
+        if not e.get("quote") or _squash(str(e["quote"])) not in _squash(text):
+            problems.append(f"seed quote is not in {e.get('source')}")
+    return problems
+
+
+def seed_quotes_the_user(p: dict) -> bool:
+    """A seed is `shown` only when it quotes the user's own words: a memory note, not the identity."""
+    ev = ((p.get("model") or {}).get("entry") or {}).get("evidence") or []
+    return bool(ev) and all(_is_memory_note(Path(str(e.get("source", ""))).expanduser()) for e in ev)
+
+
+# Where a file proposal may write: skills, agents, CLAUDE.md, and memory notes. Never the identity.
+FILE_TARGETS = ("CLAUDE.md", ".claude/skills/", ".claude/agents/")
+
+
+def allowed_file_target(project_dir: Path, path: str) -> Optional[str]:
+    """None when a file proposal may write `path`; otherwise why not."""
+    if not path:
+        return "no path"
+    target = Path(path).expanduser()
     if not target.is_absolute():
         target = Path(project_dir) / target
     target = target.resolve()
-    roots = [Path(project_dir).resolve()]
-    projects = (claude_dir() / "projects").resolve()
+    if target in {f.resolve() for f in identity_files()}:
+        return f"{path} is an identity file; reflection never edits it"
+    if _is_memory_note(target):
+        return None
     try:
-        rel = target.relative_to(projects)
-        if len(rel.parts) >= 3 and rel.parts[1] == "memory":
-            return True
+        rel = target.relative_to(Path(project_dir).resolve()).as_posix()
     except ValueError:
-        pass
-    return any(target == r or r in target.parents for r in roots)
+        return f"{path} is outside the project"
+    if rel == "CLAUDE.md" or rel.endswith("/CLAUDE.md") or any(
+            rel.startswith(prefix) for prefix in FILE_TARGETS[1:]):
+        return None
+    return f"{path} is not a skill, agent, CLAUDE.md or memory note"
+
+
+TOO_BROAD = re.compile(r"^(\*|[A-Za-z]+|[A-Za-z]+\(\*\)|[A-Za-z]+\(\s*\*?:?\*\s*\))$")
 
 
 def _check_model_proposal(where, p, user, self_, behaviors_in_report, scope, err, is_seed) -> None:
@@ -235,6 +309,9 @@ def _check_model_proposal(where, p, user, self_, behaviors_in_report, scope, err
     existing = m.find(data, change.get("id", "")) if op != "add" else None
     if op != "add" and existing is None:
         err(f"{where}: no entry {change.get('id')} in the {model} model")
+        return
+    if existing is not None and existing.get("kind") == "aspiration":
+        err(f"{where}: {existing['id']} is an aspiration: Daedalus's own, not proposed against (the user may delete it)")
         return
     subject = entry if op == "add" else {**existing, **(change.get("changes") or {})}
     entry_scope = subject.get("scope", "any")
@@ -256,8 +333,14 @@ def _check_model_proposal(where, p, user, self_, behaviors_in_report, scope, err
         if m.is_tombstoned(data, entry.get("id"), entry.get("observation")):
             err(f"{where}: that observation was deleted or forgotten by the user; it is not proposed again")
         evidence = entry.get("evidence") or []
+        if not evidence:
+            err(f"{where}: a new entry cites its evidence")
     else:
         evidence = change.get("evidence") or []
+    if model == "self" and op in ("add", "affirm") and not is_seed:
+        ids = (entry if op == "add" else change).get("model_ids")
+        if not ids or not all(isinstance(i, str) and i for i in ids):
+            err(f"{where}: a self {op} records the model IDs of the sessions behind it (model_ids)")
     if model == "user":
         category = (subject.get("category") or "").lower()
         if category in m.USER_FORBIDDEN_CATEGORIES:
@@ -289,9 +372,28 @@ def _check_model_proposal(where, p, user, self_, behaviors_in_report, scope, err
         elif kind == "stance":
             if change.get("identity_conflict") is not False:
                 err(f"{where}: a stance must state identity_conflict: false (a stance never conflicts with the identity)")
+            _check_identity_quotes(where, change.get("identity_checked"), err)
+        if kind == "behavior" and evidence and all(
+                isinstance(e, dict) and set(e) == {"aspiration"} for e in evidence):
+            err(f"{where}: a behavior rests on the record, not on an aspiration alone (an aspiration filed as a behavior?)")
         if p.get("label") == "inferred" and kind == "behavior" and not evidence and op == "add":
             err(f"{where}: a behavior entry cites the digests it rests on")
     if op == "affirm":
         new = {e.get("session") for e in evidence if isinstance(e, dict)} - {None}
         if not new - m.evidence_sessions(existing):
             err(f"{where}: an affirmation must cite a session not already in {existing['id']}'s evidence")
+
+
+def _check_identity_quotes(where: str, checked: Any, err) -> None:
+    """A stance names the identity clauses it was checked against, quoted, so the check can see them."""
+    if not isinstance(checked, list) or not checked:
+        err(f"{where}: a stance quotes the identity clauses it is consistent with (identity_checked: [{{file, quote}}])")
+        return
+    for item in checked:
+        name = Path(str((item or {}).get("file", ""))).name if isinstance(item, dict) else ""
+        quote = (item or {}).get("quote", "") if isinstance(item, dict) else ""
+        copies = [f for f in identity_files() if f.name == name and f.exists()]
+        if not copies:
+            err(f"{where}: identity_checked names {name or '?'}, which is not an identity file")
+        elif not quote or not any(_squash(quote) in _squash(f.read_text(encoding="utf-8-sig")) for f in copies):
+            err(f"{where}: identity_checked quote is not in {name}")

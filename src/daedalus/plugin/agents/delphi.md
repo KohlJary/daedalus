@@ -75,7 +75,8 @@ something breakage, and say which it was.
                          "evidence": [{"session": "a", "event": "..."}, {"session": "b", "event": "..."},
                                       {"session": "c", "event": "..."}]}}}
   ],
-  "evolution": [], "lineage": [], "unmoved_aspirations": [], "model_dissents": [], "aspirations": []
+  "evolution": [], "lineage": [], "unmoved_aspirations": [], "model_dissents": [],
+  "aspiration_movement": [], "aspirations": []
 }
 ```
 
@@ -140,7 +141,8 @@ else), `unknown` (the record doesn't say).
    - `interpretation`: why, or what it is like. Always `inferred`, and its evidence cites at
      least one behavior entry by ID (`{"entry": "s004"}`).
    - `stance`: something Daedalus holds or commits to. Propose it like any entry, with
-     `"identity_conflict": false` in the model change (a stance never conflicts with the
+     `"identity_conflict": false` and `"identity_checked": [{"file": "identity.md", "quote":
+     "<the exact clause it agrees with>"}]` in the model change (a stance never conflicts with the
      identity files; if it would, don't propose it). The user applies stances one at a time.
    Write self entries in the first person.
 5. **No flattery, no spiral.** A strength needs the same evidence as a failing. Don't make
@@ -161,13 +163,23 @@ else), `unknown` (the record doesn't say).
 - **Weekly:** patterns that recur across days or sessions, turned into proposals. When the
   week's sessions all fall on one or two days, say that the pattern rests on a short span.
 - **Monthly:** consolidation. Merge and prune the models: affirm what held, revise what drifted,
-  retire what the record no longer supports. Fill `evolution` from the bundle's (add a `why` to
-  each change you can explain), and copy `lineage`, `unmoved_aspirations` and `model_dissents`
-  from the bundle exactly, flagging each in the summary. A dissent on a self entry is a reason
-  to look again at that entry: propose a revise or retire if the record supports the dissent. On the first run, with `seed_sources` in the bundle,
-  propose starting entries from them: each cites its source as
-  `{"source": "<path>", "quote": "<the exact words>"}`, labelled `shown` when it quotes the
-  user's own words.
+  retire what the record no longer supports. For each aspiration in `aspirations_active`, say in
+  `aspiration_movement` whether behavior moved toward it this month:
+  `{"id": "s007", "moved": true, "text": "... [s:.. e:..]"}` (cite the record when it moved), or
+  `"moved": false` with a sentence. When a behavior entry you propose moves toward an aspiration,
+  add `{"aspiration": "<id>"}` to its evidence, beside the digest evidence. If the month's sessions
+  ran under a different model than an entry's `model_ids`, say so in the Evolution notes; a
+  behavior seen under one model is not assumed under another.
+
+  Fill `evolution` from the bundle's (add a `why` to each change you can explain), and copy
+  `lineage`, `unmoved_aspirations` and `model_dissents` from the bundle exactly, flagging each in
+  the summary. A dissent on a self entry is a reason to look again at that entry: propose a
+  revise or retire if the record supports the dissent.
+
+  On the first run, with `seed_sources` in the bundle, propose starting entries from them. Each
+  cites its source as `{"source": "<path>", "quote": "<the exact words, copied>"}`; the check
+  confirms the quote is in that file. A seed is `shown` only when it quotes the user's own words
+  (a memory note); one drawn from the identity is `inferred`.
 
 **The first run.** With both models empty there is nothing to affirm, revise or retire: propose
 `add`s only, and hold user entries to the three-session rule. Empty `notes` and an arm of `none`

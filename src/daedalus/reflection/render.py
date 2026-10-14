@@ -14,12 +14,21 @@ def render_report(report: dict, verdicts: dict | None = None) -> str:
     if not report.get("findings"):
         lines.append("No findings.")
     lines += ["", "## Proposals", ""]
+    shown, left_out = 0, []
     for p in report.get("proposals") or []:
-        v = verdicts.get(p.get("id")) or {}
-        verdict = f" Momus: {v.get('verdict')}." if isinstance(v, dict) and v.get("verdict") else ""
-        lines.append(f"- **{p.get('id', '')}** [{p.get('target')}, {p.get('label')}]: {p.get('text', '')}{verdict}")
-    if not report.get("proposals"):
+        v = verdicts.get(p.get("id"))
+        v = v if isinstance(v, dict) else {"verdict": v}
+        if v.get("verdict") == "contradicted":
+            left_out.append(p.get("id", ""))
+            continue
+        note = f" ({v['note']})" if v.get("note") else ""
+        lines.append(f"- **{p.get('id', '')}** [{p.get('target')}, {p.get('label')}; Momus: {v.get('verdict')}{note}]: "
+                     f"{p.get('text', '')}")
+        shown += 1
+    if not shown:
         lines.append("No proposals.")
+    if left_out:
+        lines.append(f"\nLeft out, contradicted by Momus: {', '.join(left_out)}.")
     if report.get("level") == "monthly":
         lines += ["", "## Evolution", ""]
         changes = report.get("evolution") or []

@@ -20,47 +20,52 @@
       {
         "id": "T-r1",
         "title": "Real fixtures: scrubbed transcripts with rejection, interrupts, classifier denials, failures, subagent",
-        "status": "in_progress",
+        "status": "done",
         "details": "",
         "updated": "2026-10-14",
-        "edict": "0010"
+        "edict": "0010",
+        "resolution": "Fixtures from real transcripts, scrubbed by tests/fixtures/reflection/scrub.py (salted hashes): Kohl's capture session (rejection, mid-reply interrupt, two pre-reply interrupts) and a window of 5e51440f (8 failures, 2 classifier denials, 5 prompt approvals, a Momus subagent), plus two synthetic events. Gap: interrupting a running tool call could not be captured (foreground sleep blocked, long commands backgrounded); its counter is left out and the digest records the gap."
       },
       {
         "id": "T-r2",
         "title": "Digests, due, tick, doctor cleanup warning",
-        "status": "in_progress",
+        "status": "done",
         "details": "",
         "updated": "2026-10-14",
-        "edict": "0010"
+        "edict": "0010",
+        "resolution": "digest.py, due.py, tick.py, doctor check_undigested_sessions. Backfilled this repo's 4 sessions."
       },
       {
         "id": "T-r3",
         "title": "check, pending queue, gameplan handover",
-        "status": "in_progress",
+        "status": "done",
         "details": "",
         "updated": "2026-10-14",
-        "edict": "0010"
+        "edict": "0010",
+        "resolution": "check.py, pending.py; gameplan pending gained a new-task kind. Momus D1-D5 fixed: seed provenance, file/permission target allowlist, render after verdicts, atomic apply with a resolved ledger, stance revise not batchable."
       },
       {
         "id": "T-r4",
         "title": "User and self models: history, decay, hand edits, forget, scope, stances, aspirations, dissents",
-        "status": "in_progress",
+        "status": "done",
         "details": "",
         "updated": "2026-10-14",
-        "edict": "0010"
+        "edict": "0010",
+        "resolution": "models.py: history, decay on read, hash-detected hand edits, hashed tombstones, forget purge/retain, scope, stances with quoted identity clauses, aspirations, self-entry dissents."
       },
       {
         "id": "T-r5",
         "title": "delphi agent, /reflect skill, inhale/exhale steps, A/B arm, runners and employer guardrail",
-        "status": "in_progress",
+        "status": "done",
         "details": "",
         "updated": "2026-10-14",
-        "edict": "0010"
+        "edict": "0010",
+        "resolution": "delphi agent, /reflect skill, inhale/exhale steps, arms.py, runners.py (employer guardrail; headless bounded tools, 2 attempts). Dry run on real digests passed check on the second try; its notes shaped details, approved_at_prompt and delphi's instructions."
       },
       {
         "id": "T-r6",
         "title": "Windows CI job, docs, Momus review, PR",
-        "status": "pending",
+        "status": "in_progress",
         "details": "",
         "updated": "2026-10-14",
         "edict": "0010"
