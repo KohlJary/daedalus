@@ -5,7 +5,23 @@ committed gameplan, `.daedalus/roadmap/gameplan.json`: run `daedalus gameplan sh
 and `daedalus doctor`. This file carries what the gameplan can't say. See
 `docs/edicts/README.md`.*
 
-**Last updated:** 2026-10-14, by the TUI-design Daedalus session (the Ariadne/experiment and memory-side sessions' notes follow)
+**Last updated:** 2026-10-14, by the reflection session (edict 0010); the TUI-design, Ariadne/experiment and memory-side sessions' notes follow
+
+## Reflection session (2026-10-14)
+- **Edict 0010 written with Kohl** (in chat and with Claude in chat), amended twice: user/self
+  models differ (scope, forget, stances, lineage), and aspirations, asked cold, as a source of
+  entropy. On main: df976a8, 2ef8143, 4ff6a1c.
+- **Built on feat/0010-reflection, PR #39**, CI green on Linux and windows-latest. Workstream
+  `reflection` tracks it (T-r1..T-r8; T-r7 local runner waits on T-e5).
+- **Checked three ways:** hand counts on real (scrubbed) transcripts; a delphi dry run on this
+  repo's four sessions (passed check on the second try; its notes changed the digest); Momus's
+  criterion-by-criterion review (13 defects, all fixed with tests).
+- **Open questions for Kohl** (in the PR): keep per-event details (commands, error text, secrets
+  redacted) in digests, or amend the edict; one PR vs two.
+- **Not done:** no real reflection has run (nothing is due until 2026-10-15); the benchmark for
+  whether reflection works is still to be designed (Kohl: separately from the edict). The
+  shipped identity text calls Kohl "he"; a fix awaits Kohl's go-ahead.
+- Digests of this repo's sessions are backfilled in the main checkout's .daedalus/reflection/.
 
 ## TUI design session (2026-10-14)
 - **Edicts 0011 (sources and roadmap intake) and 0012 (the TUI)** are accepted and tracked as p9-sources

@@ -111,6 +111,12 @@ def config_cmd(key: str, value: str, project: bool):
         click.echo(val if val else "(not set)")
     else:
         # Set value
+        from ..config import setting_refusal
+
+        refusal = setting_refusal(config, key, value)
+        if refusal:
+            click.echo(refusal, err=True)
+            raise SystemExit(1)
         if set_nested_value(config, key, value):
             save_config(config)
             click.echo(f"Set {key} = {value}")
@@ -253,8 +259,23 @@ def edict_show(number: str):
 @click.option("--why", required=True, help="Why")
 @click.option("--instead", required=True, help="What it would do instead")
 def edict_dissent(number: str, agent: str, objection: str, why: str, instead: str):
-    """File a dissent on an edict (edict 0003). Work on it pauses until the owner resolves it."""
+    """File a dissent on an edict (edict 0003). Work on it pauses until the owner resolves it.
+
+    NUMBER may instead be a self-model entry ID (e.g. s004): that dissent is recorded for the next
+    monthly reflection and blocks nothing (edict 0010).
+    """
     from ..edicts import EdictError, file_dissent
+    from ..reflection import models as rm
+
+    if rm.SELF_ENTRY_ID.match(number):
+        try:
+            d = rm.file_dissent(number, agent, objection, why, instead)
+        except rm.ModelError as e:
+            click.echo(str(e), err=True)
+            raise SystemExit(1)
+        click.echo(f"Recorded dissent {d['id']} on self entry {number}. It appears in the next monthly reflection; "
+                   "nothing is paused.")
+        return
 
     try:
         path = file_dissent(Path.cwd(), number, agent, objection, why, instead)
@@ -941,6 +962,11 @@ def gameplan_pending_drop(proposal_id: str):
     from .commands import drop_pending
 
     drop_pending(Path.cwd(), proposal_id)
+
+
+from .reflect import reflect as _reflect  # noqa: E402
+
+main.add_command(_reflect)
 
 
 if __name__ == "__main__":

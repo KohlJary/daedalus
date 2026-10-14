@@ -1,0 +1,110 @@
+{
+  "description": "Multi-phase plans currently in flight. Each phase references roadmap item ids; the activePhase section breaks the current phase into concrete tasks with status. Survives conversation compactions \u2014 a fresh session can pick up by reading this file.",
+  "phases": [
+    {
+      "id": "p7-reflection",
+      "title": "Reflection over session logs: digests, delphi, user/self models",
+      "status": "in_progress",
+      "roadmapItems": [],
+      "notes": "",
+      "edict": "0010"
+    }
+  ],
+  "activePhase": {
+    "id": "p7-reflection",
+    "title": "Reflection over session logs: digests, delphi, user/self models",
+    "started": "2026-10-14",
+    "goal": "Build edict 0010 to its acceptance criteria: digests that survive cleanup, due logic, delphi with checked citations, Momus-reviewed proposals applied only by the user, user and self models with history and aspirations, Windows CI.",
+    "sequencing": "Fixtures first (real transcripts, scrubbed), then digests and due (the benchmark's baseline), then check/pending/models, then delphi, skills and CLI. Local runner waits on T-e5.",
+    "tasks": [
+      {
+        "id": "T-r1",
+        "title": "Real fixtures: scrubbed transcripts with rejection, interrupts, classifier denials, failures, subagent",
+        "status": "done",
+        "details": "",
+        "updated": "2026-10-14",
+        "edict": "0010",
+        "resolution": "Fixtures from real transcripts, scrubbed by tests/fixtures/reflection/scrub.py (salted hashes): Kohl's capture session (rejection, mid-reply interrupt, two pre-reply interrupts) and a window of 5e51440f (8 failures, 2 classifier denials, 5 prompt approvals, a Momus subagent), plus two synthetic events. Gap: interrupting a running tool call could not be captured (foreground sleep blocked, long commands backgrounded); its counter is left out and the digest records the gap."
+      },
+      {
+        "id": "T-r2",
+        "title": "Digests, due, tick, doctor cleanup warning",
+        "status": "done",
+        "details": "",
+        "updated": "2026-10-14",
+        "edict": "0010",
+        "resolution": "digest.py, due.py, tick.py, doctor check_undigested_sessions. Backfilled this repo's 4 sessions."
+      },
+      {
+        "id": "T-r3",
+        "title": "check, pending queue, gameplan handover",
+        "status": "done",
+        "details": "",
+        "updated": "2026-10-14",
+        "edict": "0010",
+        "resolution": "check.py, pending.py; gameplan pending gained a new-task kind. Momus D1-D5 fixed: seed provenance, file/permission target allowlist, render after verdicts, atomic apply with a resolved ledger, stance revise not batchable."
+      },
+      {
+        "id": "T-r4",
+        "title": "User and self models: history, decay, hand edits, forget, scope, stances, aspirations, dissents",
+        "status": "done",
+        "details": "",
+        "updated": "2026-10-14",
+        "edict": "0010",
+        "resolution": "models.py: history, decay on read, hash-detected hand edits, hashed tombstones, forget purge/retain, scope, stances with quoted identity clauses, aspirations, self-entry dissents."
+      },
+      {
+        "id": "T-r5",
+        "title": "delphi agent, /reflect skill, inhale/exhale steps, A/B arm, runners and employer guardrail",
+        "status": "done",
+        "details": "",
+        "updated": "2026-10-14",
+        "edict": "0010",
+        "resolution": "delphi agent, /reflect skill, inhale/exhale steps, arms.py, runners.py (employer guardrail; headless bounded tools, 2 attempts). Dry run on real digests passed check on the second try; its notes shaped details, approved_at_prompt and delphi's instructions."
+      },
+      {
+        "id": "T-r6",
+        "title": "Windows CI job, docs, Momus review, PR",
+        "status": "done",
+        "details": "",
+        "updated": "2026-10-14",
+        "edict": "0010",
+        "resolution": "PR #39 (commits c4a2ec8, c524e37, 5845e75). CI green on Linux (3.10, 3.12 x3 TZ) and windows-latest (94 passed; the drive-letter test ran there). Momus: all 13 implementation defects fixed with tests."
+      },
+      {
+        "id": "T-r7",
+        "title": "local runner (needs T-e5)",
+        "status": "pending",
+        "details": "Blocked on T-e5 local model backends. Until then local behaves as inhale.",
+        "updated": "2026-10-14",
+        "edict": "0010"
+      },
+      {
+        "id": "T-r8",
+        "title": "Verify CLAUDE_CONFIG_DIR redirects transcripts",
+        "status": "done",
+        "details": "Edict: confirm before building and record the version. Momus found only third-party sources.",
+        "updated": "2026-10-14",
+        "edict": "0010",
+        "resolution": "Read from Claude Code 2.1.300's bundle (not run, to avoid copying credentials): the projects dir is (CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')) + 'projects', and transcripts are written there as <session>.jsonl. paths.claude_dir() matches."
+      },
+      {
+        "id": "T-r9",
+        "title": "Experiment log (0010 amendment 3) and docs/experiments/reflection.md",
+        "status": "done",
+        "details": "",
+        "updated": "2026-10-14",
+        "edict": "0010",
+        "resolution": "explog.py: runs (reflect done), resolutions (pending apply/drop), arms, monthly model changes; allowlisted fields, safe strings only; reflect log / log export. Narrative in docs/experiments/reflection.md with the baseline, fixture capture, dry run 1 and Momus's review."
+      }
+    ],
+    "deferred": [],
+    "edict": "0010"
+  },
+  "owner": {
+    "id": "reflection",
+    "kind": "session",
+    "git_author": "Daedalus"
+  },
+  "claims": []
+}

@@ -351,6 +351,27 @@ def check_board_ask_rule(project_dir: Path) -> list[Finding]:
                     "ask the owner first. Run `daedalus hydrate` or add it to .claude/settings.json.")]
 
 
+def check_undigested_sessions(project_dir: Path) -> list[Finding]:
+    """Session transcripts Claude Code will delete soon that reflection hasn't digested (edict 0010)."""
+    if not (Path(project_dir) / ".daedalus").is_dir():
+        return []
+    from .reflection.tick import cleanup_period_days, undigested_near_cleanup
+
+    warning = int(get_project_settings(project_dir, "reflection")["cleanup_warning_days"])
+    try:
+        soon = undigested_near_cleanup(project_dir, warning)
+    except OSError:
+        return []
+    if not soon:
+        return []
+    first = min(left for _, left in soon)
+    return [Finding(
+        "undigested-sessions-near-cleanup",
+        f"{len(soon)} session transcript(s) not yet digested will be deleted by Claude Code's cleanup "
+        f"(cleanupPeriodDays {cleanup_period_days()}) in {first} day(s) or less. Run `daedalus reflect digest`.",
+    )]
+
+
 def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Finding], list[str]]:
     """(findings, hints). Hints are informational and never fail the run."""
     from . import workstreams as ws
@@ -396,6 +417,7 @@ def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Fi
         findings += check_unreferenced_edicts(edicts, list(plans.values()))
 
     findings += check_board_ask_rule(project_dir)
+    findings += check_undigested_sessions(project_dir)
     findings += check_project_map(project_dir)
     findings += check_empty_templates_read(project_dir, settings["stale_task_days"], today=today)
     return findings, hints

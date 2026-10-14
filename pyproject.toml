@@ -76,3 +76,8 @@ daedalus = [
     "plugin/**/*",
     "labyrinth/queries/*.scm",
 ]
+
+[tool.pytest.ini_options]
+markers = [
+    "reflection: reflection over session logs (edict 0010); also run on Windows in CI",
+]

@@ -36,9 +36,12 @@ Thumbs.db
 # Daedalus project memory (local, not shared)
 .daedalus/
 
-# Daedalus: commit the gameplan, keep the rest of .daedalus/ local (edict 0007)
+# Daedalus: commit the gameplan and workstream plans; everything else in .daedalus/ (including
+# pending proposals) stays local (edicts 0007, 0008)
 !.daedalus/
 .daedalus/*
 !.daedalus/roadmap/
 .daedalus/roadmap/*
 !.daedalus/roadmap/gameplan.json
+!.daedalus/gameplans/
+.daedalus/gameplans/*.pending.json

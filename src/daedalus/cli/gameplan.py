@@ -298,6 +298,8 @@ def proposal_key(proposal: dict[str, Any]) -> str:
         return f"phase:{proposal['phase']['id']}"
     if kind == "roadmap-status":
         return f"roadmap:{proposal['item']}"
+    if kind == "new-task":
+        return f"new-task:{proposal['task']}"
     return f"task:{proposal['task']}"
 
 
@@ -308,6 +310,8 @@ def describe_proposal(proposal: dict[str, Any]) -> str:
         return f"new phase {ph['id']} ({ph.get('status', 'planned')}, {len(ph.get('tasks', []))} tasks): {ph.get('title', '')}"
     if kind == "roadmap-status":
         return f"roadmap {proposal['item']} -> {proposal['status']}"
+    if kind == "new-task":
+        return f"new task {proposal['task']}: {proposal.get('title', '')}"
     return f"{proposal['task']} -> {proposal['status']}"
 
 
@@ -384,6 +388,9 @@ def apply_pending(project_dir: Path, data: dict[str, Any], which: str) -> list[d
                     phase[key] = spec[key]
         elif kind == "roadmap-status":
             roadmap_changes.append(p)
+        elif kind == "new-task":
+            # From reflection (edict 0010): new work a pattern in the session logs calls for
+            add_task(data, p["task"], p.get("title", ""), details=p.get("details", ""))
         else:
             set_task_status(data, p["task"], p["status"], resolution=p.get("resolution", ""))
     if roadmap_changes:
