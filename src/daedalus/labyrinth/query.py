@@ -11,7 +11,8 @@ these queries:
 - The analyzer records calls made through an object (`orch.process_pending()`) by bare name; for Python,
   the query graph re-parses each def to tell `obj.name()` from a plain `name()`. A plain call to a name
   defined in the same module links to that definition. A call through an object links to every node
-  with that name when there are at most `max_candidates`; past the cap, only same-module definitions
+  with that name when there are at most `max_candidates` (for callers outside tests, definitions inside
+  test files don't count: test doubles are injected at runtime); past the cap, only same-module definitions
   are linked, and if there are none the name is skipped and reported. This favours recall: what a
   change affects, and which tests reach it.
 
@@ -31,6 +32,13 @@ from typing import Dict, List, Set, Tuple
 from .pathfinding import CallGraph, GraphNode
 
 SKIP_DIRS = {"node_modules", "venv", ".venv", "env", "__pycache__", ".git", "dist", "build", ".mind-palace"}
+
+
+def in_test_file(file: str) -> bool:
+    """Defined in test code (tests/, test_*.py, *_test.py, conftest.py)."""
+    name = Path(file).name
+    return (file.startswith("tests/") or "/tests/" in file or name.startswith("test_")
+            or name.endswith("_test.py") or name == "conftest.py")
 
 
 class GitError(RuntimeError):
@@ -113,6 +121,9 @@ def build_query_graph(project_root: Path, max_candidates: int = 10) -> QueryGrap
                 targets.add(local)
                 continue
             candidates = by_simple.get(call.split(".")[-1], [])
+            if not in_test_file(node["file"]):
+                # Production code never calls into test files statically; test doubles are injected at runtime
+                candidates = [c for c in candidates if not in_test_file(raw[c]["file"])]
             if 0 < len(candidates) <= max_candidates:
                 targets.update(candidates)
                 ambiguous += len(candidates) > 1

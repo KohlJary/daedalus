@@ -252,3 +252,13 @@ def test_a_plain_call_links_only_the_local_function(project):
     code, out = run("callees", "b.plain_caller")
     linked = {line.split()[0] for line in out.splitlines() if line.startswith("    ")}
     assert linked == {"pkg.b.run"}
+
+
+def test_production_callees_exclude_test_doubles(project):
+    write(project, "pkg/judge.py", "class Judge:\n    def review(self, d):\n        return True\n\n\ndef gate(reviewer, d):\n    return reviewer.review(d)\n")
+    write(project, "tests/test_gate.py", "from pkg.judge import gate\n\n\nclass Stub:\n    def review(self, d):\n        return False\n\n\ndef test_gate():\n    assert gate(Stub(), 1) is False\n")
+    code, out = run("callees", "judge.gate")
+    linked = {line.split()[0] for line in out.splitlines() if line.startswith("    ")}
+    assert linked == {"pkg.judge.Judge.review"}
+    # tests still reach production code through the gate
+    assert "tests.test_gate.test_gate" in json.loads(run("impact", "Judge.review", "--tests", "--json")[1])["tests"]
