@@ -46,7 +46,10 @@ Run it only when the user has said to (inhale asks: run now, or defer?). Deferri
 
 7. **Render and record.** `daedalus reflect render <report> --bundle <bundle>` writes the Markdown
    the user reads, with the verdicts and without contradicted proposals; it refuses until every
-   proposal has a verdict. Then `daedalus reflect done <level> <period>`.
+   proposal has a verdict. Then record the run, which also writes it to the experiment log:
+   `daedalus reflect done <level> <period> --report <report> --tokens <N> --delphi-model <id>
+   --momus-model <id> --check-iterations <n>`. Take the tokens from the delphi and Momus
+   completion notices (their totals added up), and the models from what each ran as.
 
 8. **Present.** Briefly: the period, the headline findings, and each proposal with its label and
    Momus's verdict. At the monthly level, the Evolution section (how the models changed and

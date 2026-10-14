@@ -14,6 +14,7 @@ formats, and how to run `tick` on a timer.
 | `.daedalus/reflection/reports/<level>-<period>.json` | `delphi`'s report; `.md` is its rendering, `.verdicts.json` Momus's |
 | `.daedalus/reflection/pending.json` | Proposals waiting for you |
 | `.daedalus/reflection/arms.json` | The model-summary A/B test: each session's arm and seed |
+| `.daedalus/reflection/experiment-log.jsonl` | Runs, resolutions, arms and monthly model changes: counts and IDs, no text |
 | `<config dir>/models/user.json`, `self.json` | The models (`<config dir>` is `~/.config/daedalus` on Linux, `%APPDATA%\daedalus` on Windows) |
 | `<config dir>/models/history.jsonl` | Every change to either model, append-only (except `forget` with `purge`) |
 | `<config dir>/models/dissents.jsonl` | Dissents a session filed against a self entry |
@@ -51,6 +52,17 @@ result) or `[s:<session-id> d:<digest-field>]` (a dotted field, e.g. `tools.Bash
 `daedalus reflect check` confirms every citation resolves, that a finding of a counted type cites
 only events of that type, and that every figure matches its field. It cannot tell whether a
 citation supports what the finding says; Momus does that.
+
+## The experiment log
+
+Reflection is kept as an experiment. `reflect done` logs each run (level, period, runner, models,
+sessions, tokens spent, findings by type, proposals by target, label and verdict, check
+iterations); `pending apply` and `drop` log each outcome and how long it waited; `reflect arm`
+logs each A/B assignment; a monthly `done` logs the month's model changes by kind. Every field is
+on an allowlist and every string must look like an ID, label, model or date, so no text reaches
+it. `daedalus reflect log` summarises it (acceptance rates by target and label, verdicts, tokens
+per run, arms); `daedalus reflect log export <path>` copies it, to commit if you choose. This
+repository keeps the narrative in [experiments/reflection.md](experiments/reflection.md).
 
 ## Running `tick` on a timer
 

@@ -97,14 +97,50 @@ def reflect_due(as_json: bool):
 @reflect.command("done")
 @click.argument("level", type=click.Choice(["daily", "weekly", "monthly"]))
 @click.argument("period")
-def reflect_done(level: str, period: str):
-    """Record a finished reflection, so its period (and the lower levels inside it) stop being due."""
+@click.option("--report", "report_file", type=click.Path(dir_okay=False), default=None,
+              help="The run's report, for the experiment log's counts")
+@click.option("--tokens", type=int, default=None, help="Tokens the run spent (delphi and Momus, as reported)")
+@click.option("--delphi-model", default=None)
+@click.option("--momus-model", default=None)
+@click.option("--check-iterations", type=int, default=None, help="How many times check ran before it passed")
+def reflect_done(level, period, report_file, tokens, delphi_model, momus_model, check_iterations):
+    """Record a finished reflection: its period stops being due, and the run goes in the experiment log."""
+    from ..reflection import explog
     from ..reflection.bundle import period_bounds
     from ..reflection.due import mark_done
+    from ..reflection.runners import resolve_runner
 
-    _, end = period_bounds(level, period)
-    mark_done(Path.cwd(), level, end, period)
-    click.echo(f"Recorded the {level} reflection for {period}.")
+    project = Path.cwd()
+    start, end = period_bounds(level, period)
+    mark_done(project, level, end, period)
+    explog.record_run(project, level, period, resolve_runner().effective,
+                      Path(report_file) if report_file else None, tokens, delphi_model, momus_model,
+                      check_iterations)
+    if level == "monthly":
+        explog.record_model_changes(project, period, start, end)
+    click.echo(f"Recorded the {level} reflection for {period}, and logged the run.")
+
+
+@reflect.group("log", invoke_without_command=True)
+@click.pass_context
+def reflect_log(ctx):
+    """The experiment log: runs, resolutions, arms, model changes. Counts and IDs only, no text."""
+    if ctx.invoked_subcommand:
+        return
+    from ..reflection import explog
+
+    for line in explog.summary(explog.load(Path.cwd())):
+        click.echo(line)
+
+
+@reflect_log.command("export")
+@click.argument("dest", type=click.Path(dir_okay=False))
+def reflect_log_export(dest: str):
+    """Copy the experiment log to DEST (e.g. to commit it). Committing is your choice."""
+    from ..reflection import explog
+
+    path = explog.export(Path.cwd(), Path(dest))
+    click.echo(f"Exported {len(explog.load(Path.cwd()))} records to {path}")
 
 
 @reflect.command("bundle")

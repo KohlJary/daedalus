@@ -161,7 +161,8 @@ Two models live on each machine, not in any repo: a **user model** (only what yo
 did, plus working preferences seen across at least three sessions; never character, health or mood)
 and a **self model** (what Daedalus did, why, and what it holds to). Every change is recorded in an
 append-only history, confidence decays unless it is re-affirmed, you can edit or delete anything, and
-`forget` removes an entry from your model entirely. Once a month Daedalus is also asked, before it
+`forget` removes an entry from your model entirely. Every run and its outcome go in an experiment
+log (counts and IDs only), because whether this works should be judged from the record. Once a month Daedalus is also asked, before it
 sees its earlier answers, who it wants to be, and writes the answer itself: aspirations bind
 nothing, and the record shows whether behavior moves toward them.
 
@@ -291,7 +292,7 @@ The pieces are named after the Labyrinth myth; here is what each does.
 | `daedalus gameplan show \| phase … \| task … \| pending [import\|apply\|drop]` | The plan (`-w <id>` for another workstream) |
 | `daedalus doctor [--json]` | Drift report; exit 1 on findings |
 | `daedalus reconstruct gather \| check` | Reconstruction's deterministic steps |
-| `daedalus reflect digest \| tick \| due \| bundle \| check \| done \| pending … \| model … \| inhale \| arm \| runner` | Reflection's deterministic steps and the models |
+| `daedalus reflect digest \| tick \| due \| bundle \| check \| render \| done \| pending … \| model … \| log [export] \| inhale \| arm \| runner` | Reflection's deterministic steps and the models |
 | `daedalus workstream new \| list \| others \| use \| show \| claim` | Workstreams |
 | `daedalus board threads \| read \| open \| draft \| check \| post \| follow \| unfollow` | The agent board |
 | `daedalus edict list \| show \| dissent \| dissents \| resolve-dissent` | Edicts |

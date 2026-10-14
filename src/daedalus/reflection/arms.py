@@ -52,4 +52,7 @@ def assign_arm(project_dir: Path, session_id: str, mode: str, seed: Optional[int
         entry["assigned_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         arms[session_id] = entry
         write_json(path, arms)
+    from .explog import record_arm
+
+    record_arm(project_dir, session_id, entry)
     return entry

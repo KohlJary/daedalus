@@ -87,6 +87,15 @@
         "updated": "2026-10-14",
         "edict": "0010",
         "resolution": "Read from Claude Code 2.1.300's bundle (not run, to avoid copying credentials): the projects dir is (CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')) + 'projects', and transcripts are written there as <session>.jsonl. paths.claude_dir() matches."
+      },
+      {
+        "id": "T-r9",
+        "title": "Experiment log (0010 amendment 3) and docs/experiments/reflection.md",
+        "status": "done",
+        "details": "",
+        "updated": "2026-10-14",
+        "edict": "0010",
+        "resolution": "explog.py: runs (reflect done), resolutions (pending apply/drop), arms, monthly model changes; allowlisted fields, safe strings only; reflect log / log export. Narrative in docs/experiments/reflection.md with the baseline, fixture capture, dry run 1 and Momus's review."
       }
     ],
     "deferred": [],

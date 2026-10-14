@@ -243,10 +243,13 @@ def test_secrets_are_redacted_from_details(tmp_path):
     b.prompt()
     b.call("Bash", "t1", command="curl -H 'Authorization: Bearer abcdef123456789' https://x")
     b.result("t1", "Exit code 1\nbad key sk-ant-api03-ABCDEFGHIJKLMNOP", is_error=True)
+    b.call("Bash", "t2", command="mysql --password=hunter2hunter2 -e 'select 1'")
+    b.result("t2", "Exit code 1\naccess denied", is_error=True)
     d = dg.build_digest(write_session(tmp_path / "t", b.session_id, b.events))
     detail = d["details"][d["events"]["failures"][0]]
     assert "abcdef123456789" not in detail["call"] and "[secret]" in detail["call"]
     assert "sk-ant" not in detail["summary"] and detail["exit_code"] == 1
+    assert "hunter2" not in d["details"][d["events"]["failures"][1]]["call"]
 
 
 def test_the_retry_window_comes_from_config(tmp_path, monkeypatch):

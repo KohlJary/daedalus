@@ -147,6 +147,9 @@ def apply(project_dir: Path, which: str, models_root: Optional[Path] = None) -> 
                 continue
             _apply_one(project_dir, p, models_root, notes)
             applied.append(p)
+            from .explog import record_resolution
+
+            record_resolution(project_dir, p, "applied")
             # Saved after each one, so a later failure can't leave an applied proposal queued
             resolved.append((p.get("report"), p.get("report_proposal")))
             _save(project_dir, [q for q in proposals if q not in applied], resolved=resolved)
@@ -160,6 +163,10 @@ def drop(project_dir: Path, which: str) -> list[dict]:
         chosen = _select(proposals, which)
         resolved = _resolved(project_dir) + [(p.get("report"), p.get("report_proposal")) for p in chosen]
         _save(project_dir, [p for p in proposals if p not in chosen], resolved=resolved)
+    from .explog import record_resolution
+
+    for p in chosen:
+        record_resolution(project_dir, p, "dropped")
     return chosen
 
 
