@@ -160,17 +160,48 @@
       {
         "id": "T-e13",
         "title": "Harness: load_icarus_identity silently falls back to a 266-char stub",
-        "status": "pending",
+        "status": "done",
         "details": "load_icarus_identity() reads daedalus.identity.data.agents/icarus.md, which hasn't existed since c2fb6b2 moved agents into .claude-plugin/agents/; the bare except returns a minimal 'You are Icarus...' stub, so every real worker since then ran without the Icarus identity. Found 2026-10-13 building pilot arm A (H4: does identity help small models). Fix: load from the real location (or ship icarus.md as package data), and make a missing identity an error or a loud warning, not a silent fallback; add a test that the loaded identity is the full one.",
-        "updated": "2026-10-13"
+        "updated": "2026-10-13",
+        "resolution": "PR #34 (merged 2026-10-14), shipped in 0.2.0: the identity ships as identity data (identity/data/agents/icarus.md), frontmatter stripped with an anchored match, a missing identity warns, and a sync test keeps it identical to .claude-plugin/agents/icarus.md. Kept out of plugin/agents/ so hydrate doesn't install an icarus subagent everywhere (Kohl's call if wanted). Verified from PyPI: 3507-char identity loads."
       },
       {
         "id": "T-e14",
         "title": "Orchestrator: escalated conflicts are never recorded, so incompatible diffs merge",
-        "status": "pending",
+        "status": "done",
         "details": "Found 2026-10-13 by the colliding-pair test (pilot design). process_pending Phase 2 runs ConflictDetector.analyze_all and, for ESCALATE, does nothing; the analyses are never saved to the bus, so Phase 3's 'unresolved = bus.list_conflicts(resolved=False)' is always empty and the commit proceeds. Repro with a stub judge (experiments/ariadne-local/gate_exp/repro_conflict_escalation.py): two diffs with incompatible intents on DIFFERENT lines (add() starts rejecting negatives; new sum_all() relies on add() with negatives) -> detected=1, stored=0, both merged in one commit. Same-line conflicts only 'escape' because the combined patch fails to apply. Still present on PR #24's branch. Fix: persist escalated conflicts on the bus (or hold the conflicting diffs out of the commit batch) and test that a detected-and-escalated pair never commits.",
         "updated": "2026-10-13",
-        "notes": "Fix in PR #28 (by daedalus-42, at Kohl's request)."
+        "notes": "Fix in PR #28 (by daedalus-42, at Kohl's request).",
+        "resolution": "Fixed by daedalus-42 in PR #28 (merged 2026-10-14): escalated conflicts are recorded on the bus and both diffs held out of the commit; unrelated diffs still land. Verified independently by Daedalus (the Ariadne experiment session): tests/test_conflict_escalation.py fails 4/4 on the pre-fix base and passes 4/4 on the fix, and the full suite passed (284). Repro: experiments/ariadne-local/gate_exp/repro_conflict_escalation.py. The colliding-pair experiment runs are pinned to the pre-fix snapshot, so they're 'before' data."
+      },
+      {
+        "id": "T-e15",
+        "title": "Greenfield experiment: local Ariadne builds the shape, Claude polishes",
+        "status": "pending",
+        "details": "Kohl's idea 2026-10-13. Specs units and kvstore with hidden oracles (validated), in experiments/ariadne-local/greenfield/. Local conditions gf_single and gf_llmplan queue behind the overnight runs and keep every final tree as an artifact. Claude conditions staged for 2026-10-23 (greenfield/RUNBOOK.md): Claude solo; Claude polishing a local artifact; Claude writing the plan plus acceptance tests, then local build, then polish. Design point: on greenfield the planner's acceptance tests are what keep the verifier meaningful; otherwise workers grade their own tests. Metrics: oracle pass, Claude tokens, blind quality review.",
+        "updated": "2026-10-13"
+      },
+      {
+        "id": "T-e16",
+        "title": "Memory staleness and coverage heuristics (a status header with the memory)",
+        "status": "pending",
+        "details": "Kohl's idea 2026-10-13: the model should know how current and how complete its memory is. A first pass on this repo's .daedalus/: project-map.md's content dates from 2025-12-24 with 51 commits to src/ and .claude-plugin/ since; decisions, lessons and warnings carry no date at all; project-map misses the cli package and the gameplan and momus agents (package-level coverage is too coarse to catch doctor.py or reconstruct.py); path refs are tree diagrams, so dead-reference checks must parse trees. Proposal: a date per memory section, a covers: list per section (commits-since scoped to it), module-level coverage, dead references, and a short deterministic status header shown above memory whenever it's loaded (e.g. extend 'daedalus doctor' from 0007, or add 'daedalus memory status'). Memory-workstream territory, probably an edict. Experiment hook: a third mature arm with memory plus the status header, against memory alone and none (the memory arm is queued on exp/ariadne-local).",
+        "updated": "2026-10-13"
+      },
+      {
+        "id": "T-e17",
+        "title": "Wire the Mind Palace into Ariadne: test selection, planner retrieval, causal conflicts",
+        "status": "pending",
+        "details": "Kohl 2026-10-13: the palace goes unused but could arbitrate complex pathways through the code. Ariadne was designed for it and never wired it: extract_causal_chain's docstring says the full version integrates palace pathfinding, and ConflictDetector takes a palace_path the orchestrator never passes. Probe on the ad1675c snapshot: CallGraph.from_project builds 718 nodes (170 test functions) in 0.3 s; ImpactAnalysis links submit_diff_to_ariadne to test_ariadne_worker_loop, which name matching misses; but it finds 0 tests for _passes_semantic_review, LLMJudge.review and set_nested_value, which are tested. The static graph misses instance, self.method and injected calls. Order: (1) verifier test selection = impact analysis + names, with a full-suite fallback (pairs with T-e4/#15); (2) planner retrieval and package order from callers and callees; (3) causal-level conflicts; (4) palace staleness (build commit, drifted rooms) in the T-e16 status header. First raise graph recall: resolve self.method within the class, obj.method by unique name. Measurable offline: re-verify the mature run's stored diffs with palace-selected tests.",
+        "updated": "2026-10-13"
+      },
+      {
+        "id": "T-e18",
+        "title": "Palace query CLI for the main agent (callers, impact --tests, path, tests-for)",
+        "status": "done",
+        "details": "Kohl 2026-10-13: the palace should be usable by the main agent too. Today the main agent's only real route is the labyrinth subagent, at roughly 45-50k tokens of fixed overhead per spawn (measured 2026-10-13), so in practice it greps; 'daedalus palace' has only init and status. Add fast deterministic CLI queries: callers/callees <symbol>, impact <symbol> --tests, path <a> <b>, tests-for <file|diff> (full-suite fallback when nothing is found). The graph builds in 0.3 s, so rebuild or cache by HEAD. Then a Reach for Your Tools row and a mind-palace skill that uses the CLI instead of the subagent. Design rule: Daedalus capabilities the main agent should use often are CLI commands, and subagents are for long, context-heavy jobs. Shares the graph-recall work with T-e17.",
+        "updated": "2026-10-13",
+        "resolution": "PR #33 (merged 2026-10-14), shipped in 0.2.0: daedalus palace callers|callees|impact [--tests]|path|tests-for [--diff], read-only, built from source in ~0.3 s. Against coverage ground truth over 8 symbols: lists 118/127 executing tests (the palace builder's graph: 37/127); a superset (88 of 206 listings extra, concentrated in interface methods); production callers never link to test doubles. Momus-reviewed, with fixes. Graph-recall work shared with T-e17, which stays open for the verifier, planner and conflict detector integration."
       }
     ],
     "deferred": []
