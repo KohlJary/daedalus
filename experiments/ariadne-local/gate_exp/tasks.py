@@ -299,3 +299,5 @@ def test_format():
 """,
     ),
 }
+from tasks_new import NEW_TASKS as _NEW
+TASKS.update(_NEW)  # pilot-design ticket types (refactor, ambiguous); see tasks_new.py

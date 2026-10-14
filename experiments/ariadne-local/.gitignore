@@ -3,3 +3,5 @@ mature/base/
 mature/claude/solo/
 mature/claude/review/
 *.log
+gate_exp/ariadne_src/
+gate_exp/_src_tmp/

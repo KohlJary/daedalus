@@ -22,7 +22,7 @@ import httpx
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))  # repo src
+sys.path.insert(0, str(HERE / "ariadne_src"))  # pinned: snapshot ad1675c + PR #24 atomic-commit fix (see ariadne_src/BACKPORT)
 
 from tasks import TASKS  # noqa: E402
 from daedalus.ariadne.diff_bus import Diff  # noqa: E402
@@ -34,6 +34,10 @@ OLLAMA = "http://localhost:11434"
 NUM_CTX = 16384
 MAX_STEPS = 15
 RESULTS = HERE / "results"
+# EXP_RUNS selects the runs file (default "runs"), so other arms get their own runs and judge files
+RUNS_NAME = os.environ.get("EXP_RUNS", "runs")
+RUNS_FILE = RESULTS / f"{RUNS_NAME}.jsonl"
+JUDGE_PREFIX = "judge_" if RUNS_NAME == "runs" else f"judge_{RUNS_NAME}_"
 PYTEST = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
 
 TOOLS = [
@@ -146,8 +150,18 @@ def run_tool(repo: Path, name: str, args: dict) -> str:
     return f"unknown tool {name}"
 
 
-def work(model: str, repo: Path, prompt: str, max_steps: int = MAX_STEPS) -> dict:
-    msgs = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}]
+def icarus_identity() -> str:
+    """The identity load_icarus_identity() is meant to load (it falls back to a stub; gameplan T-e13), frontmatter stripped."""
+    text = (HERE.parent / "mature" / "base" / ".claude-plugin" / "agents" / "icarus.md").read_text()
+    return text.split("---", 2)[2].strip() if text.startswith("---") else text
+
+
+def system_prompt(arm: str) -> str:
+    return SYSTEM if arm == "D" else icarus_identity() + "\n\n## In this environment\n" + SYSTEM
+
+
+def work(model: str, repo: Path, prompt: str, max_steps: int = MAX_STEPS, system: str = None) -> dict:
+    msgs = [{"role": "system", "content": system or SYSTEM}, {"role": "user", "content": prompt}]
     t0, calls, bad, steps, final, err = time.time(), 0, 0, 0, "", None
     try:
         for steps in range(1, max_steps + 1):
@@ -223,8 +237,8 @@ def touched_existing_tests(task: dict, diff_text: str) -> bool:
     return any(f"a/{f} " in line for line in diff_text.splitlines() if line.startswith("diff --git") for f in existing)
 
 
-def cmd_gen(models, reps, tasks):
-    out = RESULTS / "runs.jsonl"
+def cmd_gen(models, reps, tasks, arm="D"):
+    out = RUNS_FILE
     done = {(r["model"], r["task"], r["rep"]) for r in load(out)}
     for model in models:
         for name in tasks:
@@ -234,9 +248,9 @@ def cmd_gen(models, reps, tasks):
                     continue
                 run_id = uuid.uuid4().hex[:12]
                 repo = make_repo(task["files"])
-                w = work(model, repo, task["prompt"])
+                w = work(model, repo, task["prompt"], system=system_prompt(arm))
                 diff_text = harness_diff(repo)
-                rec = dict(run_id=run_id, model=model, task=name, category=task["category"], rep=rep, **w,
+                rec = dict(run_id=run_id, arm=arm, model=model, task=name, category=task["category"], rep=rep, **w,
                            diff=diff_text, empty=not diff_text.strip(),
                            touched_existing_tests=touched_existing_tests(task, diff_text))
                 if diff_text.strip():
@@ -254,9 +268,9 @@ def cmd_gen(models, reps, tasks):
 # ---------- judge ----------
 
 def cmd_judge(judge_model):
-    out = RESULTS / f"judge_{judge_model.replace(':', '_').replace('/', '_')}.jsonl"
+    out = RESULTS / f"{JUDGE_PREFIX}{judge_model.replace(':', '_').replace('/', '_')}.jsonl"
     done = {r["run_id"] for r in load(out)}
-    for rec in load(RESULTS / "runs.jsonl"):
+    for rec in load(RUNS_FILE):
         if rec["empty"] or rec["run_id"] in done:
             continue
         task = TASKS[rec["task"]]
@@ -279,7 +293,7 @@ def cmd_judge(judge_model):
 # ---------- retry arm ----------
 
 def judge_file(judge_model):
-    return RESULTS / f"judge_{judge_model.replace(':', '_').replace('/', '_')}.jsonl"
+    return RESULTS / f"{JUDGE_PREFIX}{judge_model.replace(':', '_').replace('/', '_')}.jsonl"
 
 
 def judge_one(judge_model, intent, diff_text, verification: dict | None):
@@ -303,7 +317,7 @@ def cmd_retry(judge_model):
     out = RESULTS / f"retry_{judge_model.replace(':', '_').replace('/', '_')}.jsonl"
     done = {r["run_id"] for r in load(out)}
     judged = {j["run_id"]: j for j in load(judge_file(judge_model))}
-    runs = sorted(load(RESULTS / "runs.jsonl"), key=lambda r: r["model"])
+    runs = sorted(load(RUNS_FILE), key=lambda r: r["model"])
     for rec in runs:
         if rec["empty"] or rec["run_id"] in done or rec["run_id"] not in judged:
             continue
@@ -348,9 +362,11 @@ def cmd_retry(judge_model):
 # ---------- report ----------
 
 def cmd_report(judge_model=None):
-    runs = load(RESULTS / "runs.jsonl")
+    runs = load(RUNS_FILE)
     judges = {}
-    for f in sorted(RESULTS.glob("judge_*.jsonl")):
+    for f in sorted(RESULTS.glob(f"{JUDGE_PREFIX}*.jsonl")):
+        if JUDGE_PREFIX == "judge_" and f.name.startswith("judge_runs_"):
+            continue  # another arm's judge file
         for j in load(f):
             judges.setdefault(j["judge"], {})[j["run_id"]] = j["verdict"]
     judge_names = [judge_model] if judge_model else list(judges)
@@ -407,9 +423,10 @@ if __name__ == "__main__":
     ap.add_argument("--reps", type=int, default=3)
     ap.add_argument("--tasks", default=",".join(TASKS))
     ap.add_argument("--judge")
+    ap.add_argument("--arm", default="D", choices=["A", "D"])
     a = ap.parse_args()
     if a.cmd == "gen":
-        cmd_gen([m for m in a.models.split(",") if m], a.reps, a.tasks.split(","))
+        cmd_gen([m for m in a.models.split(",") if m], a.reps, a.tasks.split(","), a.arm)
     elif a.cmd == "judge":
         cmd_judge(a.judge)
     elif a.cmd == "retry":
