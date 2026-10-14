@@ -655,6 +655,67 @@ def palace_status():
     _palace_status(Path.cwd())
 
 
+# Fast, read-only call-graph queries for the main agent. Each builds the graph from source (well under a
+# second) and never touches .mind-palace storage, so they need no palace and can't go stale.
+
+@palace.command("callers")
+@click.argument("symbol")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output")
+def palace_callers(symbol: str, as_json: bool):
+    """Who calls SYMBOL (Class.method, module-qualified, or simple name)."""
+    from .palace_query import neighbors
+
+    neighbors(Path.cwd(), symbol, "callers", as_json)
+
+
+@palace.command("callees")
+@click.argument("symbol")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output")
+def palace_callees(symbol: str, as_json: bool):
+    """What SYMBOL calls."""
+    from .palace_query import neighbors
+
+    neighbors(Path.cwd(), symbol, "callees", as_json)
+
+
+@palace.command("impact")
+@click.argument("symbol")
+@click.option("--depth", default=6, show_default=True, help="Max call-chain length to follow")
+@click.option("--tests", is_flag=True, help="Also list the tests that reach SYMBOL")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output")
+def palace_impact(symbol: str, depth: int, tests: bool, as_json: bool):
+    """Everything that transitively calls SYMBOL; with --tests, which tests exercise it."""
+    from .palace_query import impact
+
+    impact(Path.cwd(), symbol, depth, tests, as_json)
+
+
+@palace.command("path")
+@click.argument("source")
+@click.argument("target")
+@click.option("--depth", default=10, show_default=True, help="Max path length")
+@click.option("--limit", default=5, show_default=True, help="Max paths to show")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output")
+def palace_path(source: str, target: str, depth: int, limit: int, as_json: bool):
+    """Call paths from SOURCE to TARGET, shortest first."""
+    from .palace_query import path
+
+    path(Path.cwd(), source, target, depth, limit, as_json)
+
+
+@palace.command("tests-for")
+@click.argument("target", required=False)
+@click.option("--diff", is_flag=True, help="Use the working tree's changes (against --base) instead of a file")
+@click.option("--base", default="HEAD", show_default=True, help="Base for --diff")
+@click.option("--depth", default=6, show_default=True, help="Max call-chain length to follow")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output")
+def palace_tests_for(target: str, diff: bool, base: str, depth: int, as_json: bool):
+    """Which tests to run after changing TARGET (a file) or, with --diff, the working tree."""
+    from .palace_query import tests_for
+
+    tests_for(Path.cwd(), target, diff, base, depth, as_json)
+
+
 @main.group()
 def roadmap():
     """Roadmap operations."""

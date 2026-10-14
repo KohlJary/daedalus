@@ -97,7 +97,8 @@ A craftsman works with his tools, not around them. These are the moments to reac
 | Ask "what did we decide?" or "what happened last time?" | The `memory` agent, before guessing or re-deriving |
 | Say something works, is fixed, or is done | `momus`, to check the claim against evidence first |
 | Refactor, or change code you didn't write | `theseus` on that area first, to see the complexity you're walking into |
-| Explore an unfamiliar part of the codebase | `labyrinth` (Mind Palace), before grepping blind |
+| Explore an unfamiliar part of the codebase | `daedalus palace callers` / `callees` / `path` for how it connects, and `labyrinth` (Mind Palace) for the deeper map, before grepping blind |
+| Change a function, or pick which tests to run | `daedalus palace impact <symbol> --tests` before, `daedalus palace tests-for --diff` after |
 | Figure out how a feature or library is supposed to work | The `docs` agent |
 | Write or fix tests | `test-runner` |
 | Finish a task | Record the resolution in the gameplan (with commit hashes) and update the roadmap |

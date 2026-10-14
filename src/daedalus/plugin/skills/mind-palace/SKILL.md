@@ -1,10 +1,31 @@
 ---
 name: mind-palace
 description: Navigate Mind Palace to query entity knowledge about codebase subsystems. Use when understanding architecture, exploring how systems work, or checking for hazards/gotchas before modifying code.
-allowed-tools: Read, Glob, Grep
+allowed-tools: Read, Glob, Grep, Bash(daedalus palace:*)
 ---
 
 # Mind Palace Navigation
+
+## Call-graph queries first
+
+For "how does this code connect?" questions, use the CLI. It builds the call graph from source in well
+under a second, needs no `.mind-palace/`, and writes nothing:
+
+| Question | Command |
+|---|---|
+| Who calls this? / What does it call? | `daedalus palace callers <symbol>` / `daedalus palace callees <symbol>` |
+| What breaks if I change it, and which tests exercise it? | `daedalus palace impact <symbol> --tests` |
+| How does control get from A to B? | `daedalus palace path <a> <b>` |
+| Which tests should I run after this edit? | `daedalus palace tests-for --diff` (or `tests-for <file>`) |
+
+A symbol can be `Class.method`, a module-qualified name, or a simple name; an ambiguous one lists its
+candidates. Add `--json` for structured output. The graph is static. A call through an object links to
+every definition of that name, so test lists are a superset (good for picking what to run, not an exact
+caller list). Calls through dispatch (CLI runners, callbacks) are invisible, so run the full suite when
+`tests-for` finds nothing, which it tells you to do.
+
+Use the keeper entities below for the why and the watch-outs that a call graph can't show.
+
 
 Query keeper entities for codebase knowledge. Each entity guards a subsystem and knows HOW it works, WHY it's designed that way, and WATCH_OUT warnings.
 
