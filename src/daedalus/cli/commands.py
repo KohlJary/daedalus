@@ -232,6 +232,13 @@ def _ensure_gameplan_tracked(project_dir: Path):
     checks = [(".daedalus/roadmap/gameplan.json", GITIGNORE_WORKSTREAMS_BLOCK, "the gameplan"),
               (".daedalus/gameplans/plan.json", GITIGNORE_WORKSTREAMS_BLOCK, "workstream plans")]
     gitignore = project_dir / ".gitignore"
+    if subprocess.run(["git", "rev-parse"], cwd=project_dir, capture_output=True).returncode == 0 \
+            and not ignored(".daedalus/config.json"):
+        # The local project config (current workstream, edicts setting) must never be committed
+        text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
+        sep = "" if not text or text.endswith("\n") else "\n"
+        gitignore.write_text(text + sep + "\n# Daedalus: local project settings (edict 0008)\n/.daedalus/config.json\n",
+                             encoding="utf-8")
     for rel, block, what in checks:
         if not ignored(rel):
             continue
@@ -736,24 +743,28 @@ def _edict_title(path: Path) -> str:
 
 
 def _gameplan_refs(project_dir: Path) -> dict:
-    """{edict number: [(where, status)]} from the gameplan's phases and tasks."""
+    """{edict number: [(where, status)]} from every workstream's phases and tasks."""
     from . import gameplan as gp
+    from .. import workstreams as ws
 
-    try:
-        data = gp.load_gameplan(project_dir)
-    except (gp.GameplanError, json.JSONDecodeError):
-        return {}
+    ids = ws.list_ids(project_dir)
     refs: dict = {}
+    for wid in ids:
+        try:
+            data = gp.load_gameplan(project_dir, wid)
+        except gp.GameplanError:
+            continue
+        prefix = f"{wid}: " if len(ids) > 1 else ""
 
-    def add(entry, where):
-        if entry.get("edict"):
-            refs.setdefault(str(entry["edict"]).zfill(4), []).append((where, entry.get("status", "?")))
+        def add(entry, where):
+            if entry.get("edict"):
+                refs.setdefault(str(entry["edict"]).zfill(4), []).append((prefix + where, entry.get("status", "?")))
 
-    for phase in data.get("phases", []):
-        add(phase, f"phase {phase.get('id')}")
-    active = data.get("activePhase") or {}
-    for task in active.get("tasks", []):
-        add(task, f"task {task.get('id')}")
+        for phase in data.get("phases", []):
+            add(phase, f"phase {phase.get('id')}")
+        active = data.get("activePhase") or {}
+        for task in active.get("tasks", []):
+            add(task, f"task {task.get('id')}")
     return refs
 
 
@@ -803,5 +814,8 @@ def list_workstreams(project_dir: Path):
         click.echo("No workstreams. Run: daedalus init, or daedalus workstream new <id>")
         return
     for wid in ids:
-        data = ws.load(project_dir, wid)
-        click.echo(("* " if wid == current else "  ") + ws.summary_line(data, wid))
+        mark = "* " if wid == current else "  "
+        try:
+            click.echo(mark + ws.summary_line(ws.load(project_dir, wid), wid))
+        except ws.WorkstreamError as e:
+            click.echo(f"{mark}{wid}: unreadable ({e})")

@@ -20,6 +20,7 @@ from .cli import gameplan as gp
 
 MAX_BRIEF_LINES = 40
 MAX_NOTE_LINES = 12
+MAX_OTHER_WORKSTREAMS = 8
 SESSION_START_COMMAND = "daedalus hook session-start"
 CAPTURE_COMMAND = "daedalus hook capture"
 MIN_TITLE_MATCH = 12  # shorter task titles are too generic to match against commit messages
@@ -97,24 +98,18 @@ def session_start_brief(project_dir: Path) -> str:
     from . import workstreams as ws
 
     mine = ws.current(project_dir)
-    others = []
-    for w in ws.list_ids(project_dir):
-        if w == mine:
-            continue
-        try:
-            if ws.load(project_dir, w).get("activePhase"):   # idle workstreams would only be noise
-                others.append(w)
-        except (ws.WorkstreamError, json.JSONDecodeError):
-            others.append(w)
+    others = [w for w in ws.list_ids(project_dir) if w != mine]
     if data is not None and mine != ws.DEFAULT:
         lines[1:1] = [f"**Workstream:** {mine}"]
     if others:
         lines.append("**Other workstreams:**")
-        for wid in others[:6]:
+        for wid in others[:MAX_OTHER_WORKSTREAMS]:
             try:
                 lines.append("- " + ws.summary_line(ws.load(project_dir, wid), wid))
-            except (ws.WorkstreamError, json.JSONDecodeError):
+            except ws.WorkstreamError:
                 lines.append(f"- {wid}: unreadable")
+        if len(others) > MAX_OTHER_WORKSTREAMS:
+            lines.append(f"- ... and {len(others) - MAX_OTHER_WORKSTREAMS} more (`daedalus workstream list`)")
 
     roadmap = _roadmap_in_progress(project_dir)
     if roadmap:

@@ -117,7 +117,8 @@ def find_window(project_dir: Path, since: Optional[str] = None, until: Optional[
     extra = {"until": until} if until else {}
     rel = str(gp.GameplanPaths.for_project(project_dir, workstream).gameplan_file.relative_to(project_dir))
     if since and re.fullmatch(r"\d{4}-\d{2}-\d{2}", since):
-        return {"from": None, "from_date": since, "to": to, "range": [f"--since={since}", *until_args, end],
+        # A bare date means that date at the current time of day to git; the window starts at midnight
+        return {"from": None, "from_date": since, "to": to, "range": [f"--since={since}T00:00:00", *until_args, end],
                 "anchor": f"--since {since}", **extra}
     if since:
         base = _git(project_dir, "rev-parse", since).strip()
@@ -251,6 +252,11 @@ def gather(project_dir: Path, since: Optional[str] = None, until: Optional[str] 
     the commits to one person (git's --author matching).
     """
     project_dir = Path(project_dir)
+    if workstream is None:
+        from . import workstreams as ws_mod
+
+        current = ws_mod.current(project_dir)
+        workstream = current if current != ws_mod.DEFAULT else None
     if workstream:
         # A workstream's window anchors on its own plan and, by default, its owner's commits (0008)
         from . import workstreams as ws

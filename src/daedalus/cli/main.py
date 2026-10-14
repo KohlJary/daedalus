@@ -519,7 +519,10 @@ def gameplan(workstream):
     """
     from .. import workstreams as ws
 
-    ws.set_override(workstream)
+    try:
+        ws.set_override(workstream)
+    except ws.WorkstreamError as e:
+        raise click.UsageError(str(e))
 
 
 @gameplan.command("show")

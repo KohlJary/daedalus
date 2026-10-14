@@ -102,7 +102,10 @@ def load_gameplan(project_dir: Path, workstream: Optional[str] = None) -> dict[s
         hint = "Run: daedalus init" if paths.workstream == "default" \
             else f"Run: daedalus workstream new {paths.workstream}"
         raise GameplanError(f"No gameplan found at {paths.gameplan_file}. {hint}")
-    return json.loads(paths.gameplan_file.read_text(encoding="utf-8"))
+    try:
+        return json.loads(paths.gameplan_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise GameplanError(f"{paths.gameplan_file} is not valid JSON: {e}")
 
 
 def save_gameplan(project_dir: Path, data: dict[str, Any], workstream: Optional[str] = None) -> None:

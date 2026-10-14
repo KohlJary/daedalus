@@ -137,8 +137,12 @@ def test_collisions(repo, monkeypatch):
 def test_claims_overlap_rules():
     assert ws.claims_overlap("src/", "src/a.py")
     assert ws.claims_overlap("docs/*.md", "docs/status.md")
+    assert ws.claims_overlap("src/ariadne/", "src/*/orchestrator.py")
+    assert ws.claims_overlap("src/ariadne/", "src/**/*.py")
+    assert ws.claims_overlap("./src", "src/x.py")
     assert not ws.claims_overlap("src/a.py", "src/b.py")
     assert not ws.claims_overlap("docs/*.md", "src/x.md")
+    assert not ws.claims_overlap("src/*.py", "src/a/b.py")
 
 
 def test_edict_references_count_from_every_workstream(repo, monkeypatch):
@@ -156,7 +160,8 @@ def test_brief_leads_with_mine_and_lists_the_others(repo, monkeypatch):
     assert lines[1] == "**Workstream:** memory"
     assert lines[2].startswith("**Phase:** p2b-reconstruction")
     others = lines[lines.index("**Other workstreams:**") + 1:]
-    assert others[0].startswith("- ariadne (session): p1-edicts-ariadne - next T-e5")
+    assert "- default (person): no active phase" in others
+    assert any(l.startswith("- ariadne (session): p1-edicts-ariadne - next T-e5") for l in others)
     assert not any(l.startswith("- memory") for l in others)
     assert len(lines) <= MAX_BRIEF_LINES
 
@@ -196,3 +201,66 @@ def test_reconstruction_imports_into_its_workstream(repo, monkeypatch, tmp_path)
     assert "Importing into workstream ariadne" in out
     assert (ws.gameplans_dir(repo) / "ariadne.pending.json").exists()
     assert not (repo / ".daedalus/roadmap/pending.json").exists()
+
+
+
+# ---------- Momus's findings on the first version ----------
+
+
+def test_pending_like_ids_and_bad_override_ids_are_refused(repo, monkeypatch):
+    assert "not ending in '.pending'" in cli(repo, monkeypatch, "workstream", "new", "foo.pending", code=1)
+    assert "not a workstream id" in cli(repo, monkeypatch, "gameplan", "-w", "../x", "show", code=2)
+    monkeypatch.setenv(ws.ENV, "../evil")
+    with pytest.raises(ws.WorkstreamError):
+        ws.current(repo)
+
+
+def test_invalid_author_pattern_is_refused_and_reported(repo, monkeypatch):
+    assert "not a pattern git accepts" in cli(repo, monkeypatch, "workstream", "new", "bob", "--author", "Bob[", code=1)
+    ws.create(repo, "bob")
+    data = ws.load(repo, "bob")
+    data["owner"]["git_author"] = "Bob["
+    ws.file_for(repo, "bob").write_text(json.dumps(data))
+    assert "workstream-author-invalid" in [f.name for f in run_checks(repo)[0]]
+
+
+def test_malformed_workstream_file_is_an_error_not_a_crash(repo, monkeypatch):
+    two_sessions(repo, monkeypatch)
+    ws.file_for(repo, "memory").write_text("{oops")
+    assert "memory: unreadable" in cli(repo, monkeypatch, "workstream", "list")
+    out = cli(repo, monkeypatch, "gameplan", "-w", "memory", "show")
+    assert "not valid JSON" in out
+    assert "gameplan-unreadable" in [f.name for f in run_checks(repo)[0]]
+
+
+def test_brief_lists_idle_workstreams_and_counts_the_rest(repo, monkeypatch):
+    for i in range(11):
+        ws.create(repo, f"s{i:02d}")
+    lines = session_start_brief(repo).splitlines()
+    listed = [l for l in lines if l.startswith("- s")]
+    assert len(listed) == 8 and "no active phase" in listed[0]
+    assert "- ... and 3 more (`daedalus workstream list`)" in lines
+
+
+def test_edict_list_counts_every_workstream(repo, monkeypatch):
+    (repo / "docs/edicts").mkdir(parents=True)
+    (repo / "docs/edicts/0006-x.md").write_text("# Edict 0006: X\nStatus: accepted\n")
+    two_sessions(repo, monkeypatch)
+    assert "memory: phase p2b-reconstruction" in cli(repo, monkeypatch, "edict", "list")
+
+
+def test_gather_defaults_to_the_current_workstream(repo, monkeypatch):
+    two_sessions(repo, monkeypatch)
+    commit(repo, "T-e5 local backend", author="ariadne-session")
+    commit(repo, "other", author="memory-session")
+    monkeypatch.setenv(ws.ENV, "ariadne")
+    bundle = gather(repo)
+    assert bundle.window["workstream"] == "ariadne"
+    assert [c["subject"] for c in bundle.commits] == ["T-e5 local backend"]
+
+
+def test_local_config_is_never_committable(repo, monkeypatch):
+    cli(repo, monkeypatch, "init")
+    assert subprocess.run(["git", "check-ignore", "-q", ".daedalus/config.json"], cwd=repo).returncode == 0
+    (repo / ".daedalus/config.json").write_text("{bad")
+    assert "not valid JSON" in cli(repo, monkeypatch, "workstream", "use", "default", code=1)

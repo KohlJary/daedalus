@@ -245,9 +245,11 @@ daedalus gameplan -w ariadne show                    # any gameplan command, on 
 daedalus workstream claim src/daedalus/ariadne/      # paths you intend to change
 ```
 
-The brief leads with your workstream and lists the others in a line each. `doctor` checks drift
-per owner (counting only that owner's commits) and reports collisions: two workstreams with open
-work on the same edict, or overlapping claims. Collisions are findings, never locks.
+The brief leads with your workstream and lists the others in a line each (up to eight; the rest
+are counted). `doctor` checks drift per workstream, counting only the owner's commits when the
+workstream has a `--author` pattern (the default workstream and owners without one count every
+commit), and reports collisions: two workstreams with open or planned work on the same edict, or
+overlapping claims. Collisions are findings, never locks.
 
 `init` and `hydrate` register the session-start hook (`--no-hooks` to skip; `hydrate --dry-run`
 lists it). They merge into existing `.claude/settings.json` and never overwrite a file they can't parse.

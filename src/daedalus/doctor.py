@@ -351,11 +351,19 @@ def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Fi
         label = (lambda f, wid=wid: Finding(f.name, f"[{wid}] {f.message}")) if several else (lambda f: f)
         try:
             data = gp.load_gameplan(project_dir, wid)
-        except json.JSONDecodeError as e:
-            findings.append(label(Finding("gameplan-unreadable", f"{_gameplan_rel(project_dir, wid)} is not valid JSON: {e}")))
+        except gp.GameplanError as e:
+            findings.append(label(Finding("gameplan-unreadable", str(e))))
             continue
         plans[wid] = data
         author = ws.owner(data, wid).get("git_author") if wid != ws.DEFAULT else None
+        if author and _is_git_repo(project_dir) and not ws.author_pattern_ok(project_dir, author):
+            findings.append(label(Finding(
+                "workstream-author-invalid",
+                f"git_author {author!r} is not a pattern git accepts, so this workstream's drift can't be measured.",
+            )))
+            author = None
+        elif several and wid != ws.DEFAULT and not author:
+            hints.append(f"Workstream {wid} has no git_author, so its drift counts every author's commits.")
         found = check_commits_after_gameplan(project_dir, settings["stale_commits"], wid, author)
         found += check_phase_all_done(data)
         found += check_stale_tasks(data, settings["stale_task_days"], today=today)

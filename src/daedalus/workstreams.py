@@ -33,9 +33,19 @@ class WorkstreamError(Exception):
     pass
 
 
+def validate_id(workstream: str) -> str:
+    """A workstream id: 'default', or lowercase letters/digits/'.'/'_'/'-' not ending in '.pending'."""
+    if workstream == DEFAULT:
+        return workstream
+    if not ID.match(workstream) or workstream.endswith(".pending"):
+        raise WorkstreamError(f"'{workstream}' is not a workstream id (lowercase letters, digits, '.', '_' "
+                              "or '-'; not ending in '.pending')")
+    return workstream
+
+
 def set_override(workstream: Optional[str]) -> None:
     global _override
-    _override = workstream
+    _override = validate_id(workstream) if workstream else None
 
 
 def gameplans_dir(project_dir: Path) -> Path:
@@ -52,12 +62,12 @@ def current(project_dir: Path) -> str:
     if _override:
         return _override
     if os.environ.get(ENV):
-        return os.environ[ENV]
+        return validate_id(os.environ[ENV])
     from .config import load_project_overrides
 
     setting = load_project_overrides(project_dir).get("workstream", {})
     if isinstance(setting, dict) and setting.get("current"):
-        return str(setting["current"])
+        return validate_id(str(setting["current"]))
     return DEFAULT
 
 
@@ -65,7 +75,8 @@ def list_ids(project_dir: Path) -> list[str]:
     ids = [DEFAULT] if file_for(project_dir, DEFAULT).exists() else []
     folder = gameplans_dir(project_dir)
     if folder.is_dir():
-        ids += sorted(p.stem for p in folder.glob("*.json") if not p.name.endswith(".pending.json"))
+        ids += sorted(p.stem for p in folder.glob("*.json")
+                      if not p.name.endswith(".pending.json") and ID.match(p.stem))
     return ids
 
 
@@ -73,7 +84,21 @@ def load(project_dir: Path, workstream: str) -> dict[str, Any]:
     path = file_for(project_dir, workstream)
     if not path.exists():
         raise WorkstreamError(f"No workstream '{workstream}' ({path})")
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise WorkstreamError(f"{path} is not valid JSON: {e}")
+
+
+def author_pattern_ok(project_dir: Path, pattern: str) -> bool:
+    """Whether git accepts a --author pattern (an invalid regex makes git fail, not match nothing)."""
+    import subprocess
+
+    try:
+        return subprocess.run(["git", "log", "-1", f"--author={pattern}", "--format=%H"], cwd=project_dir,
+                              capture_output=True).returncode == 0
+    except FileNotFoundError:
+        return True
 
 
 def owner(data: dict[str, Any], workstream: str) -> dict[str, Any]:
@@ -83,8 +108,11 @@ def owner(data: dict[str, Any], workstream: str) -> dict[str, Any]:
 def create(project_dir: Path, workstream: str, kind: str = "person", git_author: Optional[str] = None) -> Path:
     from .cli.gameplan import empty_gameplan
 
-    if workstream == DEFAULT or not ID.match(workstream):
-        raise WorkstreamError("A workstream id is lowercase letters, digits, '.', '_' or '-', and not 'default'")
+    if workstream == DEFAULT:
+        raise WorkstreamError("'default' is the existing gameplan; pick another id")
+    validate_id(workstream)
+    if git_author and not author_pattern_ok(project_dir, git_author):
+        raise WorkstreamError(f"--author {git_author!r} is not a pattern git accepts (git log --author)")
     if kind not in KINDS:
         raise WorkstreamError(f"kind must be one of {', '.join(KINDS)}")
     path = file_for(project_dir, workstream)
@@ -102,8 +130,15 @@ def use(project_dir: Path, workstream: str) -> None:
     """Make a workstream current in this checkout (local config, not committed)."""
     from .config import get_project_config_file, load_project_overrides
 
+    validate_id(workstream)
     if workstream != DEFAULT and not file_for(project_dir, workstream).exists():
         raise WorkstreamError(f"No workstream '{workstream}'")
+    path = get_project_config_file(project_dir)
+    if path.exists():
+        try:
+            json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            raise WorkstreamError(f"{path} is not valid JSON; fix it before switching workstreams")
     data = load_project_overrides(project_dir)
     data.setdefault("workstream", {})["current"] = workstream
     path = get_project_config_file(project_dir)
@@ -137,12 +172,33 @@ def open_edicts(data: dict[str, Any]) -> set[str]:
     return found
 
 
-def claims_overlap(a: str, b: str) -> bool:
-    """Whether two path claims (paths, directories, or globs) can name the same file."""
-    a, b = a.rstrip("/"), b.rstrip("/")
-    if a == b or fnmatch.fnmatch(a, b) or fnmatch.fnmatch(b, a):
+def _segments(claim: str) -> list[str]:
+    parts = [p for p in claim.strip().split("/") if p not in ("", ".")]
+    return parts
+
+
+def _seg_overlap(x: str, y: str) -> bool:
+    if x == y or fnmatch.fnmatchcase(x, y) or fnmatch.fnmatchcase(y, x):
         return True
-    return a.startswith(b + "/") or b.startswith(a + "/")
+    # Two globs in one segment (e.g. "a*" and "*b") can usually name the same file
+    return any(c in x for c in "*?[") and any(c in y for c in "*?[")
+
+
+def claims_overlap(a: str, b: str) -> bool:
+    """
+    Whether two path claims (files, directories, or globs; '**' spans directories) can name the
+    same file. A shorter claim covers everything beneath it, like a directory.
+    """
+    def walk(xs: list[str], ys: list[str]) -> bool:
+        if not xs or not ys:
+            return True  # one claim is a prefix (directory) of the other
+        if xs[0] == "**":
+            return walk(xs[1:], ys) or walk(xs, ys[1:])
+        if ys[0] == "**":
+            return walk(xs, ys[1:]) or walk(xs[1:], ys)
+        return _seg_overlap(xs[0], ys[0]) and walk(xs[1:], ys[1:])
+
+    return walk(_segments(a), _segments(b))
 
 
 def summary_line(data: dict[str, Any], workstream: str) -> str:
