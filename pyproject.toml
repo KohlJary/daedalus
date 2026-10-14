@@ -55,6 +55,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 daedalus = [
     "identity/data/*.md",
+    "identity/data/agents/*.md",
     "identity/data/*.json",
     "plugin/**/*",
 ]

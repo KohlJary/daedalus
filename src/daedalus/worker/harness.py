@@ -21,22 +21,15 @@ import asyncio
 import importlib.resources
 import json
 import os
+import re
 import sys
+import warnings
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 
-def load_icarus_identity() -> str:
-    """Load the Icarus identity from package resources."""
-    try:
-        # Load from package
-        files = importlib.resources.files("daedalus.identity.data.agents")
-        identity_file = files.joinpath("icarus.md")
-        return identity_file.read_text(encoding="utf-8")
-    except Exception as e:
-        # Fallback to minimal identity
-        return """# Icarus
+_FALLBACK_IDENTITY = """# Icarus
 
 You are Icarus - a worker executing a specific work package.
 
@@ -45,6 +38,35 @@ You have the context you need in the work package description.
 
 Focus on completing the task efficiently and correctly.
 """
+
+
+_FRONTMATTER = re.compile(r"---[ \t]*\r?\n.*?\r?\n---[ \t]*(?:\r?\n|$)", re.S)
+
+
+def _strip_frontmatter(text: str) -> str:
+    """Drop a leading YAML frontmatter block (agent metadata, not instructions for the model).
+
+    Only `---` lines delimit it, so `---` inside a value, or a `---` rule in the body, is left alone.
+    """
+    m = _FRONTMATTER.match(text)
+    return text[m.end():].lstrip("\r\n") if m else text
+
+
+def load_icarus_identity() -> str:
+    """Load the Icarus identity (the icarus agent's body) from package resources.
+
+    It ships as identity data (daedalus/identity/data/agents/icarus.md), kept in sync with
+    .claude-plugin/agents/icarus.md by tests. If it's missing, workers still run on a minimal identity,
+    but loudly: from c2fb6b2 (2025-12-24) until gameplan T-e13, that fallback silently replaced the real
+    identity for every worker that used the default system prompt.
+    """
+    try:
+        files = importlib.resources.files("daedalus.identity.data.agents")
+        return _strip_frontmatter(files.joinpath("icarus.md").read_text(encoding="utf-8"))
+    except Exception as e:
+        warnings.warn(f"Icarus identity not found ({e}); workers are running on a minimal fallback identity. "
+                      "Reinstall daedalus or check that identity/data/agents/icarus.md is packaged.", RuntimeWarning)
+        return _FALLBACK_IDENTITY
 
 import subprocess
 
