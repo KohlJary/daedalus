@@ -63,6 +63,8 @@ class VerificationResult:
     # Why each test file was selected: palace (call graph), convention, name (the older match), changed
     tests_selected_by: Dict[str, List[str]] = field(default_factory=dict)
     test_commands: List[str] = field(default_factory=list)
+    # Checks that couldn't run here (no tree-sitter for a language's syntax gate, the palace graph failing)
+    skipped_checks: List[str] = field(default_factory=list)
 
     # Timestamps
     started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -92,11 +94,14 @@ class VerificationResult:
                 "run": self.tests_run,
                 "failed": self.tests_failed,
                 "errors": self.test_errors,
+                "commands": self.test_commands,
             },
             "scope": {
                 "modules": self.modules_checked,
                 "tests": self.tests_executed,
+                "selected_by": self.tests_selected_by,
             },
+            "skipped_checks": self.skipped_checks,
             "timing": {
                 "started": self.started_at,
                 "completed": self.completed_at,
@@ -150,8 +155,6 @@ class CausalSliceVerifier:
         self.require_tests = require_tests
         self.build_gate = build_gate
         self.test_cmds = dict(test_cmds or {})
-        if test_cmd is not None:  # an explicit test_cmd stands for every language (harnesses stub it out)
-            self.test_cmds.setdefault("*", list(test_cmd))
 
     def verify(self, diff: Diff, causal_chain: Optional[CausalChain] = None) -> VerificationResult:
         """
@@ -207,10 +210,16 @@ class CausalSliceVerifier:
             result.modules_checked = modules
             result.tests_executed = test_files
 
-            # Compile every changed Python file, so a syntax error fails even when no test runs
+            # Syntax-check every changed file, so a syntax error fails even when no test runs
+            self._unchecked = []
             result.compile_passed, result.compile_errors = self._run_compile(
                 workspace, diff.all_affected_files()
             )
+            if self._unchecked:
+                result.skipped_checks.append("syntax (install daedalus[palace] for tree-sitter): "
+                                             + ", ".join(self._unchecked))
+            if selection.error:
+                result.skipped_checks.append(f"palace test selection: {selection.error}")
 
             # Run type checking: mypy for Python, `dotnet build` for the .NET projects the diff touches
             result.typecheck_passed, result.typecheck_errors = self._run_typecheck(
@@ -229,13 +238,14 @@ class CausalSliceVerifier:
             # Run tests
             ran_nothing = not test_files
             if test_files:
-                runs, problems = plan_runs(repo, test_files, self.test_cmd, self._overrides(test_files))
+                runs, problems = plan_runs(repo, test_files, self.test_cmd, self.test_cmds)
                 result.test_commands = [f"(cd {r.cwd}) {' '.join(r.command)}" for r in runs]
                 outcome = run_tests(repo, runs)
                 result.tests_passed = outcome.passed
                 result.tests_run, result.tests_failed = outcome.ran, outcome.failed
                 result.test_errors.extend(problems + outcome.errors)
-                ran_nothing = outcome.ran_nothing
+                # A selected test no runner could run leaves part of the change unverified
+                ran_nothing = outcome.ran_nothing or bool(problems)
             if ran_nothing:
                 # Nothing checked the behavior, so this is not a pass: fail closed (T-e4). This covers a
                 # selection that ran nothing too: files that no longer exist, a package with no tests.
@@ -243,7 +253,7 @@ class CausalSliceVerifier:
                 if self.require_tests:
                     result.tests_passed = False
                     result.test_errors.append("No tests matched the changed code: not verified" if not test_files
-                                              else "No selected test ran: not verified")
+                                              else "Some selected tests did not run: not verified")
 
         # Overall result
         result.passed = (
@@ -256,14 +266,6 @@ class CausalSliceVerifier:
         result.duration_seconds = time.time() - start_time
 
         return result
-
-    def _overrides(self, test_files: List[str]) -> Dict[str, List[str]]:
-        """Per-language commands; an explicit test_cmd ("*") replaces every language's runner."""
-        if "*" not in self.test_cmds:
-            return self.test_cmds
-        from .test_runners import _language_name
-        langs = {_language_name(f) for f in test_files} - {None}
-        return {**{lang: self.test_cmds["*"] for lang in langs}, **{k: v for k, v in self.test_cmds.items() if k != "*"}}
 
     def _setup_workspace(self, workspace: Path, diff: Diff) -> bool:
         """
@@ -371,7 +373,9 @@ class CausalSliceVerifier:
                     errors.append(f"{f}: {e}")
                 continue
             problem = _tree_sitter_syntax_error(path)
-            if problem:
+            if problem is SYNTAX_UNCHECKED:
+                self._unchecked.append(f)
+            elif problem:
                 errors.append(f"{f}: {problem}")
         return not errors, errors
 
@@ -474,6 +478,9 @@ def _language_of(path: str):
     return _language(path)
 
 
+SYNTAX_UNCHECKED = "unchecked"
+
+
 def _tree_sitter_syntax_error(path: Path) -> Optional[str]:
     """The first parse error tree-sitter finds in a non-Python file, or None (also when the language isn't
     analyzed or tree-sitter isn't installed)."""
@@ -482,7 +489,9 @@ def _tree_sitter_syntax_error(path: Path) -> Optional[str]:
 
     support = get_language_registry().get_by_extension(path)
     if not isinstance(support, TreeSitterSupport) or not support.available():
-        return None
+        # A language the palace knows of but can't parse here (no tree-sitter) is unchecked, not clean
+        from ..labyrinth.treesitter import GRAMMARS
+        return SYNTAX_UNCHECKED if any(path.suffix in g.extensions for g in GRAMMARS) else None
     try:
         _, tree = support._parse(path)
     except OSError:

@@ -103,3 +103,17 @@ def test_annotations_in_slash_comments_with_their_context(project):
     found = scan_directory(project, project)
     ann = found["shop/cart.ts"].annotations[0]
     assert (ann.type, ann.value, ann.context) == ("ROOM", "cart-helpers", "addTax")
+
+
+def test_a_method_and_a_function_with_one_name_dont_drift_or_swap(tmp_path):
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app/cart.py").write_text("class Cart:\n    def total(self, a):\n        return a\n\n\n"
+                                          "def total(items):\n    return sum(items)\n")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    languages._registry = None
+    storage = PalaceStorage(tmp_path)
+    cart = Cartographer(storage.initialize("p"), storage)
+    cart.map_directory(tmp_path / "app")
+    assert cart.check_drift() == []  # unchanged code: no drift
+    top = next(k for k, r in cart.palace.rooms.items() if r.name == "total")
+    assert cart.sync_room(top).anchor.line == 6  # the top-level function, not Cart.total

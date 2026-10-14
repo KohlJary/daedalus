@@ -27,6 +27,7 @@ C/C++ and Ruby (see treesitter.py). Test conventions (which files and symbols ar
 file's tests usually live) come from each language's support class.
 """
 
+import json
 import posixpath
 import re
 import subprocess
@@ -198,6 +199,10 @@ def build_query_graph(project_root: Path, max_candidates: int = 10) -> QueryGrap
 
 
 JS_EXTS = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts")
+NODE_BUILTINS = {"assert", "buffer", "child_process", "cluster", "crypto", "dgram", "dns", "events", "fs", "http",
+                 "http2", "https", "net", "os", "path", "perf_hooks", "process", "querystring", "readline",
+                 "stream", "string_decoder", "timers", "tls", "tty", "url", "util", "v8", "vm", "worker_threads",
+                 "zlib"}
 
 
 class ImportResolver:
@@ -217,14 +222,20 @@ class ImportResolver:
             self.module_file.setdefault(node["module"], node["file"])
         self.file_module = {f: m for m, f in self.module_file.items()}
         self.py_suffix: Dict[str, List[str]] = {}
+        self.py_dirs: Set[str] = set()  # dotted suffixes of every directory holding Python (namespace packages too)
         self.dir_modules: Dict[str, List[str]] = {}
         for m, f in self.module_file.items():
             if f.endswith(PYTHON_EXTS):
                 parts = m.split(".")
                 for i in range(len(parts)):
                     self.py_suffix.setdefault(".".join(parts[i:]), []).append(m)
+                dirs = posixpath.dirname(f).split("/") if posixpath.dirname(f) else []
+                for end in range(1, len(dirs) + 1):
+                    for start in range(end):
+                        self.py_dirs.add(".".join(dirs[start:end]))
             self.dir_modules.setdefault(posixpath.dirname(f), []).append(m)
         self.go_mods = self._go_modules(project_root)
+        self.npm_packages = self._npm_packages(project_root)
         # C#: types by (namespace, name), partial classes across files included, and global usings
         self.cs_types: Dict[Tuple[str, str], List[str]] = {}
         self.cs_global: Set[str] = set()
@@ -282,20 +293,54 @@ class ImportResolver:
                     break
         return sorted(found.items(), key=lambda kv: -len(kv[0]))
 
+    def _npm_packages(self, project_root: Path) -> Set[str]:
+        """Dependency names from the package.json files above the project's JS/TS files."""
+        names: Set[str] = set()
+        seen: Set[str] = set()
+        for f in self.module_file.values():
+            if not f.endswith(JS_EXTS):
+                continue
+            parts = posixpath.dirname(f).split("/") if posixpath.dirname(f) else []
+            for i in range(len(parts), -1, -1):
+                d = "/".join(parts[:i])
+                if d in seen:
+                    break
+                seen.add(d)
+                pkg = project_root / d / "package.json"
+                if pkg.is_file():
+                    try:
+                        data = json.loads(pkg.read_text())
+                    except (OSError, ValueError):
+                        continue
+                    for key in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
+                        names |= set((data.get(key) or {}).keys())
+        return names
+
+    def _external_js(self, spec: str) -> bool:
+        """A bare import is a package only when a package.json depends on it (or it's a Node builtin);
+        anything else may be a tsconfig path alias or a workspace package, so imports don't decide it."""
+        if spec.startswith("node:") or spec.split("/")[0] in NODE_BUILTINS:
+            return True
+        name = "/".join(spec.split("/")[:2]) if spec.startswith("@") else spec.split("/")[0]
+        return name in self.npm_packages
+
     def modules_for(self, spec: str, importer: str) -> Optional[List[str]]:
         kind, _, value = spec.partition(":")
         if kind == "ext":
+            if importer.endswith(JS_EXTS) and not self._external_js(value):
+                return None
             return []
         if kind == "py":
             candidates = set(self.py_suffix.get(value, [])) | set(self.py_suffix.get(value + ".__init__", []))
-            if len(candidates) <= 1:
+            if not candidates:
+                # A directory without __init__.py (a namespace package) is still the project's
+                return None if value in self.py_dirs else []
+            if len(candidates) == 1:
                 return sorted(candidates)
-            # Several files match (config.py in two packages): take the one nearest the importer, if unique
-            here = self.file_module.get(importer, "").split(".")
-            score = {c: len(posixpath.commonprefix([c.split("."), here])) for c in candidates}
-            best = max(score.values())
-            winners = [c for c, v in score.items() if v == best]
-            return winners if len(winners) == 1 else None
+            # Several files match (config.py at the root and in app/): an absolute import names the one whose
+            # dotted path is exactly the spec; otherwise imports don't decide
+            exact = [c for c in candidates if c in (value, value + ".__init__")]
+            return exact if len(exact) == 1 else None
         if kind == "js":
             stem = value
             for ext in JS_EXTS:  # './x.js' in TypeScript ESM means x.ts
@@ -316,11 +361,29 @@ class ImportResolver:
         if kind == "java":
             suffix = value + ".java"
             hits = [m for m, f in self.module_file.items() if f == suffix or f.endswith("/" + suffix)]
-            return hits if len(hits) <= 1 else None
+            if len(hits) > 1:
+                return None
+            if not hits:
+                # com.x.Outer.Inner (a nested class) or anything under one of the project's packages: not
+                # external, just not a file of its own
+                parts = value.split("/")
+                package = "/".join(parts[:-1])
+                files = list(self.module_file.values())
+                if any(posixpath.dirname(f) == package or posixpath.dirname(f).endswith("/" + package) for f in files):
+                    return None  # a class of a project package we don't see a file for
+                for i in range(len(parts) - 1, 1, -1):  # com.x.Outer.Inner lives in com/x/Outer.java
+                    outer = "/".join(parts[:i]) + ".java"
+                    if any(f == outer or f.endswith("/" + outer) for f in files):
+                        return None
+            return hits
         return None
 
     def symbol(self, spec: str, sym: str, local: str, importer: str, depth: int = 0) -> Optional[Set[str]]:
         """Nodes an imported symbol names: a definition, or one re-exported through the module's own imports."""
+        if spec.startswith("py:"):  # from pkg import submodule: the submodule itself, not a name in pkg
+            submodules = self.modules_for(f"{spec}.{sym}", importer)
+            if submodules:
+                return set(submodules)
         modules = self.modules_for(spec, importer)
         if modules is None:
             return None
@@ -353,8 +416,11 @@ class ImportResolver:
                 result = self._resolve_cs(node, qualifier, call)
             elif qualifier == "":
                 binding = imports.get(call)
-                if binding and binding[1] is not None:
+                # A same-file definition of the name may shadow the import (or be shadowed): undecided
+                if binding and binding[1] is not None and f"{node['module']}.{call}" not in self.raw:
                     result = self.symbol(binding[0], binding[1], call, node["file"])
+                    if result and all(r in self.module_file for r in result):
+                        result = None  # it names a module (from pkg import mod), and calling a module isn't a call
             elif qualifier not in ("?", "self") and qualifier in imports:
                 spec, sym = imports[qualifier]
                 if sym is None:  # a module or package: mod.f(), pkg.F()
@@ -364,9 +430,6 @@ class ImportResolver:
                         result = hits if (hits or not modules) else None
                 else:  # an imported class (Foo.bar()), or a submodule (from pkg import mod; mod.f())
                     owners = self.symbol(spec, sym, qualifier, node["file"])
-                    if owners is None and spec.startswith("py:"):
-                        modules = self.modules_for(f"{spec}.{sym}", node["file"])
-                        owners = set(modules) if modules else owners
                     if owners is not None:
                         hits = {f"{o}.{call}" for o in owners if f"{o}.{call}" in self.raw}
                         result = hits if (hits or not owners) else None

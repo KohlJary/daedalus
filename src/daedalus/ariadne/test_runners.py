@@ -10,9 +10,10 @@ that ecosystem's tool from the directory that owns it (the nearest go.mod, Cargo
 pom.xml or build.gradle). Python uses the verifier's `test_cmd` (pytest by default). Every runner can be
 replaced per language with `test_cmds={"Go": [...]}`; the selected files are appended to the command.
 
-A run that executes nothing (`go test` on a package with "[no test files]", `cargo test` running 0
-tests, every selected file missing) reports `ran_nothing`, which the verifier treats as "no tests
-matched", not as a pass.
+A run that executes no test (every selected file missing, only skipped tests, a filter matching
+nothing, or output the runner's parser can't read) sets `ran_nothing`, which the verifier treats as
+"no tests matched", not as a pass, even when another language's run passed: the change that run was
+selected for is unverified. Maven and Gradle are counted from their JUnit XML reports.
 """
 
 import json
@@ -50,7 +51,7 @@ class RunOutcome:
     ran: int = 0
     failed: int = 0
     errors: List[str] = field(default_factory=list)
-    ran_nothing: bool = False
+    ran_nothing: bool = False  # some run executed no test (see run_tests)
 
 
 def select_tests(repo: Path, diff_text: str, changed_files: List[str], max_depth: int = 6) -> TestSelection:
@@ -172,14 +173,14 @@ def plan_runs(repo: Path, test_files: List[str], python_cmd: List[str],
         elif lang == PYTHON:
             runs.append(RunPlan(lang, ".", list(python_cmd), files))
         elif lang == "Go":
-            packages: Dict[str, Set[str]] = {}
+            # One run per package, so a package whose tests all skip is caught on its own
+            packages: Dict[Tuple[str, str], List[str]] = {}
             for f in files:
                 root = _nearest(repo, f, ("go.mod",)) or "."
                 pkg = Path(_rel_to(f, root)).parent.as_posix()
-                packages.setdefault(root, set()).add("./" if pkg == "." else f"./{pkg}")
-            for root, pkgs in sorted(packages.items()):
-                runs.append(RunPlan(lang, root, ["go", "test", "-v", *sorted(pkgs)],
-                                    [f for f in files if (_nearest(repo, f, ("go.mod",)) or ".") == root]))
+                packages.setdefault((root, "./" if pkg == "." else f"./{pkg}"), []).append(f)
+            for (root, pkg), fs in sorted(packages.items()):
+                runs.append(RunPlan(lang, root, ["go", "test", "-v", pkg], fs))
         elif lang == "Rust":
             groups: Dict[str, List[str]] = {}
             for f in files:
@@ -243,71 +244,121 @@ def plan_runs(repo: Path, test_files: List[str], python_cmd: List[str],
     return runs, problems
 
 
-def _count(language: str, out: str, returncode: int) -> Tuple[int, int, bool]:
-    """(ran, failed, ran_nothing) from a runner's output, best effort."""
-    def num(pattern: str) -> int:
-        return sum(int(m) for m in re.findall(pattern, out))
+def _junit_reports(directory: Path, since: float) -> Tuple[int, int]:
+    """(ran, failed) summed over JUnit XML reports written since `since` (Maven's target/surefire-reports,
+    Gradle's build/test-results): their console output doesn't reliably count tests."""
+    import xml.etree.ElementTree as ET
+    ran = failed = 0
+    for pattern in ("**/target/surefire-reports/TEST-*.xml", "**/build/test-results/**/TEST-*.xml"):
+        for report in directory.glob(pattern):
+            try:
+                if report.stat().st_mtime < since:
+                    continue
+                root = ET.parse(report).getroot()
+            except (OSError, ET.ParseError):
+                continue
+            suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+            for suite in suites:
+                tests, skipped = int(suite.get("tests", 0)), int(suite.get("skipped", 0))
+                bad = int(suite.get("failures", 0)) + int(suite.get("errors", 0))
+                ran += tests - skipped
+                failed += bad
+    return ran, failed
+
+
+def _count(language: str, out: str, returncode: int) -> Tuple[Optional[int], int]:
+    """(tests executed, failed) from a runner's output; executed is None when the output can't be read.
+    Skipped tests don't count as executed."""
+    def num(pattern: str, flags=0) -> int:
+        return sum(int(m) for m in re.findall(pattern, out, flags))
 
     if language == PYTHON:
-        passed, failed = num(r"(\d+) passed"), num(r"(\d+) failed")
-        return passed + failed, failed, returncode == 5  # pytest: 5 = no tests collected
+        if not re.search(r"\d+ (passed|failed|skipped|error|xfailed|xpassed|deselected)|no tests ran", out):
+            return None, 0
+        failed = num(r"(\d+) failed") + num(r"(\d+) errors?\b")
+        return num(r"(\d+) passed") + num(r"(\d+) xpassed") + failed, failed
     if language == "Go":
         passed, failed = len(re.findall(r"^\s*--- PASS", out, re.M)), len(re.findall(r"^\s*--- FAIL", out, re.M))
-        nothing = passed + failed == 0 and returncode == 0 and ("[no test files]" in out or "no tests to run" in out)
-        return passed + failed, failed, nothing
+        return passed + failed, failed
     if language == "Rust":
+        if "test result:" not in out:
+            return None, 0
         passed, failed = num(r"test result: \w+\. (\d+) passed"), num(r"(\d+) failed;")
-        return passed + failed, failed, returncode == 0 and passed + failed == 0 and "test result" in out
+        return passed + failed, failed
     if language == "JavaScript":
-        passed, failed = num(r"(\d+) passed"), num(r"(\d+) failed")
-        nothing = bool(re.search(r"No tests found|No test files found", out))
-        return passed + failed, failed, nothing
-    if language in ("Java", "Kotlin"):
-        ran, failures = num(r"Tests run: (\d+),"), num(r"Failures: (\d+)") + num(r"Errors: (\d+)")
-        return ran, failures, False
+        jest = re.findall(r"^\s*Tests:?\s+(.*)$", out, re.M)  # jest "Tests: 1 failed, 2 passed", vitest "Tests  3 passed (3)"
+        node = re.findall(r"^#\s*(pass|fail)\s+(\d+)", out, re.M)  # node --test
+        if jest:
+            line = jest[-1]
+            passed = sum(int(m) for m in re.findall(r"(\d+) passed", line))
+            failed = sum(int(m) for m in re.findall(r"(\d+) failed", line))
+            return passed + failed, failed
+        if node:
+            passed = sum(int(n) for k, n in node if k == "pass")
+            failed = sum(int(n) for k, n in node if k == "fail")
+            return passed + failed, failed
+        if re.search(r"No tests found|No test files found", out):
+            return 0, 0
+        return None, 0
     if language == "Ruby":
-        ran, failed = num(r"(\d+) examples?"), num(r"(\d+) failures?")
-        return ran, failed, returncode == 0 and "0 examples" in out
+        rspec = re.search(r"(\d+) examples?, (\d+) failures?(?:, (\d+) pending)?", out)
+        if rspec:
+            examples, failures, pending = (int(g or 0) for g in rspec.groups())
+            return examples - pending, failures
+        mini = re.search(r"(\d+) runs?, \d+ assertions?, (\d+) failures?, (\d+) errors?, (\d+) skips?", out)
+        if mini:
+            runs, failures, errors, skips = (int(g) for g in mini.groups())
+            return runs - skips, failures + errors
+        return None, 0
     if language == "C#":
-        passed, failed = num(r"Passed:\s+(\d+)"), num(r"Failed:\s+(\d+)")
-        nothing = bool(re.search(r"No test matches the given testcase filter|No test is available", out))
-        return passed + failed, failed, nothing and passed + failed == 0
-    return 0, 0, False
+        if not re.search(r"(Passed|Failed)!\s+-|Total tests:|No test (matches|is available)", out):
+            return None, 0
+        failed = num(r"Failed:\s+(\d+)")
+        return num(r"Passed:\s+(\d+)") + failed, failed
+    return None, 0
 
 
 def run_tests(repo: Path, runs: List[RunPlan], timeout: int = 300) -> RunOutcome:
-    """Run every planned run; passes only if each one did and at least one test file still exists."""
+    """Run every planned run. A run that executed no test (every selected file gone, only skipped tests,
+    nothing matched, or output that can't be read) leaves the change it was selected for unverified, so
+    `ran_nothing` is set whenever any run did that, not only when all did."""
+    import time
     outcome = RunOutcome(passed=True)
-    any_ran = False
     for run in runs:
         existing = [f for f in run.files if (repo / f).exists()]
         if not existing:
             outcome.errors.append(f"{run.language}: none of the selected test files exist: {', '.join(run.files)}")
+            outcome.ran_nothing = True
             continue
+        started = time.time()
         try:
             r = subprocess.run(run.command, cwd=repo / run.cwd, capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
             outcome.passed = False
             outcome.errors.append(f"{run.language}: tests timed out ({' '.join(run.command[:3])} ...)")
-            any_ran = True
             continue
         except FileNotFoundError:
             outcome.passed = False
             outcome.errors.append(f"{run.language}: test runner not found: {run.command[0]}")
             continue
         out = r.stdout + "\n" + r.stderr
-        ran, failed, nothing = _count(run.language, out, r.returncode)
-        outcome.ran += ran
+        if run.language in ("Java", "Kotlin"):
+            ran, failed = _junit_reports(repo / run.cwd, started - 1)
+            ran = ran if (ran or r.returncode == 0) else None
+        else:
+            ran, failed = _count(run.language, out, r.returncode)
+        outcome.ran += ran or 0
         outcome.failed += failed
-        if nothing:
-            outcome.errors.append(f"{run.language}: the runner ran no tests ({' '.join(run.command[:4])} ...)")
-            continue
-        any_ran = True
         if r.returncode != 0:
             outcome.passed = False
             lines = [ln for ln in out.splitlines() if re.search(r"FAIL|ERROR|Error|panic|failed", ln)]
             outcome.errors.extend(f"{run.language}: {ln.strip()}" for ln in lines[:20])
             if not lines:
                 outcome.errors.append(f"{run.language}: exited {r.returncode}")
-    outcome.ran_nothing = not any_ran
+        elif not ran:
+            outcome.ran_nothing = True
+            outcome.errors.append(f"{run.language}: {'no test executed' if ran == 0 else 'could not tell whether any test ran'}"
+                                  f" ({' '.join(run.command[:4])} ...)")
+    if not runs:
+        outcome.ran_nothing = True
     return outcome

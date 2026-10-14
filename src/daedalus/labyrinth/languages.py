@@ -209,14 +209,20 @@ class PythonSupport(LanguageSupport):
         rel = Path(file_path).relative_to(project_root)
         package = list(rel.parent.parts)  # relative imports resolve against the file's directory
         out: Dict[str, Tuple[str, Optional[str]]] = {}
+
+        def bind(name: str, target: Tuple[str, Optional[str]]) -> None:
+            # A name imported twice from different places (try/except fallbacks, a function-local import)
+            # can't be decided statically
+            out[name] = target if out.get(name, target) == target else ("ambiguous:", None)
+
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     if alias.asname:
-                        out[alias.asname] = (f"py:{alias.name}", None)
+                        bind(alias.asname, (f"py:{alias.name}", None))
                     else:  # `import a.b` binds `a`
                         head = alias.name.split(".")[0]
-                        out[head] = (f"py:{head}", None)
+                        bind(head, (f"py:{head}", None))
             elif isinstance(node, ast.ImportFrom):
                 if node.level:
                     parts = package[: len(package) - (node.level - 1)] if node.level > 1 else list(package)
@@ -227,7 +233,7 @@ class PythonSupport(LanguageSupport):
                     base = node.module or ""
                 for alias in node.names:
                     if alias.name != "*":
-                        out[alias.asname or alias.name] = (f"py:{base}", alias.name)
+                        bind(alias.asname or alias.name, (f"py:{base}", alias.name))
         return out
 
     def constructor_of(self, class_name: str) -> Tuple[str, ...]:

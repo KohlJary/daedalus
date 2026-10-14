@@ -41,6 +41,10 @@ from .sources import SKIP_DIRS, git_ignored, is_ignored, is_ignored_dir, keep_fi
 
 logger = logging.getLogger(__name__)
 
+# Version of the cached graph (.mind-palace/codebase-graph.json). 2: `calls` hold resolved node ids (before,
+# raw call names), and non-Python node ids keep their file extension. Older caches are rebuilt, not loaded.
+GRAPH_FORMAT = 2
+
 # Methods that are boilerplate - not worth creating rooms for
 NOISE_METHODS = frozenset({
     # Dunders (most are boilerplate)
@@ -90,6 +94,13 @@ def _is_noise_element(element) -> bool:
         return True
 
     return False
+
+
+def _matching_elements(elements, name: str):
+    """Elements a room named `name` stands for: an exact name match first (top-level `total`), then a
+    qualified one (`Cart.total`), so a method can't stand in for a same-named function."""
+    exact = [e for e in elements if e.name == name]
+    return exact or [e for e in elements if e.name.endswith(f".{name}")]
 
 
 @dataclass
@@ -598,8 +609,7 @@ class Cartographer:
                 # Check signature hash if available. Rooms are keyed by slug; match the element by the room's name.
                 if anchor.signature_hash:
                     elements, _ = self.analyze_file(file_path)
-                    for element in elements:
-                        if element.name == room.name or element.name.endswith(f".{room.name}"):
+                    for element in _matching_elements(elements, room.name):
                             new_hash = hashlib.md5(element.signature.encode()).hexdigest()[:8]
                             if new_hash != anchor.signature_hash:
                                 reports.append(DriftReport(
@@ -640,21 +650,20 @@ class Cartographer:
             return None
 
         elements, _ = self.analyze_file(file_path)
-        for element in elements:
-            # room_name may be the room's slug (how palace.rooms is keyed); match elements by its name
-            if element.name == room.name or element.name.endswith(f".{room.name}"):
-                # Update room from current code
-                updated = self.suggest_room(element, room.building)
-                updated.history = room.history + [HistoryEntry(
-                    date=datetime.now().strftime("%Y-%m-%d"),
-                    note="Synced with code changes",
-                    author="Cartographer",
-                )]
-                self.storage.add_room(self.palace, updated)
-                self.palace.rooms[room_name] = updated
-                return updated
-
-        return None
+        # room_name may be the room's slug (how palace.rooms is keyed); match elements by its name
+        matches = _matching_elements(elements, room.name)
+        if not matches:
+            return None
+        # Update room from current code
+        updated = self.suggest_room(matches[0], room.building)
+        updated.history = room.history + [HistoryEntry(
+            date=datetime.now().strftime("%Y-%m-%d"),
+            note="Synced with code changes",
+            author="Cartographer",
+        )]
+        self.storage.add_room(self.palace, updated)
+        self.palace.rooms[room_name] = updated
+        return updated
 
     # =========================================================================
     # Graph Export & Visualization
@@ -764,6 +773,7 @@ class Cartographer:
         ][:20]
 
         return {
+            "format": GRAPH_FORMAT,
             "nodes": nodes,
             "edges": edges,
             "modules": modules,

@@ -165,3 +165,42 @@ def test_causal_chain_names_definitions_and_tests_in_any_language(tmp_path):
 def _has(*modules):
     import importlib.util
     return all(importlib.util.find_spec(m) is not None for m in modules)
+
+
+def test_skip_only_suites_are_not_a_pass(tmp_path):
+    repo = make_repo(tmp_path, {"app/core.py": "def f():\n    return 1\n",
+                                "tests/test_core.py": "import pytest\nfrom app.core import f\n\n"
+                                                      "@pytest.mark.skip\ndef test_f():\n    assert f() == 1\n"})
+    result = verifier(repo, test_cmd=[sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]).verify(
+        diff_for(repo, "app/core.py", "def f():\n    return 2\n"))
+    assert not result.passed and result.no_tests_matched and result.tests_run == 0
+
+
+@pytest.mark.skipif(shutil.which("go") is None, reason="needs go")
+def test_one_language_running_nothing_leaves_the_diff_unverified(tmp_path):
+    pytest.importorskip("tree_sitter_go")
+    files = {**GO, "calc/skip_test.go": "package calc\n\nimport \"testing\"\n\nfunc TestSkipped(t *testing.T) { t.Skip(\"later\") }\n",
+             "other/other.go": "package other\n\nfunc Other() int { return 1 }\n",
+             "other/other_test.go": "package other\n\nimport \"testing\"\n\nfunc TestOther(t *testing.T) { t.Skip(\"later\") }\n"}
+    repo = make_repo(tmp_path, files)
+    # calc's real test runs and passes; other's only test is skipped: other's change is not verified
+    diff_text = diff_for(repo, "calc/calc.go", files["calc/calc.go"].replace("x * 2", "x + x")).content \
+        + diff_for(repo, "other/other.go", files["other/other.go"].replace("1", "2")).content
+    result = verifier(repo).verify(Diff.from_git_diff("wp-1", "w-1", diff_text, "two packages"))
+    assert not result.passed and result.no_tests_matched and result.tests_run == 1
+    assert any("Go: no test executed (go test -v ./other" in e for e in result.test_errors)
+
+
+def test_test_cmd_is_for_python_only(tmp_path):
+    runs, _ = plan_runs(tmp_path, ["tests/test_x.py", "calc/calc_test.go"], [sys.executable, "-m", "pytest"])
+    commands = {r.language: r.command[:2] for r in runs}
+    assert commands.get("Python", [None])[0] == sys.executable
+    if "Go" in commands:
+        assert commands["Go"] == ["go", "test"]
+
+
+def test_custom_output_the_runner_cannot_read_is_not_a_pass(tmp_path):
+    repo = make_repo(tmp_path, {"app/core.py": "def f():\n    return 1\n",
+                                "tests/test_core.py": "from app.core import f\n\ndef test_f():\n    assert f() == 1\n"})
+    result = verifier(repo, test_cmd=NOOP).verify(diff_for(repo, "app/core.py", "def f():\n    return 2\n"))
+    assert not result.passed and result.no_tests_matched  # NOOP prints nothing: we can't tell a test ran
