@@ -64,16 +64,22 @@ session. List everything else as pending in the report.
      whether the user approved it
    - **Open questions** for the user
 
-6. **Route what was learned.**
+6. **Other workstreams** (when `daedalus workstream others` prints any). Release claims on
+   paths this session finished with (`daedalus workstream claim --release
+   <paths>`) and commit the change. For board threads still waiting on your
+   workstream, draft replies (`daedalus board draft`) and list them as pending
+   the owner's approval; never post them yourself.
+
+7. **Route what was learned.**
    - A lesson learned the hard way -> the skill or CLAUDE.md lessons section
      where the next session will see it
    - A user preference or correction -> a memory note
    - A change to the Daedalus setup itself (template, agents, skills, these
      rituals) -> the project's upstream-changes log, if it keeps one
 
-7. **Report.** In a few lines: what was preserved and where, what is in
+8. **Report.** In a few lines: what was preserved and where, what is in
    flight, what is pending approval, anything left uncommitted and why.
 
-8. **Suggest compaction.** Offer `/compact` with a ready-to-paste focus note,
+9. **Suggest compaction.** Offer `/compact` with a ready-to-paste focus note,
    e.g. `/compact keep the PR review plan and the hold on pushing; drop the
    test-run output`. Once per breakpoint; when to compact is the user's call.

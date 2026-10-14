@@ -160,7 +160,7 @@ def test_brief_leads_with_mine_and_lists_the_others(repo, monkeypatch):
     assert lines[1] == "**Workstream:** memory"
     assert lines[2].startswith("**Phase:** p2b-reconstruction")
     others = lines[lines.index("**Other workstreams:**") + 1:]
-    assert "- default (person): no active phase" in others
+    assert not any(l.startswith("- default") for l in others)     # an unused default isn't a teammate
     assert any(l.startswith("- ariadne (session): p1-edicts-ariadne - next T-e5") for l in others)
     assert not any(l.startswith("- memory") for l in others)
     assert len(lines) <= MAX_BRIEF_LINES
@@ -264,3 +264,22 @@ def test_local_config_is_never_committable(repo, monkeypatch):
     assert subprocess.run(["git", "check-ignore", "-q", ".daedalus/config.json"], cwd=repo).returncode == 0
     (repo / ".daedalus/config.json").write_text("{bad")
     assert "not valid JSON" in cli(repo, monkeypatch, "workstream", "use", "default", code=1)
+
+
+
+def test_others_ignores_an_unused_default(repo, monkeypatch):
+    """Solo: your own workstream plus an untouched default is not a team."""
+    cli(repo, monkeypatch, "workstream", "new", "kohl", "--use")
+    assert ws.others(repo, "kohl") == []
+    assert "Other workstreams" not in session_start_brief(repo)
+    assert cli(repo, monkeypatch, "workstream", "others") == ""
+
+    cli(repo, monkeypatch, "workstream", "new", "frank")
+    assert ws.others(repo, "kohl") == ["frank"]
+    assert cli(repo, monkeypatch, "workstream", "others") == "frank\n"
+
+    data = gp.load_gameplan(repo, "default")                    # someone starts using the default plan
+    gp.add_phase(data, "p1", "Shared")
+    gp.activate_phase(data, "p1")
+    gp.save_gameplan(repo, data, "default")
+    assert ws.others(repo, "kohl") == ["default", "frank"]
