@@ -250,6 +250,14 @@ class MergeResult:
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
+def make_conflict_id(diff_a_id: str, diff_b_id: str) -> str:
+    """One id per pair of diffs, whichever order they're compared in. (The old id used the first six
+    characters of each diff id, i.e. "diff-" plus one hex digit: sixteen values, so unrelated pairs
+    collided, and the same pair got a different id when compared the other way round.)"""
+    a, b = sorted((diff_a_id, diff_b_id))
+    return f"conflict-{a.removeprefix('diff-')}-{b.removeprefix('diff-')}"
+
+
 class AriadneBus:
     """
     Coordination bus for diff collection and conflict resolution.
@@ -536,7 +544,7 @@ class AriadneBus:
             conflict_type = ConflictType.FILE_OVERLAP
             suggested_strategy = MergeStrategy.SEQUENTIAL
 
-        conflict_id = f"conflict-{diff_a.id[:6]}-{diff_b.id[:6]}"
+        conflict_id = make_conflict_id(diff_a.id, diff_b.id)
 
         return Conflict(
             id=conflict_id,

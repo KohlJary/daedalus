@@ -137,3 +137,9 @@ def test_resolving_with_reject_lets_the_earlier_diff_land(repo, bus, monkeypatch
     assert bus.get_diff(a.id).status == DiffStatus.MERGED
     assert bus.get_diff(b.id).status == DiffStatus.REJECTED
     assert "raise ValueError" in (repo / "calc.py").read_text() and "sum_all" not in (repo / "calc.py").read_text()
+
+
+def test_conflict_ids_are_unique_per_pair_and_order_independent():
+    from daedalus.ariadne.diff_bus import make_conflict_id
+    assert make_conflict_id("diff-3aaaaaaaaaaa", "diff-3bbbbbbbbbbb") != make_conflict_id("diff-3aaaaaaaaaaa", "diff-3ccccccccccc")
+    assert make_conflict_id("diff-1", "diff-2") == make_conflict_id("diff-2", "diff-1")
