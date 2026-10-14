@@ -11,6 +11,18 @@ ships, its resolution is written down, so the next session or the next person
 doesn't have to dig through git.
 *Lives in* `.daedalus/roadmap/gameplan.json` (committed). *CLI:* `daedalus gameplan show`
 
+## Roadmap
+Intake: the work that's been asked for, from anywhere, whether that's an idea,
+a bug, or an item imported from ADO or Jira. The gameplan is what we're doing
+about it: phases pull roadmap items in and break them into tasks.
+*Lives in* `.daedalus/roadmap/`. *CLI:* `daedalus roadmap list`
+
+## Source (planned)
+A plugin that connects an outside tracker (ADO, Jira, GitHub Issues) to
+Daedalus. It turns outside items into pending proposals, and it can propose
+updating the outside item when the work is done. Like every outward-facing
+change, that update asks first.
+
 ## Pending proposal
 A suggested gameplan update, for example "T-e5 looks done". It is left by a
 hook or by a reconstruction from git. Hooks never edit the gameplan

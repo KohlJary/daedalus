@@ -35,6 +35,7 @@ PR #38, edict 0011 and the board threads don't exist.
 | `story.oph` | The narrative: status now, session history, decisions, lessons, warnings, map |
 | `explain.oph` | The `?` card shown on any panel, and the first-run welcome |
 | `glossary.md` | Draft text for every Explain card |
+| `sources.oph` | Source plugins (ADO, Jira, …): sync health, mapping, write-back |
 | `coverage.md` | How much of Daedalus the design shows, tracked over time |
 
 ## Screen map
@@ -75,6 +76,58 @@ esc returns to the shell from any expanded screen.
    command behind it, so a reader can leave the TUI and keep going.
 9. **Owner-neutral.** The design never assumes the owner is Kohl: "Needs you",
    not "Needs Kohl".
+
+## Extensibility: sources and plugins
+
+The TUI will grow, and different users track work in different places: ADO
+at Kohl's work, Jira or GitHub Issues elsewhere. The seam for that belongs in
+Daedalus core, not in the TUI, because a source is useful without the TUI too
+(for example a `daedalus source sync` command).
+
+**Sources (core).** A source plugin registers under a Python entry-point
+group (for example `daedalus.sources`). It does three things:
+- fetches items from the outside system;
+- maps each item to **pending proposals**;
+- optionally, proposes a write-back when something changes here.
+
+Because imports arrive as pending proposals, an existing rule still holds:
+nothing writes the gameplan until the owner applies it. Write-backs are
+outward-facing, so they always ask first.
+
+This also gives the roadmap a clear job, which coverage.md flagged as
+confusing. The **roadmap is intake**: what's been asked for, from anywhere.
+The **gameplan is the plan**: what we're doing about it. ADO maps onto that
+as Epic → phase, Story → roadmap item, Task → gameplan task. Each source
+declares its own mapping.
+
+The follow-on chain for one ADO story:
+
+```
+ADO AB#4812 ─sync─▶ pending proposal ─apply─▶ roadmap item + tasks
+   ▲                                              │ Claude works them
+   └─ asks first ◀── write-back proposal ◀── task done, with a resolution
+```
+
+Along the way:
+- the Story view links `AB#` IDs back to ADO;
+- `doctor` flags drift between the source and the gameplan (closed in ADO but
+  still open here, or the reverse);
+- Sources shows sync health (`sources.oph`).
+
+**TUI contributions.** A plugin can add:
+- a NeedsYou kind (its tag, detail renderer and actions);
+- Explain cards;
+- a full screen reached from a menu.
+
+The shell layout itself is not pluggable. A fixed home screen is part of what
+keeps it legible.
+
+**Open questions for this layer:**
+- Is it its own edict? Probably yes, separate from the TUI.
+- Conflicts: when both sides change, does the source win, or does the change
+  become a proposal?
+- Credentials: never in the repo, but keyring or environment variables?
+- Write-back granularity: state only, or also comments with the resolution?
 
 ## From Wonderland's TUI (~/wonderland-ai/src/wonderland/tui)
 

@@ -65,13 +65,15 @@ The goal is a TUI someone else can use, so coverage alone isn't enough: a
 view a newcomer can't interpret doesn't count for much. The second measure is
 how many concepts have an Explain card in `glossary.md`.
 
-- **Carded (13):** gameplan, pending proposal, edict, dissent, workstream,
-  board, doctor/drift, story, Momus, Ariadne, Mind Palace, Theseus, Claude pane.
-- **No card yet:** roadmap (and how it relates to the gameplan), the agent
-  roster (memory, docs, test-runner and the rest), hooks, init/hydrate.
+- **Carded (14):** gameplan, roadmap, pending proposal, edict, dissent,
+  workstream, board, doctor/drift, story, Momus, Ariadne, Mind Palace, Theseus,
+  Claude pane. (Source has a card too, but it's planned, so it isn't counted.)
+- **No card yet:** the agent roster (memory, docs, test-runner and the rest), hooks, init/hydrate.
 
-The design adds one thing the program doesn't have: a list of PRs awaiting
-review (open question: `gh` or local branches).
+The design adds things the program doesn't have yet:
+- a list of PRs awaiting review (open question: `gh` or local branches);
+- source plugins (ADO, Jira, …) feeding pending proposals; see README,
+  Extensibility. These are counted once they exist in core.
 
 ## History
 
@@ -79,6 +81,7 @@ review (open question: `gh` or local branches).
 |------|----------|----------|----------------|-----------------|--------|
 | 2026-10-14 | 28 | 31 | 45% / 61% | 0 | First design draft (8c89c93) |
 | 2026-10-14 | 34 | 32 | 50% / 69% | 13 | Newcomer goal: Story, Explain, first run, glossary |
+| 2026-10-14 | 36 | 32 | 50% / 69% | 14 | Extensibility: Sources screen, tracker-import proposal; roadmap carded as intake |
 
 ## Refreshing the CLI inventory
 

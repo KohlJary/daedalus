@@ -3,7 +3,7 @@
 Everything waiting on the project's owner, oldest first within a kind. Kinds carry a
 two-letter tag so they read without colour: PR (branch awaiting review),
 ED (proposed edict), DS (open dissent), BD (board thread with new posts),
-GP (pending gameplan proposal).
+GP (pending gameplan proposal). Plugins add kinds with their own tag.
 
 @compact
 ┌────────────────────────────────┐
@@ -113,6 +113,19 @@ note: accepting an edict means merging its PR. There is no accept key, by design
 │ r read thread · s draft reply with Claude                 │
 └───────────────────────────────────────────────────────────┘
 note: replies are drafted by Claude and published with `daedalus board post`, which asks first.
+
+@tracker-import
+┌───────────────────────────────────────────────────────────┐
+│ P2 · from source ado · 5m ago                             │
+│ AB#4812 User Story · "Export audit log as CSV"            │
+│ assigned to you · sprint 42 · 3 child tasks               │
+│                                                           │
+│ Proposed: roadmap item + 3 tasks in phase p9-audit        │
+├───────────────────────────────────────────────────────────┤
+│ a apply · x drop · o open in ADO · s ask Claude to plan it│
+└───────────────────────────────────────────────────────────┘
+note: a source plugin's import is a pending proposal like any other. Nothing
+reaches the gameplan until the owner applies it.
 
 @gameplan-proposal
 ┌───────────────────────────────────────────────────────────┐
