@@ -1,4 +1,4 @@
-"""Tree-sitter frontend: palace queries on languages other than Python (daedalus[palace])."""
+"""Tree-sitter frontend: palace queries on languages other than Python (tree-sitter grammars)."""
 
 import logging
 import subprocess

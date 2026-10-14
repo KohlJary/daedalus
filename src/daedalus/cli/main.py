@@ -737,8 +737,10 @@ def palace_languages():
             fallback = registry.get_by_extension(Path("x" + g.extensions[0]))
             note = "basic regex analyzer, no call graph" if fallback is not None else "not analyzed"
             click.echo(f"{g.name:13} {exts}  ({note})")
+    if registry.get_by_name("Razor") is not None:
+        click.echo(f"{'Razor':13} .razor .cshtml  (through the C# grammar)")
     if not tree_sitter_available():
-        click.echo("\nOther languages need tree-sitter: pip install 'daedalus[palace]'")
+        click.echo("\ntree-sitter isn't installed, so only Python is analyzed. Reinstall daedalus-cli (it depends on it).")
 
 
 @main.group()

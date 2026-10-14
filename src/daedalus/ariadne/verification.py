@@ -216,7 +216,7 @@ class CausalSliceVerifier:
                 workspace, diff.all_affected_files()
             )
             if self._unchecked:
-                result.skipped_checks.append("syntax (install daedalus[palace] for tree-sitter): "
+                result.skipped_checks.append("syntax (tree-sitter is missing; reinstall daedalus-cli): "
                                              + ", ".join(self._unchecked))
             if selection.error:
                 result.skipped_checks.append(f"palace test selection: {selection.error}")

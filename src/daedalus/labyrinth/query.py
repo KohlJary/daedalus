@@ -21,9 +21,9 @@ Recall is good where the call target is unique or nearly so. For interfaces with
 a superset. Calls made through dispatch (CLI runners, callbacks) stay invisible, which is why test
 selection falls back to "run the full suite" when it finds nothing.
 
-Languages: whatever the palace's language registry analyzes. Python uses the stdlib ast; with
-`daedalus[palace]` installed, tree-sitter grammars cover JavaScript/TypeScript, Go, Rust, Java, C#,
-C/C++ and Ruby (see treesitter.py). Test conventions (which files and symbols are tests, where a
+Languages: whatever the palace's language registry analyzes. Python uses the stdlib ast; tree-sitter
+grammars (installed with daedalus-cli) cover JavaScript/TypeScript, Go, Rust, Java, C#, C/C++ and Ruby,
+and Razor through C# (see treesitter.py, razor.py). Test conventions (which files and symbols are tests, where a
 file's tests usually live) come from each language's support class.
 """
 

@@ -7,9 +7,9 @@ references from the matches, so adding a language is a table row, not a parser.
 
 Grammars come from two places, tried in order:
 
-1. Per-language wheels (tree-sitter-go, tree-sitter-rust, ...), installed by `daedalus[palace]`.
+1. Per-language wheels (tree-sitter-go, tree-sitter-rust, ...), dependencies of daedalus-cli.
    They ship with pip and never touch the network.
-2. tree-sitter-language-pack, if installed (`daedalus[palace-all]`). It covers hundreds of
+2. tree-sitter-language-pack, if installed (`daedalus-cli[palace-all]`). It covers hundreds of
    languages but downloads each grammar the first time it is used, so a language that only it
    provides fails offline; that failure is logged once and the language yields no elements.
 

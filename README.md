@@ -261,6 +261,7 @@ The pieces are named after the Labyrinth myth; here is what each does.
 | `daedalus edict list \| show \| dissent \| dissents \| resolve-dissent` | Edicts |
 | `daedalus roadmap list \| add` | Roadmap |
 | `daedalus palace init \| status \| callers \| callees \| impact \| path \| tests-for` | Mind Palace and its call-graph queries |
+| `daedalus palace languages` | Which languages the palace analyzes here: Python, JS/TS, Go, Rust, Java, C#, Razor, C/C++, Ruby built in; Kotlin, PHP, Scala, Lua with `pip install "daedalus-cli[palace-all]"` |
 | `daedalus config [key [value]] [--project]` | Settings |
 | `ariadne init \| status \| process \| daemon \| review … \| plans …` | Ariadne |
 

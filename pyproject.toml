@@ -29,12 +29,7 @@ dependencies = [
     "pyyaml>=6.0",
     "platformdirs>=4.0",
     "click>=8.0",
-]
-
-[project.optional-dependencies]
-sdk = ["claude-agent-sdk>=0.1.0"]
-# Mind Palace beyond Python: tree-sitter grammars, installed with pip (no network at runtime)
-palace = [
+    # Mind Palace beyond Python: tree-sitter grammars as prebuilt wheels (no compiler, no network at runtime)
     "tree-sitter>=0.25",
     "tree-sitter-javascript>=0.23",
     "tree-sitter-typescript>=0.23",
@@ -46,9 +41,14 @@ palace = [
     "tree-sitter-cpp>=0.23",
     "tree-sitter-ruby>=0.23",
 ]
-# Everything in palace, plus any language tree-sitter-language-pack knows. It downloads a grammar
-# the first time that language is analyzed, so those languages need network access once.
-palace-all = ["daedalus[palace]", "tree-sitter-language-pack>=1.0"]
+
+[project.optional-dependencies]
+sdk = ["claude-agent-sdk>=0.1.0"]
+# The bundled grammars are core dependencies; kept so `daedalus-cli[palace]` still installs
+palace = []
+# More languages (Kotlin, PHP, Scala, Lua) through tree-sitter-language-pack. It downloads a grammar the
+# first time that language is analyzed, so those languages need network access once.
+palace-all = ["tree-sitter-language-pack>=1.0"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0"]
 
 [project.scripts]

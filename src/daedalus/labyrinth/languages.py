@@ -582,7 +582,7 @@ class LanguageRegistry:
         self._languages: Dict[str, LanguageSupport] = {}
         self._extension_map: Dict[str, LanguageSupport] = {}
 
-        # Register built-in languages. With tree-sitter installed (`daedalus[palace]`), its grammars
+        # Register built-in languages. With tree-sitter installed (a daedalus-cli dependency), its grammars
         # take over every extension they cover, including the regex TypeScript analyzer's.
         self.register(PythonSupport())
         self.register(TypeScriptSupport())
