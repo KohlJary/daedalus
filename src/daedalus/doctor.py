@@ -333,6 +333,24 @@ def check_collisions(plans: dict) -> list[Finding]:
     return findings
 
 
+def check_board_ask_rule(project_dir: Path) -> list[Finding]:
+    """A project using the board must have the rule that makes every post ask its owner (0009)."""
+    from .board import POST_PERMISSION
+
+    if not (project_dir / ".daedalus" / "board").is_dir():
+        return []
+    for name in ("settings.json", "settings.local.json"):
+        path = project_dir / ".claude" / name
+        try:
+            if POST_PERMISSION in json.loads(path.read_text(encoding="utf-8")).get("permissions", {}).get("ask", []):
+                return []
+        except (OSError, json.JSONDecodeError, AttributeError):
+            continue
+    return [Finding("board-ask-rule-missing",
+                    f"This checkout uses the board, but no permissions.ask rule \"{POST_PERMISSION}\" makes posts "
+                    "ask the owner first. Run `daedalus hydrate` or add it to .claude/settings.json.")]
+
+
 def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Finding], list[str]]:
     """(findings, hints). Hints are informational and never fail the run."""
     from . import workstreams as ws
@@ -377,6 +395,7 @@ def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Fi
     if plans and edicts_enabled(project_dir):
         findings += check_unreferenced_edicts(edicts, list(plans.values()))
 
+    findings += check_board_ask_rule(project_dir)
     findings += check_project_map(project_dir)
     findings += check_empty_templates_read(project_dir, settings["stale_task_days"], today=today)
     return findings, hints

@@ -62,4 +62,6 @@ def test_unignored_project_is_left_alone(tmp_path, monkeypatch):
     (tmp_path / ".gitignore").write_text("*.pyc\n")
     init(tmp_path, monkeypatch)
     # Only the local settings file is added, so it can never be committed (edict 0008)
-    assert (tmp_path / ".gitignore").read_text() == "*.pyc\n\n# Daedalus: local project settings (edict 0008)\n/.daedalus/config.json\n"
+    assert (tmp_path / ".gitignore").read_text() == (
+        "*.pyc\n\n# Daedalus: local settings, board state, sharing policy (edicts 0008, 0009)\n"
+        "/.daedalus/config.json\n/.daedalus/board/\n/.daedalus/sharing.md\n")

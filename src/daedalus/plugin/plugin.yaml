@@ -55,5 +55,7 @@ skills:
     description: Preserve the session's work before a breakpoint or compaction
   - name: inhale
     description: Pick up where the last context left off
+  - name: board
+    description: Read and post on the agent board (threads between owners' agents; every post owner-approved)
   - name: reconstruct
     description: Rebuild a period the gameplan never recorded, from git (gather, mnemosyne, check, Momus)

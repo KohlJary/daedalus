@@ -113,6 +113,8 @@ def init_project(project_dir: Path, force: bool = False, hooks: bool = True, edi
 
     if hooks:
         _register_hooks(project_dir)
+    else:
+        _ensure_dissent_ask_rule(project_dir)
 
     if edicts:
         _enable_edicts(project_dir)
@@ -139,6 +141,8 @@ def hydrate_project(
     """Update Daedalus assets in project. With dry_run, report what would change and write nothing."""
     if hooks:
         _register_hooks(project_dir, dry_run=dry_run)
+    else:
+        _ensure_dissent_ask_rule(project_dir, dry_run)
 
     if skills:
         skills_dir = project_dir / ".claude" / "skills"
@@ -237,8 +241,8 @@ def _ensure_gameplan_tracked(project_dir: Path):
         # The local project config (current workstream, edicts setting) must never be committed
         text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
         sep = "" if not text or text.endswith("\n") else "\n"
-        gitignore.write_text(text + sep + "\n# Daedalus: local project settings (edict 0008)\n/.daedalus/config.json\n",
-                             encoding="utf-8")
+        gitignore.write_text(text + sep + "\n# Daedalus: local settings, board state, sharing policy (edicts 0008, 0009)\n"
+                             "/.daedalus/config.json\n/.daedalus/board/\n/.daedalus/sharing.md\n", encoding="utf-8")
     for rel, block, what in checks:
         if not ignored(rel):
             continue
@@ -272,12 +276,18 @@ def _enable_edicts(project_dir: Path):
 
 
 def _ensure_dissent_ask_rule(project_dir: Path, dry_run: bool = False):
-    """With edicts on, resolving a dissent always prompts the human (edict 0003): an `ask` rule."""
+    """Owner-only actions always prompt (an `ask` rule): posting to the board (0009) and, with edicts
+    on, resolving a dissent (0003)."""
+    from ..board import POST_PERMISSION
     from ..config import edicts_setting
     from ..edicts import RESOLVE_PERMISSION
 
-    if not edicts_setting(project_dir)[0]:
-        return
+    rules = [POST_PERMISSION] + ([RESOLVE_PERMISSION] if edicts_setting(project_dir)[0] else [])
+    for rule in rules:
+        _ensure_ask_rule(project_dir, rule, dry_run)
+
+
+def _ensure_ask_rule(project_dir: Path, rule: str, dry_run: bool = False):
     path = project_dir / ".claude" / "settings.json"
     try:
         settings = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
@@ -285,18 +295,18 @@ def _ensure_dissent_ask_rule(project_dir: Path, dry_run: bool = False):
         settings = None
     perms = settings.setdefault("permissions", {}) if isinstance(settings, dict) else None
     if not isinstance(perms, dict) or not isinstance(perms.get("ask", []), list):
-        click.echo(f"  Warning: couldn't add the ask rule for resolving dissents: {path} is not in the shape "
-                   f"Claude Code uses. Add \"{RESOLVE_PERMISSION}\" to permissions.ask by hand.", err=True)
+        click.echo(f"  Warning: couldn't add the ask rule for {rule}: {path} is not in the shape "
+                   f"Claude Code uses. Add \"{rule}\" to permissions.ask by hand.", err=True)
         return
-    if RESOLVE_PERMISSION in perms.get("ask", []):
+    if rule in perms.get("ask", []):
         return
     if dry_run:
-        click.echo(f"Permission rule that would be added: ask {RESOLVE_PERMISSION}")
+        click.echo(f"Permission rule that would be added: ask {rule}")
         return
-    perms.setdefault("ask", []).append(RESOLVE_PERMISSION)
+    perms.setdefault("ask", []).append(rule)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
-    click.echo("  Resolving a dissent now asks first (permissions.ask in .claude/settings.json)")
+    click.echo(f"  Added ask rule {rule} (permissions.ask in .claude/settings.json)")
 
 
 def _register_hooks(project_dir: Path, dry_run: bool = False):
@@ -306,7 +316,8 @@ def _register_hooks(project_dir: Path, dry_run: bool = False):
 
     settings = get_project_settings(project_dir, "hooks")
     added, removed, error = register_hooks(
-        project_dir, session_start=settings["session_start"], capture=settings["capture"], dry_run=dry_run
+        project_dir, session_start=settings["session_start"], capture=settings["capture"], dry_run=dry_run,
+        board=settings.get("board", True),
     )
     if error:
         click.echo(f"  Warning: {error}", err=True)

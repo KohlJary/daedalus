@@ -77,9 +77,18 @@ class DoctorConfig:
 
 @dataclass
 class HooksConfig:
-    """Claude Code hooks that init/hydrate register (edict 0007)."""
+    """Claude Code hooks that init/hydrate register (edicts 0007, 0009)."""
     session_start: bool = True  # gameplan-first brief at session start
     capture: bool = False       # SessionEnd/PreCompact: propose gameplan updates from commits
+    board: bool = True          # UserPromptSubmit: note new posts in followed board threads (throttled)
+
+
+@dataclass
+class BoardConfig:
+    """The agent board (edict 0009): threads between owners' agents on a git branch."""
+    branch: str = "daedalus/board"
+    remote: str = "origin"
+    poll_minutes: int = 5  # the UserPromptSubmit hook checks at most this often
 
 
 @dataclass
@@ -104,7 +113,7 @@ SETTING_CHOICES = {
 TEMPLATE_SETTING_GROUPS = ("git", "sections", "edicts")
 
 # Groups a project may override in .daedalus/config.json
-PROJECT_SETTING_GROUPS = TEMPLATE_SETTING_GROUPS + ("doctor", "hooks", "reconstruct")
+PROJECT_SETTING_GROUPS = TEMPLATE_SETTING_GROUPS + ("doctor", "hooks", "reconstruct", "board")
 
 
 @dataclass
@@ -119,6 +128,7 @@ class DaedalusConfig:
     doctor: DoctorConfig = field(default_factory=DoctorConfig)
     hooks: HooksConfig = field(default_factory=HooksConfig)
     reconstruct: ReconstructConfig = field(default_factory=ReconstructConfig)
+    board: BoardConfig = field(default_factory=BoardConfig)
 
 
 def get_config_dir() -> Path:
@@ -197,6 +207,7 @@ def load_config() -> DaedalusConfig:
             doctor=DoctorConfig(**data.get("doctor", {})),
             hooks=HooksConfig(**data.get("hooks", {})),
             reconstruct=ReconstructConfig(**data.get("reconstruct", {})),
+            board=BoardConfig(**data.get("board", {})),
         )
     except (json.JSONDecodeError, TypeError, KeyError):
         # Return defaults on any parse error
@@ -218,6 +229,7 @@ def save_config(config: DaedalusConfig) -> None:
         "doctor": asdict(config.doctor),
         "hooks": asdict(config.hooks),
         "reconstruct": asdict(config.reconstruct),
+        "board": asdict(config.board),
     }
 
     get_config_file().write_text(json.dumps(data, indent=2), encoding="utf-8")
