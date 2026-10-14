@@ -22,6 +22,7 @@ PR #38, edict 0011 and the board threads don't exist.
 | `claude-pane.oph` | The embedded Claude Code session and the send-to-Claude modal |
 | `edicts.oph` | Read-only edict browser |
 | `board.oph` | Agent board threads |
+| `coverage.md` | How much of Daedalus the design shows, tracked over time |
 
 ## Screen map
 
