@@ -298,45 +298,35 @@ class SliceBundle:
                             if len(patterns) >= max_patterns:
                                 return patterns
 
-                # Find method patterns (load_*, save_*, get_*, etc.)
+                # Find method patterns (load_*, save_*, get_*, etc.): sibling definitions sharing the focal
+                # point's verb prefix, read from the analyzer's spans (any language the palace analyzes)
                 focal_names = self.focal_point.split(",") if self.focal else []
+                prefixes = set()
                 for focal_name in focal_names:
-                    # Extract method prefix pattern
-                    parts = focal_name.split(".")
-                    if parts:
-                        method_name = parts[-1]
-                        prefix = method_name.split("_")[0] + "_" if "_" in method_name else None
-
-                        if prefix and prefix in ["load_", "save_", "get_", "set_", "create_", "delete_", "update_"]:
-                            for i, line in enumerate(file_lines):
-                                if f"def {prefix}" in line and line.strip().startswith("def "):
-                                    # Extract the method
-                                    start = i
-                                    indent = len(line) - len(line.lstrip())
-                                    end = start + 1
-                                    for j in range(i + 1, min(i + 40, len(file_lines))):
-                                        curr_line = file_lines[j]
-                                        if curr_line.strip() and not curr_line.startswith(" " * (indent + 1)) and not curr_line.strip().startswith("#"):
-                                            if curr_line.strip().startswith("def ") or curr_line.strip().startswith("class "):
-                                                end = j
-                                                break
-                                    else:
-                                        end = min(i + 30, len(file_lines))
-
-                                    source = "\n".join(file_lines[start:end])
-                                    func_name = line.split("def ")[-1].split("(")[0]
-
-                                    # Don't include if it's the focal point itself
-                                    if func_name not in focal_name:
-                                        patterns.append({
-                                            "name": f"Pattern: {func_name}",
-                                            "file": file_path,
-                                            "line": i + 1,
-                                            "source": source.strip(),
-                                        })
-
-                                        if len(patterns) >= max_patterns:
-                                            return patterns
+                    method_name = focal_name.split(".")[-1]
+                    prefix = method_name.split("_")[0] + "_" if "_" in method_name else None
+                    if prefix and prefix in ["load_", "save_", "get_", "set_", "create_", "delete_", "update_"]:
+                        prefixes.add(prefix)
+                if prefixes:
+                    from .languages import get_language_registry
+                    language = get_language_registry().get_by_extension(full_path)
+                    elements = language.analyze_file(full_path, project_root) if language else []
+                    for el in sorted(elements, key=lambda e: e.line):
+                        name = el.simple_name or el.name
+                        if el.element_type == "class" or not any(name.startswith(p) for p in prefixes):
+                            continue
+                        if any(name in focal for focal in focal_names):
+                            continue  # the focal point itself
+                        end = el.end_line or min(el.line + 29, len(file_lines))
+                        end = min(end, el.line + 39)  # long bodies are cut, as before
+                        patterns.append({
+                            "name": f"Pattern: {name}",
+                            "file": file_path,
+                            "line": el.line,
+                            "source": "\n".join(file_lines[el.line - 1:end]).strip(),
+                        })
+                        if len(patterns) >= max_patterns:
+                            return patterns
 
             except Exception:
                 continue

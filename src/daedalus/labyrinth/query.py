@@ -411,15 +411,12 @@ def _git(project_root: Path, *args: str) -> str:
     return r.stdout
 
 
-def changed_nodes(graph: CallGraph, project_root: Path, base: str = "HEAD") -> Dict[str, List[str]]:
-    """Nodes touched by the working tree's changes against `base`: each changed line maps to the innermost
-    def/class containing it (lines outside any def touch nothing); new untracked files count whole."""
-    project_root = Path(project_root)
-    diff = _git(project_root, "diff", "-U0", "--find-renames", base)
-    untracked = _git(project_root, "ls-files", "--others", "--exclude-standard").split()
+def changed_lines_from_diff(diff_text: str) -> Dict[str, Set[int]]:
+    """New-side line numbers each file's hunks touch (`git diff -U0` or any unified diff). A pure deletion
+    counts the line it happened at, so the definition it was cut from still registers."""
     changed: Dict[str, Set[int]] = {}
     current = None
-    for line in diff.splitlines():
+    for line in diff_text.splitlines():
         if line.startswith("+++ "):
             current = line[6:] if line.startswith("+++ b/") else None
         elif line.startswith("@@") and current:
@@ -427,6 +424,11 @@ def changed_nodes(graph: CallGraph, project_root: Path, base: str = "HEAD") -> D
             if m:
                 start, count = int(m.group(1)), int(m.group(2) if m.group(2) is not None else 1)
                 changed.setdefault(current, set()).update(range(start, start + max(count, 1)))
+    return changed
+
+
+def nodes_for_lines(graph: CallGraph, changed: Dict[str, Set[int]]) -> Dict[str, List[str]]:
+    """Each changed line maps to the innermost def/class containing it; lines outside any def touch nothing."""
     spans = _spans(graph)
     out: Dict[str, List[str]] = {}
     for f, lines in changed.items():
@@ -437,6 +439,16 @@ def changed_nodes(graph: CallGraph, project_root: Path, base: str = "HEAD") -> D
                 hits.add(min(containing)[1])
         if hits:
             out[f] = sorted(hits)
+    return out
+
+
+def changed_nodes(graph: CallGraph, project_root: Path, base: str = "HEAD") -> Dict[str, List[str]]:
+    """Nodes touched by the working tree's changes against `base`: each changed line maps to the innermost
+    def/class containing it (lines outside any def touch nothing); new untracked files count whole."""
+    project_root = Path(project_root)
+    diff = _git(project_root, "diff", "-U0", "--find-renames", base)
+    untracked = _git(project_root, "ls-files", "--others", "--exclude-standard").split()
+    out = nodes_for_lines(graph, changed_lines_from_diff(diff))
     for f in untracked:
         if nodes_in_file(graph, f):
             out[f] = nodes_in_file(graph, f)
