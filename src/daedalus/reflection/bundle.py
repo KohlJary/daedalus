@@ -51,7 +51,12 @@ def period_bounds(level: str, period: str) -> tuple[date, date]:
 
 
 def _digests_in(project_dir: Path, start: date, end: date) -> list[dict]:
-    return [d for d in load_digests(project_dir) if (day := session_day(d)) and start <= day <= end]
+    """The period's digests, leaving out the session running the reflection (it is not over)."""
+    from .arms import current_session_id
+
+    running = current_session_id()
+    return [d for d in load_digests(project_dir) if (day := session_day(d)) and start <= day <= end
+            and d.get("session_id") != running]
 
 
 def _model_view(model: str, settings: dict, today: date, root: Optional[Path], aspirations: bool = True) -> dict:

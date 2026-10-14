@@ -49,8 +49,10 @@ NOTICE_TASK = re.compile(r"<task-id>([^<]+)</task-id>")
 NOTICE_TOKENS = re.compile(r"<subagent_tokens>(\d+)</subagent_tokens>")
 
 COUNTERS = ("failures", "retries", "re_reads", "denied_by_classifier", "rejected_by_user",
-            "interruptions", "interruptions_before_reply")
-INFERRED = ("retries", "re_reads", "interruptions_before_reply")
+            "approved_at_prompt", "interruptions", "interruptions_before_reply")
+SUMMARY_CHARS = 160
+EXIT_CODE = re.compile(r"^Exit code (\d+)")
+INFERRED = ("retries", "re_reads", "interruptions_before_reply", "approved_at_prompt")
 
 
 # ---------- reading ----------
@@ -195,8 +197,11 @@ def parse_stream(events: Iterator[dict], keep_sidechain: bool = False) -> Stream
             for b in results:
                 text = _text_of(b.get("content"))
                 tur = ev.get("toolUseResult")
+                decision = ev.get("permissionDecision") if isinstance(ev.get("permissionDecision"), dict) else {}
                 s.results[b.get("tool_use_id")] = {
                     "is_error": b.get("is_error") is True, "text": text, "uuid": ev.get("uuid"),
+                    # The user approved this call at a permission prompt (source "user_temporary", ...)
+                    "prompted": str(decision.get("source", "")).startswith("user"),
                     "rejected": text.startswith(REJECTED_PREFIX) or tur == REJECTED_RESULT,
                     "classifier": CLASSIFIER_DENIED in text[:200],
                 }
@@ -234,8 +239,9 @@ def _hit_rate(tokens: dict) -> Optional[float]:
 
 
 def count_stream(s: Stream) -> dict:
-    """Counters, each with the event UUIDs behind it."""
+    """Counters, each with the event UUIDs behind it, and a short detail for each event."""
     events = {k: [] for k in COUNTERS}
+    details: dict[str, dict] = {}
     tools: dict[str, dict] = {}
     failed_at: list[int] = []
     read_paths: set[str] = set()
@@ -259,21 +265,32 @@ def count_stream(s: Stream) -> dict:
             read_paths.discard(inp["file_path"])
         if result is None:
             continue
+        what = _call_key(call).split(":", 1)[-1][:SUMMARY_CHARS]
         if result["rejected"]:
             events["rejected_by_user"].append(result["uuid"])
+            details[result["uuid"]] = {"tool": call["tool"], "call": what}
         elif result["classifier"]:
             events["denied_by_classifier"].append(result["uuid"])
+            details[result["uuid"]] = {"tool": call["tool"], "call": what,
+                                       "summary": result["text"][:SUMMARY_CHARS]}
         elif result["is_error"]:
             events["failures"].append(result["uuid"])
             t["failures"] += 1
             failed_at.append(i)
+            code = EXIT_CODE.match(result["text"])
+            details[result["uuid"]] = {"tool": call["tool"], "call": what,
+                                       "summary": result["text"][:SUMMARY_CHARS],
+                                       **({"exit_code": int(code.group(1))} if code else {})}
+        if result.get("prompted"):
+            events["approved_at_prompt"].append(result["uuid"])
+            details.setdefault(result["uuid"], {"tool": call["tool"], "call": what})
     events["interruptions"] = list(s.interruptions)
     # A prompt with no reply before the next prompt: interrupted before the reply began (inferred)
     marked = set(s.interruptions)
     for (index, uuid), (next_index, _) in zip(s.prompts, s.prompts[1:]):
         if not any(index < a < next_index for a in s.assistant_at) and uuid not in marked:
             events["interruptions_before_reply"].append(uuid)
-    return {"events": events, "tools": tools}
+    return {"events": events, "tools": tools, "details": details}
 
 
 # ---------- a session ----------
@@ -331,6 +348,9 @@ def build_digest(session_file: Path, arms: Optional[dict] = None, previous: Opti
         "calls": [{"uuid": c["uuid"], "tool": c["tool"], "result": (main.results.get(c["id"]) or {}).get("uuid")}
                   for c in main.calls],
         "events": events,
+        # Per event: the tool, what was called (command or path), and the start of the error.
+        # Local only, like the whole digest. Non-zero exits from probing commands count as failures.
+        "details": counted["details"],
         "labels": {k: ("inferred" if k in INFERRED else "shown") for k in COUNTERS},
         "subagents": {
             "count": len(subagents),

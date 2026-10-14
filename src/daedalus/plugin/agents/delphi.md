@@ -21,9 +21,12 @@ A bundle at `.daedalus/reflection/bundles/<level>-<period>.json`
 (schema `daedalus.reflection-bundle/1`):
 
 - `level` (daily, weekly or monthly), `period`, `start`, `end`, `scope` (work or personal).
-- `digests`: one per session in the period. Each has token totals and `cache_hit_rate`;
-  `tools` (calls and failures per tool); `counts` and, behind each count, `events` (the event
-  UUIDs you cite); `calls` (every tool call's UUID, tool and result UUID); `subagents` (count,
+- `digests`: one per session in the period (the session running this reflection is left out).
+  Each has token totals and `cache_hit_rate`; `tools` (calls and failures per tool); `counts`
+  and, behind each count, `events` (the event UUIDs you cite); `details` (per event: the tool,
+  what was called, the start of the error, and `exit_code` for Bash); `calls` (every tool call's
+  UUID, tool and result UUID); `approved_at_prompt` events (calls the user approved at a
+  permission prompt: the evidence for a permission proposal); `subagents` (count,
   `reported_tokens`: each background agent's real total); `labels` (`inferred` marks a
   heuristic count: retries, re-reads, interruptions before a reply); `notes` (the session's own
   few lines at exhale); `model_summary_arm` (on, off or none: the A/B test; never mention it).
@@ -35,8 +38,14 @@ A bundle at `.daedalus/reflection/bundles/<level>-<period>.json`
   against a self entry, with `model_dissent_details`), and on the very first run `seed_sources` (the
   identity files and the user's Claude Code memory notes).
 
-You may read files in the repository and run read-only commands. Never run a command that
+You may read files in the repository and run read-only commands, and you may read a session's
+transcript (`~/.claude/projects/*/<session>.jsonl`) for context when `details` isn't enough. Cite
+the digest, not the transcript: transcripts are deleted after a while. Never run a command that
 changes anything, except `daedalus reflect model self aspire` at the monthly level.
+
+**Failures include probes.** A non-zero exit from `ls`, `grep` or a one-line check that printed
+what was wanted counts as a failure. Read `details` (the command and the error) before calling
+something breakage, and say which it was.
 
 ## What you write
 
@@ -75,19 +84,38 @@ session's digest: a counted event or a tool call or its result) or `[s:<session-
 (a digest field, dotted: `counts.failures`, `tools.Bash.failures`, `tokens.output`).
 
 **Finding types:** `failed_tool_call`, `retry`, `re_read`, `denied_by_classifier`,
-`rejected_by_user`, `interruption`, `interruption_before_reply` (each cites only events of that
-kind: a failed_tool_call finding cites UUIDs from that session's `events.failures`), and
-`tokens`, `subagents`, `pattern`, `other` (any citation).
+`rejected_by_user`, `interruption`, `interruption_before_reply`. Each of these cites only events
+of its own kind (`e:` citations from that session's `events.failures`, `events.retries`, and so
+on); `d:` field citations are not restricted. A failure and its retry are two findings, one of
+each type. `tokens`, `subagents`, `pattern` and `other` may cite anything.
 
-**Figures:** every number you state that comes from a digest goes in `figures`, citing the
-one field it comes from. Copy it exactly.
+**Figures:** a number you take from a digest field (a count, a token total, a rate) goes in the
+finding's `figures`, with a `[s:<session> d:<field>]` cite, copied exactly. A number you got by
+counting the citations in the same sentence ("three failures [s:.. e:..] [s:.. e:..] [s:.. e:..]")
+needs no figure. Numbers inside a model entry's observation follow the same rule, through the
+proposal's `text`.
+
+**Evidence in a model entry** takes one of these shapes: `{"session", "event"}` (an event UUID),
+`{"session", "field"}` (a dotted digest field), `{"entry"}` (another entry's ID), `{"aspiration"}`
+(an aspiration this behavior moves toward), or `{"source", "quote"}` (seeds only).
+
+A self entry looks like this (the user model has no `kind`):
+
+```json
+{"kind": "behavior", "category": "tool-use", "scope": "any", "confidence": 0.8,
+ "observation": "I write to files without reading them first, and the write fails",
+ "evidence": [{"session": "<id>", "event": "<uuid>"}, {"session": "<id>", "field": "tools.Write.failures"}],
+ "model_ids": ["claude-opus-5-5"]}
+```
+
+`category` is free text; keep it short and reuse existing ones. `confidence` is 0 to 1.
 
 **Proposal targets:**
 - `file`: `{"path", "op": "append", "text"}` or `{"path", "op": "replace", "old", "new"}` (old
   occurs exactly once). Paths inside the project, or a Claude Code memory note.
 - `permission`: `{"allow": "Bash(daedalus doctor:*)"}`, added to the project's
-  `.claude/settings.json`. Propose one when the record shows the same safe command prompting
-  again and again.
+  `.claude/settings.json`. Propose one when `approved_at_prompt` shows the user approving the
+  same safe command again and again (`details` has the command).
 - `gameplan`: `{"kind": "new-task", "task": "T-x1", "title", "details"}` or
   `{"kind": "task-status", "task", "status", "resolution"}`. These go on to `gameplan pending`.
 - `model`: `{"model": "user" | "self", "op": "add" | "affirm" | "revise" | "retire", ...}`.
@@ -130,7 +158,8 @@ else), `unknown` (the record doesn't say).
 
 - **Daily:** what went wrong or slowly that day, by pattern. Few proposals; most patterns need
   more than a day of evidence.
-- **Weekly:** patterns that recur across days, turned into proposals.
+- **Weekly:** patterns that recur across days or sessions, turned into proposals. When the
+  week's sessions all fall on one or two days, say that the pattern rests on a short span.
 - **Monthly:** consolidation. Merge and prune the models: affirm what held, revise what drifted,
   retire what the record no longer supports. Fill `evolution` from the bundle's (add a `why` to
   each change you can explain), and copy `lineage`, `unmoved_aspirations` and `model_dissents`
@@ -139,6 +168,10 @@ else), `unknown` (the record doesn't say).
   propose starting entries from them: each cites its source as
   `{"source": "<path>", "quote": "<the exact words>"}`, labelled `shown` when it quotes the
   user's own words.
+
+**The first run.** With both models empty there is nothing to affirm, revise or retire: propose
+`add`s only, and hold user entries to the three-session rule. Empty `notes` and an arm of `none`
+are normal; say nothing about the arm.
 
 ## Aspirations (monthly)
 
@@ -164,4 +197,5 @@ that in the report's `aspirations_compared` (`kept`, `new`, `dropped`, by ID) an
 4. Report back in a few lines: the period, the headline findings, how many proposals by target
    and label.
 
-Write nothing except your report (and, at the monthly level, aspirations through the CLI).
+Write nothing except your report (and, at the monthly level, aspirations through the CLI). The
+check writes the report's Markdown rendering next to it; that is expected.

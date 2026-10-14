@@ -244,3 +244,51 @@ def test_stances_are_not_applied_in_a_batch(env):
     pq.apply(project, "Q1", root)
     assert m.load("self", root)["entries"][0]["observation"] == "I ask before pushing"
     assert m.load_history(root, "self")[-1]["proposal_id"] == "Q1"
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX permissions")
+def test_applying_a_file_proposal_keeps_the_files_permissions(env):
+    import os
+    import stat
+
+    project, digests, root = env
+    target = project / "NOTES.md"
+    target.write_text("x\n", encoding="utf-8")
+    os.chmod(target, 0o644)
+    path = write_report(project, report(proposals=[file_proposal(project, digests)]), {"R1": "shown"})
+    pq.import_report(project, path, root)
+    pq.apply(project, "Q1", root)
+    assert stat.S_IMODE(os.stat(target).st_mode) == 0o644
+
+
+def test_applying_a_file_proposal_keeps_crlf_line_endings(env):
+    project, digests, root = env
+    (project / "NOTES.md").write_bytes(b"first\r\nsecond\r\n")
+    path = write_report(project, report(proposals=[file_proposal(project, digests)]), {"R1": "shown"})
+    pq.import_report(project, path, root)
+    pq.apply(project, "Q1", root)
+    assert (project / "NOTES.md").read_bytes() == b"first\r\nsecond\r\nRun doctor after the gameplan exists.\r\n"
+
+
+def test_evidence_must_take_a_known_shape(env):
+    project, digests, root = env
+    p = model_proposal(model="self", label="shown",
+                       entry={"kind": "behavior", "observation": "I retried", "scope": "any",
+                              "evidence": [{"session": REAL_SESSION, "digest": "counts.retries"}]})
+    p["text"] = cite(digests)
+    assert any("is not one of" in e for e in errors(project, report(proposals=[p]), root))
+    p["model"]["entry"]["evidence"] = [{"session": REAL_SESSION, "field": "counts.retries"}]
+    assert errors(project, report(proposals=[p]), root) == []
+
+
+def test_the_running_session_is_left_out_of_bundles(env, monkeypatch):
+    from daedalus.reflection.bundle import build_bundle
+
+    project, digests, root = env
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", REAL_SESSION)
+    for d in (project / ".daedalus/reflection/sessions").glob("*.json"):
+        data = json.loads(d.read_text(encoding="utf-8"))
+        data["start"] = data["end"] = "2026-10-14T10:00:00Z"
+        d.write_text(json.dumps(data), encoding="utf-8")
+    bundle = build_bundle(project, "daily", "2026-10-14", {"half_life_self": 60, "half_life_user": 180}, "work", root)
+    assert [d["session_id"] for d in bundle["digests"]] == [INTERRUPT_SESSION]

@@ -39,6 +39,8 @@ FINDING_TYPES = {
 TARGETS = ("model", "file", "permission", "gameplan")
 FILE_OPS = ("append", "replace")
 GAMEPLAN_KINDS = ("task-status", "new-task")
+# The shapes an evidence item may take in a model entry
+EVIDENCE_SHAPES = ({"session", "event"}, {"session", "field"}, {"entry"}, {"aspiration"}, {"source", "quote"})
 
 
 @dataclass
@@ -240,7 +242,17 @@ def _check_model_proposal(where, p, user, self_, behaviors_in_report, scope, err
         err(f"{where}: scope must be one of {m.SCOPES}")
     elif scope == "work" and entry_scope == "personal":
         err(f"{where}: a work project proposes only work or any entries, not personal ones")
+    for item in (entry.get("evidence") if op == "add" else change.get("evidence")) or []:
+        keys = set(item) if isinstance(item, dict) else set()
+        if not any(keys == shape for shape in EVIDENCE_SHAPES):
+            err(f"{where}: evidence {item!r} is not one of {{session, event}}, {{session, field}}, "
+                "{entry}, {aspiration}, {source, quote}")
     if op == "add":
+        if not str(entry.get("observation") or "").strip():
+            err(f"{where}: a new entry needs an observation")
+        conf = entry.get("confidence", 0.5)
+        if not isinstance(conf, (int, float)) or isinstance(conf, bool) or not 0 <= conf <= 1:
+            err(f"{where}: confidence is a number from 0 to 1")
         if m.is_tombstoned(data, entry.get("id"), entry.get("observation")):
             err(f"{where}: that observation was deleted or forgotten by the user; it is not proposed again")
         evidence = entry.get("evidence") or []

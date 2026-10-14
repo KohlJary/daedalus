@@ -175,7 +175,9 @@ def _resolve(project_dir: Path, path: str) -> Path:
 
 def _apply_file(project_dir: Path, spec: dict) -> None:
     path = _resolve(project_dir, spec["path"])
-    text = path.read_text(encoding="utf-8") if path.exists() else ""
+    raw = path.read_bytes() if path.exists() else b""
+    newline = "\r\n" if b"\r\n" in raw else "\n"  # keep the file's line endings
+    text = raw.decode("utf-8").replace("\r\n", "\n")
     if spec["op"] == "append":
         addition = spec.get("text", "")
         new = text + ("" if not text or text.endswith("\n") else "\n") + addition.rstrip("\n") + "\n"
@@ -184,7 +186,7 @@ def _apply_file(project_dir: Path, spec: dict) -> None:
         if not old or text.count(old) != 1:
             raise PendingError(f"{spec['path']}: the text to replace must occur exactly once")
         new = text.replace(old, spec.get("new", ""))
-    atomic_write_text(path, new)
+    atomic_write_text(path, new, newline=newline)
 
 
 def _apply_permission(project_dir: Path, spec: dict) -> None:

@@ -31,11 +31,12 @@ def test_real_session_counts_match_the_hand_count():
     assert d["counts"]["denied_by_classifier"] == 2
     assert d["counts"]["rejected_by_user"] == 0
     assert d["counts"]["interruptions"] == 0
-    assert d["tool_calls"] == 14
-    assert d["tools"]["Bash"] == {"calls": 11, "failures": 7}
+    assert d["tool_calls"] == 22
+    assert d["tools"]["Bash"] == {"calls": 13, "failures": 7}
     assert d["tools"]["Write"] == {"calls": 1, "failures": 1}  # "File has not been read yet"
-    assert d["tokens"] == {"input": 38, "output": 21928, "cache_read": 4515881, "cache_creation": 35763,
-                           "messages": 17}
+    assert d["tokens"] == {"input": 54, "output": 34218, "cache_read": 8529855, "cache_creation": 50586,
+                           "messages": 25}
+    assert d["counts"]["approved_at_prompt"] == 5  # source "user_temporary": approved at a prompt
     assert d["models"] == ["claude-opus-5-5"]
     assert d["claude_code_versions"] == ["2.1.296"]
 
@@ -225,3 +226,13 @@ def test_claude_config_dir_is_where_transcripts_are_read(tmp_path, monkeypatch):
     a.prompt()
     write_session(elsewhere / "projects" / "x", "s-custom", a.events)
     assert [f.stem for f in dg.sessions_for_project(project)] == ["s-custom"]
+
+
+def test_events_carry_details_and_prompt_approvals():
+    d = dg.build_digest(FIXTURES / f"{REAL_SESSION}.jsonl")
+    for uuid in d["events"]["failures"]:
+        assert d["details"][uuid]["tool"] in ("Bash", "Write")
+    bash = [d["details"][u] for u in d["events"]["failures"] if d["details"][u]["tool"] == "Bash"]
+    assert all("exit_code" in x for x in bash)  # "Exit code N" kept by the scrubber
+    for uuid in d["events"]["approved_at_prompt"]:
+        assert d["details"][uuid]["tool"]
