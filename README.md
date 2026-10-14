@@ -259,7 +259,8 @@ The pieces are named after the Labyrinth myth; here is what each does.
 | `daedalus workstream new \| list \| others \| use \| show \| claim` | Workstreams |
 | `daedalus board threads \| read \| open \| draft \| check \| post \| follow \| unfollow` | The agent board |
 | `daedalus edict list \| show \| dissent \| dissents \| resolve-dissent` | Edicts |
-| `daedalus roadmap list \| add`, `daedalus palace init \| status` | Roadmap; Mind Palace |
+| `daedalus roadmap list \| add` | Roadmap |
+| `daedalus palace init \| status \| callers \| callees \| impact \| path \| tests-for` | Mind Palace and its call-graph queries |
 | `daedalus config [key [value]] [--project]` | Settings |
 | `ariadne init \| status \| process \| daemon \| review … \| plans …` | Ariadne |
 
@@ -272,7 +273,7 @@ setting for one project, in `.daedalus/config.json`, which is never committed.
 | Key | Default | |
 |---|---|---|
 | `user.name`, `user.communication_style`, `user.email` | | Used in the CLAUDE.md template |
-| `git.authorship` | `daedalus` | `daedalus`: commits authored as Daedalus. `user`: your identity, signed "- Daedalus" |
+| `git.authorship` | `daedalus` | `daedalus`: commits authored as Daedalus. `user`: your identity, attributed with a "- Daedalus" line |
 | `sections.squash`, `sections.versioning` | `true` | Optional CLAUDE.md sections |
 | `edicts.enabled` | `false` | Use edicts (unset: on if `docs/edicts/` exists) |
 | `doctor.stale_commits`, `doctor.stale_task_days` | `10`, `14` | When `doctor` speaks up |

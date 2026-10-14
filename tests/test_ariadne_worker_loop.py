@@ -7,8 +7,8 @@ the Ariadne bus through the worker itself, the real verifier runs the fixture pr
 on them, and the orchestrator merges and commits what passes.
 
 The only stand-in is the model: claude_agent_sdk.query is replaced by a script that edits files in the
-worker's cwd, the way a model would through its Edit/Write tools. No model calls, no cost; the live tier
-(test_ariadne_live.py) uses real models.
+worker's cwd, the way a model would through its Edit/Write tools. No model calls, no cost; a live tier with
+real models is tracked in issue #16 and is not in this suite.
 """
 
 import asyncio
