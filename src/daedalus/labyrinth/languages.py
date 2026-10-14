@@ -37,6 +37,12 @@ class CodeElement:
     class_name: Optional[str] = None
     # The simple name without class prefix
     simple_name: Optional[str] = None
+    # Last line of the definition, when the analyzer knows it
+    end_line: Optional[int] = None
+    # Names called through an object (`obj.name()`), a subset of calls
+    member_calls: List[str] = field(default_factory=list)
+    # Set by analyzers that know their language's test conventions; None means "use the Python rule"
+    is_test: Optional[bool] = None
 
     def __post_init__(self):
         # Derive simple_name from name if not set
@@ -122,6 +128,24 @@ class LanguageSupport(ABC):
         """
         pass
 
+    def is_test_file(self, rel_path: str) -> bool:
+        """Whether a repo-relative path is test code."""
+        return False
+
+    def test_file_candidates(self, rel_path: str) -> List[str]:
+        """Conventional test files for a source file (they may not exist)."""
+        return []
+
+    def constructor_of(self, class_name: str) -> Tuple[str, ...]:
+        """Method names that construction of `class_name` runs."""
+        return ()
+
+    @property
+    def implicit_self(self) -> bool:
+        """Whether a plain `name()` call can reach a method of the enclosing class (Java, Ruby) or only
+        functions (Go, JavaScript). The Python query graph keeps its measured behaviour either way."""
+        return True
+
     def compute_signature_hash(self, element: CodeElement) -> str:
         """Compute a hash of the element's signature for drift detection."""
         return hashlib.md5(element.signature.encode()).hexdigest()[:8]
@@ -137,6 +161,17 @@ class PythonSupport(LanguageSupport):
     @property
     def extensions(self) -> List[str]:
         return [".py", ".pyi"]
+
+    def is_test_file(self, rel_path: str) -> bool:
+        name = Path(rel_path).name
+        return (rel_path.startswith("tests/") or "/tests/" in rel_path or name.startswith("test_")
+                or name.endswith("_test.py") or name == "conftest.py")
+
+    def test_file_candidates(self, rel_path: str) -> List[str]:
+        return [str(Path("tests") / f"test_{Path(rel_path).stem}.py")]
+
+    def constructor_of(self, class_name: str) -> Tuple[str, ...]:
+        return ("__init__",)
 
     def analyze_file(self, file_path: Path, project_root: Path) -> List[CodeElement]:
         """Analyze a Python file using AST parsing."""
@@ -209,6 +244,8 @@ class PythonSupport(LanguageSupport):
 
         # Get docstring
         docstring = ast.get_docstring(node)
+        member_calls = sorted({c.func.attr for c in ast.walk(node)
+                               if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)})
 
         # Find function calls within this function
         calls = []
@@ -234,6 +271,8 @@ class PythonSupport(LanguageSupport):
             returns=returns,
             class_name=class_name,
             simple_name=node.name,
+            end_line=node.end_lineno,
+            member_calls=member_calls,
         )
 
     def _extract_class(self, node: ast.ClassDef, file_path: str, source: str) -> CodeElement:
@@ -254,6 +293,9 @@ class PythonSupport(LanguageSupport):
             signature=signature,
             docstring=docstring,
             simple_name=node.name,
+            end_line=node.end_lineno,
+            member_calls=sorted({c.func.attr for c in ast.walk(node)
+                                 if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)}),
         )
 
     def generate_anchor_pattern(self, element: CodeElement) -> AnchorPattern:
@@ -445,9 +487,13 @@ class LanguageRegistry:
         self._languages: Dict[str, LanguageSupport] = {}
         self._extension_map: Dict[str, LanguageSupport] = {}
 
-        # Register built-in languages
+        # Register built-in languages. With tree-sitter installed (`daedalus[palace]`), its grammars
+        # take over every extension they cover, including the regex TypeScript analyzer's.
         self.register(PythonSupport())
         self.register(TypeScriptSupport())
+        from .treesitter import tree_sitter_languages
+        for language in tree_sitter_languages():
+            self.register(language)
 
     def register(self, language: LanguageSupport) -> None:
         """Register a language support implementation."""
