@@ -6,8 +6,10 @@ Right: a Claude Code session, held by tmux so it outlives the TUI.
 @desktop
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ ◆Header                                                                                          │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ ◆LastSession                                                                                     │
 ├────────────────────────────────┬─────────────────────────────────────────────────────────────────┤
-│ ◆NeedsKohl                     │ ◆ClaudePane                                                     │
+│ ◆NeedsYou                      │ ◆ClaudePane                                                     │
 │                                │                                                                 │
 │                                │                                                                 │
 │                                │                                                                 │
@@ -25,6 +27,7 @@ Right: a Claude Code session, held by tmux so it outlives the TUI.
 │ ◆KeyBar                                                                                          │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 note: left column ~1/3, ClaudePane ~2/3. Health shrinks to one line when in sync.
+LastSession is one line: the newest session headline; 5 or w opens Story.
 
 @narrow
 ┌──────────────────────────────────────────────────────────┐
@@ -45,6 +48,28 @@ note: left column ~1/3, ClaudePane ~2/3. Health shrinks to one line when in sync
 └──────────────────────────────────────────────────────────┘
 note: under ~100 columns each panel becomes a tab; tab 4 is Claude at full width.
 
+@first-run
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ◆Header                                                                                          │
+├────────────────────────────────┬─────────────────────────────────────────────────────────────────┤
+│ ◆Welcome                       │ ◆ClaudePane                                                     │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+│                                │                                                                 │
+├────────────────────────────────┴─────────────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: a project with no gameplan, edicts or sessions yet. Welcome replaces the
+left column until there is something to show.
+
 ## ◆Header
 
 @default
@@ -62,7 +87,7 @@ note: project, branch, active phase ▸ next task; counts mirror the panels.
 
 @focus-dashboard
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ 1-4 panel · enter expand · s send to Claude · c focus Claude · t theme · ? help · q quit         │
+│ 1-5 panel · enter expand · s send to Claude · c focus Claude · t theme · ? help · q quit         │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 @focus-claude
@@ -80,5 +105,5 @@ note: no priority bindings while Claude has focus; ctrl+] is the only key the TU
 
 @narrow
 ┌──────────────────────────────────────────────────────────┐
-│ [1 Needs 4]  2 Plan   3 Health 1   4 Claude ●            │
+│ [1 Needs 4] 2 Plan 3 Health 1 4 Claude ● 5 Story         │
 └──────────────────────────────────────────────────────────┘

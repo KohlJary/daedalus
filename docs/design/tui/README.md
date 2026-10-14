@@ -4,6 +4,16 @@
 Kohl may write; nothing here is approved to build. Tracked as gameplan phase
 `p8-tui`.
 
+**Goal:** make Daedalus usable by someone who wasn't there when it was built.
+Everything in `.daedalus/` and `docs/edicts/` exists, but today it's only
+reachable by people who already know the vocabulary and the commands. The TUI
+is the way in: it shows the state and explains each concept in place, and
+behind every view it teaches the CLI.
+
+(This supersedes the Dec 2025 "CLI/TUI Removal" entry in
+`.daedalus/decisions.md`, which removed an earlier dashboard because "Claude
+Code is the interface". Nothing in that old TUI is carried forward.)
+
 Every screen is drawn in [Ophanic](https://github.com/KohlJary/ophanic)
 notation: fixed-width box drawing, `◆Name` component references, one diagram
 per `@variant`, and `## ◆Name` sections for a component's internals. Desktop
@@ -15,24 +25,29 @@ PR #38, edict 0011 and the board threads don't exist.
 
 | File | What it shows |
 |------|---------------|
-| `shell.oph` | Home screen (desktop and narrow), header, key bar and its focus states, tab bar |
-| `needs-kohl.oph` | The "waiting on Kohl" queue: compact, empty, expanded, narrow, and the detail for each kind |
+| `shell.oph` | Home screen (desktop, narrow, first run), header, key bar and its focus states, tab bar |
+| `needs-you.oph` | The queue of what's waiting on the owner: compact, empty, expanded, narrow, and the detail for each kind |
 | `gameplan.oph` | Gameplan panel, phases → tasks → detail, workstreams tab |
 | `health.oph` | `daedalus doctor` panel and its expanded view |
 | `claude-pane.oph` | The embedded Claude Code session and the send-to-Claude modal |
 | `edicts.oph` | Read-only edict browser |
 | `board.oph` | Agent board threads |
+| `story.oph` | The narrative: status now, session history, decisions, lessons, warnings, map |
+| `explain.oph` | The `?` card shown on any panel, and the first-run welcome |
+| `glossary.md` | Draft text for every Explain card |
 | `coverage.md` | How much of Daedalus the design shows, tracked over time |
 
 ## Screen map
 
 ```
-shell ── 1 / enter ─▶ needs-kohl (expanded) ── PR/ED/DS/BD item ─▶ its detail
+shell ── 1 / enter ─▶ needs-you (expanded) ── PR/ED/DS/BD item ─▶ its detail
       ── 2 / enter ─▶ gameplan (expanded) ── tabs: plan · workstreams · roadmap
       ── 3 / enter ─▶ health (expanded)
       ── 4 / c ─────▶ focus Claude pane (ctrl+] returns)
+      ── 5 / w ─────▶ story ── tabs: now · sessions · decisions · lessons · warnings · map
       ── e ─────────▶ edicts        ── b ─▶ board
       ── s (anywhere with a selection) ─▶ send-to-Claude modal
+      ── ? (any panel) ─▶ explain card ── g ─▶ glossary
 esc returns to the shell from any expanded screen.
 ```
 
@@ -51,6 +66,15 @@ esc returns to the shell from any expanded screen.
    keystroke between a selection and Claude acting on it.
 5. **Not colour alone.** Kinds and states carry text tags (`PR`, `ED`, `[>]`,
    `⚠`) so they read in any theme.
+6. **Legible to a newcomer.** Every panel has an Explain card with three
+   parts: what it is, where it lives, and the CLI that shows it. Labels say
+   what a thing is, not its internal codename.
+7. **Empty states teach.** A fresh project shows Welcome, not empty tables.
+   An empty panel says what will appear there and how to start it.
+8. **The TUI is a way in, not a dead end.** Every view names the file or
+   command behind it, so a reader can leave the TUI and keep going.
+9. **Owner-neutral.** The design never assumes the owner is Kohl: "Needs you",
+   not "Needs Kohl".
 
 ## From Wonderland's TUI (~/wonderland-ai/src/wonderland/tui)
 
@@ -78,7 +102,7 @@ Avoid:
   branches ahead of main?
 - Should a `@wide` (≥160 columns) layout give Claude a second column or a
   second pane?
-- Should the TUI help Kohl start a new edict from a template, or leave that to
+- Should the TUI help the owner start a new edict from a template, or leave that to
   the editor and git?
 - Should the Roadmap tab be its own view or fold into the gameplan's phase
   column?
@@ -95,3 +119,7 @@ Evidence for a possible edict making Ophanic part of Daedalus (gameplan
   here: it collapses to the first component. It also returns side-by-side
   nested boxes as a column in the wrong order. Takeaway: the notation is useful
   now, and the parser isn't ready to depend on.
+- 2026-10-14: Adding the newcomer goal touched the shell (a LastSession strip
+  and a first-run variant). Because the shell only holds `◆` references, it was
+  a two-line change; the panels' internals didn't move. Composition did its
+  job.

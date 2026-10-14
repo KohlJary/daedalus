@@ -41,7 +41,7 @@ note: phases → tasks → detail, each column driving the next.
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │ Plan · [Workstreams] · Roadmap                                                                   │
 ├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
-│▸ default   person   p1 ▸ T-e5        │ default · owner: person (Kohl)                            │
+│▸ default   person   p1 ▸ T-e5        │ default · owner: person (kohl)                            │
 │                                      │ plan: .daedalus/roadmap/gameplan.json                     │
 │                                      │ claims: (none)                                            │
 │                                      │ collisions: none                                          │

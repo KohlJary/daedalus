@@ -1,0 +1,66 @@
+# Story
+
+"Where are we, and how did we get here?" The narrative half of memory, for
+anyone who wasn't in the room: docs/status.md (now), session-summaries.md
+(then), decisions.md (why), lessons.md and warnings.md (watch out),
+project-map.md (what's where). Read-only; Markdown rendered.
+
+@now
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Story                                                                                   esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ [Now] · Sessions · Decisions · Lessons · Warnings · Map                                          │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Last updated 2026-10-14 by the Ariadne/experiment session                                        │
+│                                                                                                  │
+│ ## Ariadne session (2026-10-13/14)                                                               │
+│ - Released 0.2.0 to PyPI and GitHub (PR #35, tag v0.2.0).                                        │
+│ - Gate experiment: verifier + judge landed 0 bad of 121, against 26 of 151 ungated.              │
+│ - Still running overnight: arm A, refactor tickets, greenfield, the memory arm.                  │
+│                                                                                                  │
+│ (docs/status.md, scrollable)                                                                     │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: Now opens first. It is the file /inhale reads, so a newcomer and a fresh
+Claude context start from the same page.
+
+@sessions
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Story                                                                                   esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Now · [Sessions] · Decisions · Lessons · Warnings · Map                                          │
+├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
+│▸ 2026-10-13  Ariadne local models,   │ 2026-10-13/14 · Ariadne with local models,                │
+│              0.2.0 release           │ the palace CLI, and the 0.2.0 release                     │
+│  2025-12-24  Ariadne orchestration   │                                                           │
+│  2025-12-19  initial modules,        │ Done: T-e13 (PR #34), T-e14, T-e18 (PR #33)               │
+│              visual swarm            │ Decisions: the CLI loop keeps Claude in the main          │
+│                                      │   session; local models do the rest.                      │
+│                                      │                                                           │
+│                                      ├───────────────────────────────────────────────────────────┤
+│                                      │ g open task in Gameplan · s send to Claude                │
+├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: newest first. Task IDs are links: g jumps to the task in Gameplan.
+
+@decisions
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Story                                                                                   esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Now · Sessions · [Decisions] · Lessons · Warnings · Map                                          │
+├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
+│▸ File-based bus              Dec 25  │ File-based bus (Dec 2025)                                 │
+│  PreToolUse permission hooks Dec 25  │                                                           │
+│  Visual swarm via log tail   Dec 25  │ Decision: (one line)                                      │
+│  Plugin consolidation        Dec 25  │                                                           │
+│  Labyrinth extraction        Dec 25  │ Rationale: (bullets, rendered)                            │
+│  …                                   │                                                           │
+│                                      ├───────────────────────────────────────────────────────────┤
+│                                      │ s send to Claude                                          │
+├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: Lessons and Warnings use this same list-then-detail shape; Map is a
+single rendered document like Now.

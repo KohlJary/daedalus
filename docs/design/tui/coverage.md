@@ -35,14 +35,15 @@ everything that isn't → or –.
 | init, hook | | | | | init, hook board/capture/session-start |
 | **Total** | **13** | **4** | **22** | **6** | **5** |
 
-## Beyond the CLI (10 surfaces)
+## Beyond the CLI (11 surfaces)
 
 | Surface | Mark | Note |
 |---------|------|------|
 | Claude Code session | ● | `claude-pane.oph` |
 | Momus ledger and trials (`.daedalus/momus/`) | ◐ | only as "Momus: holds" on a PR |
-| Session narrative: `session-summaries.md`, `docs/status.md` | ○ | what `/inhale` reads; the likeliest first thing to want |
-| Memory: project-map, decisions, lessons, warnings, observations, notes | ○ | |
+| Session narrative: `session-summaries.md`, `docs/status.md` | ● | `story.oph` Now and Sessions |
+| Decisions (`decisions.md`) | ● | `story.oph` Decisions |
+| Lessons, warnings, project-map, observations, notes | ◐ | lessons, warnings and map are tab labels that share a diagrammed shape; observations and notes are absent |
 | Ariadne bus: pending/verified/rejected diffs, conflicts | ○ | matters once T-e11 has local models running unattended |
 | Ariadne plans (`.daedalus/plans/`) | ○ | |
 | Theseus reports | ○ | |
@@ -55,17 +56,29 @@ everything that isn't → or –.
 | | ● | ◐ | ○ | Direct coverage (● / ●+◐) |
 |---|---|---|---|---|
 | CLI (23 in scope) | 13 | 4 | 6 | 57% / 74% |
-| Beyond CLI (8 in scope) | 1 | 1 | 6 | 13% / 25% |
-| **All (31 in scope)** | **14** | **5** | **12** | **45% / 61%** |
+| Beyond CLI (9 in scope) | 3 | 2 | 4 | 33% / 56% |
+| **All (32 in scope)** | **16** | **6** | **10** | **50% / 69%** |
+
+## Legibility
+
+The goal is a TUI someone else can use, so coverage alone isn't enough: a
+view a newcomer can't interpret doesn't count for much. The second measure is
+how many concepts have an Explain card in `glossary.md`.
+
+- **Carded (13):** gameplan, pending proposal, edict, dissent, workstream,
+  board, doctor/drift, story, Momus, Ariadne, Mind Palace, Theseus, Claude pane.
+- **No card yet:** roadmap (and how it relates to the gameplan), the agent
+  roster (memory, docs, test-runner and the rest), hooks, init/hydrate.
 
 The design adds one thing the program doesn't have: a list of PRs awaiting
 review (open question: `gh` or local branches).
 
 ## History
 
-| Date | Diagrams | In scope | Direct ● / ●+◐ | Change |
-|------|----------|----------|----------------|--------|
-| 2026-10-14 | 28 | 31 | 45% / 61% | First design draft (8c89c93) |
+| Date | Diagrams | In scope | Direct ● / ●+◐ | Carded concepts | Change |
+|------|----------|----------|----------------|-----------------|--------|
+| 2026-10-14 | 28 | 31 | 45% / 61% | 0 | First design draft (8c89c93) |
+| 2026-10-14 | 34 | 32 | 50% / 69% | 13 | Newcomer goal: Story, Explain, first run, glossary |
 
 ## Refreshing the CLI inventory
 

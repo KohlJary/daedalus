@@ -1,7 +1,7 @@
 # Edicts
 
-Read-only browser over docs/edicts/. Kohl writes and accepts edicts through
-git; the TUI only shows them and where the gameplan tracks them.
+Read-only browser over docs/edicts/. The owner writes and accepts edicts
+through git; the TUI only shows them and where the gameplan tracks them.
 
 @expanded
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐

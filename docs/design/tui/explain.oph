@@ -1,0 +1,48 @@
+# Explain
+
+Every panel answers "what is this?" without leaving the screen. Press ? on
+any panel for its card. Card text lives in glossary.md, so it is written once
+and reviewed like any other doc.
+
+## ◆ExplainCard
+
+@modal
+┌────────────────────────────────────────────────────────┐
+│ ? Gameplan                                   esc close │
+├────────────────────────────────────────────────────────┤
+│                                                        │
+│ The record of what's built, in progress, and next.     │
+│ Work is grouped into phases; one phase is active and   │
+│ is broken into tasks. When a task ships, its           │
+│ resolution is written here so the next session (or     │
+│ the next person) doesn't have to dig through git.      │
+│                                                        │
+│ Lives in .daedalus/roadmap/gameplan.json (committed).  │
+│ CLI: daedalus gameplan show                            │
+│                                                        │
+├────────────────────────────────────────────────────────┤
+│ g glossary · esc close                                 │
+└────────────────────────────────────────────────────────┘
+note: three parts, always: what it is, where it lives, the CLI that shows it.
+The last line teaches the CLI, so the TUI is a way in, not a dead end.
+
+## ◆Welcome
+
+@first-run
+┌────────────────────────────────┐
+│ Welcome to Daedalus            │
+├────────────────────────────────┤
+│                                │
+│ Nothing here yet. Daedalus     │
+│ fills these panels as you      │
+│ work:                          │
+│                                │
+│ · a gameplan (what's next)     │
+│ · edicts (your decisions)      │
+│ · session notes (what          │
+│   happened)                    │
+│                                │
+│ ? what is all this             │
+│ c ask Claude to start a plan   │
+└────────────────────────────────┘
+note: an empty state teaches; it never just says "no data".

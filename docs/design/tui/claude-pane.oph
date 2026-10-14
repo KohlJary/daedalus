@@ -8,7 +8,7 @@ and can be attached from a plain terminal.
 ┌─────────────────────────────────────────────────────────────────┐
 │ Claude · tmux daedalus-main                           ● working │
 ├─────────────────────────────────────────────────────────────────┤
-│ > diagram NeedsKohl's internals                                 │
+│ > diagram NeedsYou's internals                                  │
 │                                                                 │
 │ ● Reading docs/design/tui/shell.oph                             │
 │ ● Writing docs/design/tui/needs-kohl.oph                        │
@@ -53,4 +53,4 @@ note: border is $accent when focused, $panel when not; the strip shows idle/work
 ├────────────────────────────────────────────────────────┤
 │ e edit · enter paste into prompt · esc cancel          │
 └────────────────────────────────────────────────────────┘
-note: pastes into Claude's input but never submits; Kohl presses enter in the pane.
+note: pastes into Claude's input but never submits; you press enter in the pane.
