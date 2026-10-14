@@ -29,3 +29,6 @@ absolute path of `claude/review/<task>`. Then run: `python3 score_claude.py revi
 ## 4. Modelled main-context cost
 For the write-up, also compute the main-agent-inline review cost: plan size + edits, plus one cache-read
 of the session context per turn, against the solo agent's tool calls × session context. Label it modelled.
+
+## Memory arm (local, no Claude)
+`mature_exp.py --memory` gives the planner and every worker the project's Daedalus memory (project-map, decisions, lessons, warnings, about 3.4k tokens). The memory is a pinned copy of the local `.daedalus/` in `mature/memory/`. It is private and gitignored, so to reproduce, copy your own `.daedalus/{project-map,decisions,lessons,warnings}.md` there. It was run as found on 2026-10-13, stale parts included: project-map's content dates from 2025-12-24.

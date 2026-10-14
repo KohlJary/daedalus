@@ -24,6 +24,15 @@ import oracle as mature_oracle  # noqa: E402
 
 BASE = HERE / "base"
 RESULTS = HERE / "results"
+MEMORY_DIR = HERE / "memory"   # pinned copy of the repo's local .daedalus memory (private: not committed)
+MEMORY = None                  # set by --memory
+
+
+def memory_text():
+    parts = [f"### .daedalus/{n}.md\n{(MEMORY_DIR / f'{n}.md').read_text()}" for n in ("project-map", "decisions", "lessons", "warnings")]
+    return "## Project memory (Daedalus, from .daedalus/)\n\n" + "\n\n".join(parts)
+
+
 CONFTEST = ("# experiment fixture: test this tree's src, not the editable install of the real repo\n"
             "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parent / 'src'))\n")
 
@@ -65,7 +74,7 @@ def mature_plan(planner_model, feat, repo):
     summary = interfaces.summarize({f: (repo / f).read_text() for f in files})
     listing = "\n".join(str(p.relative_to(repo)) for p in sorted(repo.rglob("*.py"))
                         if ".git" not in p.parts and "__pycache__" not in p.parts)
-    files_block = (f"### Interface summaries of the most relevant modules ({', '.join(files)})\n{summary}\n\n"
+    files_block = ((MEMORY + "\n\n") if MEMORY else "") + (f"### Interface summaries of the most relevant modules ({', '.join(files)})\n{summary}\n\n"
                    f"### All Python files (workers can search and read any of them)\n{listing}")
     prompt = feature.PLANNER_PROMPT.format(title=feat["title"], description=feat["description"], files=files_block)
     t0 = time.time()
@@ -109,14 +118,23 @@ if __name__ == "__main__":
     ap.add_argument("--tasks", default=",".join(FEATURES))
     ap.add_argument("--conditions", default="single,ariadne,ariadne+req,ariadne+llmplan")
     ap.add_argument("--out", default=str(RESULTS / "mature.jsonl"))
+    ap.add_argument("--memory", action="store_true", help="give the planner and workers the project's Daedalus memory")
     a = ap.parse_args()
     install()
+    if a.memory:
+        import mature_worker
+        MEMORY = memory_text()
+        mature_worker.SYSTEM = mature_worker.SYSTEM + "\n\n" + MEMORY
+        for f in FEATURES.values():
+            f["name"] = f["name"] + "__mem"   # its own plan cache
+
     RESULTS.mkdir(exist_ok=True)
     done = {(r["feature"], r["condition"], r["rep"]) for r in exp.load(Path(a.out))}
     for rep in range(1, a.reps + 1):
         for name in a.tasks.split(","):
             for cond in a.conditions.split(","):
-                if (name, cond, rep) in done:
+                label = cond + ("+mem" if a.memory else "")
+                if (name, label, rep) in done:
                     continue
                 feat, t0 = FEATURES[name], time.time()
                 exp.USAGE.clear()
@@ -125,7 +143,7 @@ if __name__ == "__main__":
                            else feature.run_ariadne(feat, a.worker, a.judge, cond, a.planner))
                 except Exception as e:  # record and move on; one broken run shouldn't stop the night
                     rec = dict(condition=cond, error=f"{type(e).__name__}: {e}", oracle_pass=False, oracle_tests={})
-                rec.update(feature=name, rep=rep, worker=a.worker, judge=a.judge, secs=round(time.time() - t0),
+                rec.update(condition=label, feature=name, rep=rep, worker=a.worker, judge=a.judge, secs=round(time.time() - t0),
                            usage={m: dict(u) for m, u in exp.USAGE.items()})
                 exp.append(Path(a.out), rec)
                 passed = sum(v == "PASSED" for v in rec.get("oracle_tests", {}).values())
