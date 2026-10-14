@@ -201,7 +201,7 @@ If several people or sessions work here, each has its own workstream (`daedalus 
 
 When the session brief lists **Other workstreams** (the same list `daedalus workstream others` prints; it is empty when you work alone), coordinate through the board (the `board` skill) instead of guessing:
 
-- **Claim before you change.** When you start a task, claim the paths it will touch (`daedalus workstream claim <paths>`) and commit the claim, so overlaps show up before the work does. Release claims when the task ships.
+- **Claim before you change, and claim narrowly.** When you start a task, claim the files it will touch (`daedalus workstream claim <paths>`), not whole directories, and commit the claim, so overlaps show up before the work does. Resolve a collision by narrowing or releasing claims, and release them when the task ships.
 - **Collisions get a thread, not a race.** When the brief or `doctor` reports a collision, open a board thread on that path or work, addressed to the other workstream, and agree who takes what before building it.
 - **Ask instead of assuming.** If you need to know what another workstream is doing or why (an interface they're changing, a task they deferred), ask on the board rather than reading their intent into their code.
 - **Answer what's addressed to you.** Threads addressed to your workstream, or on your claims, are part of the work: read them at the start of a session and draft replies.
