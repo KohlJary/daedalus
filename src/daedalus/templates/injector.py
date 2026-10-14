@@ -18,7 +18,7 @@ if sys.version_info >= (3, 9):
 else:
     from importlib_resources import files, as_file
 
-from ..config import get_config_file, get_daedalus_email, get_template_settings, load_config
+from ..config import edicts_setting, get_config_file, get_daedalus_email, get_template_settings, load_config
 from .render import TemplateError, extract_slots, fill_slots, render_conditionals
 
 # Markers for the managed section
@@ -177,8 +177,13 @@ def build_claude_md(
         raise TemplateError("template has no DAEDALUS_BEGIN/DAEDALUS_END markers")
     section = match.group(0)
 
+    hints = []
+    if edicts_setting(Path(working_dir))[1] == "detected":
+        hints.append("edicts.enabled is not set; keeping the Edicts section because docs/edicts/ exists. "
+                     "Set it with `daedalus config --project edicts.enabled true` (or false to drop it).")
+
     if not claude_md_path.exists():
-        return None, template_content, []
+        return None, template_content, hints
 
     # open() rather than read_text(): read_text only takes newline= from Python 3.13
     with open(claude_md_path, encoding="utf-8", newline="") as f:
@@ -195,7 +200,7 @@ def build_claude_md(
     else:
         updated = section + "\n\n" + existing_lf
 
-    return existing, updated.replace("\n", newline), warnings
+    return existing, updated.replace("\n", newline), hints + warnings
 
 
 def inject_claude_template(

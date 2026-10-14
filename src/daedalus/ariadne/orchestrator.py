@@ -18,6 +18,7 @@ The orchestrator can run as:
 """
 
 import asyncio
+import re
 import subprocess
 import time
 from dataclasses import dataclass, field, asdict
@@ -41,7 +42,7 @@ from .tracker import Tracker
 from ..config import get_daedalus_email, load_config
 
 
-def _commit_args(message: str) -> List[str]:
+def _commit_args(message: str, paths: Optional[List[str]] = None) -> List[str]:
     """
     Build the `git commit` argument list honoring the configured git.authorship.
 
@@ -49,14 +50,18 @@ def _commit_args(message: str) -> List[str]:
     template tells Claude to type by hand.
     user: no --author (commits as the configured git identity), with a '- Daedalus'
     sign-off appended to the body, matching the template's `git.authorship=user` text.
+
+    With paths, only those paths are committed (`--only`), so nothing else that happens to be
+    modified in the repository (plans, the gameplan, a human's work in progress) rides along.
     """
     config = load_config()
+    scope = ["--only", *paths] if paths else ["-a"]
     if config.git.authorship == "user":
         signed_message = message.rstrip("\n") + "\n\n- Daedalus\n"
-        return ["git", "commit", "-a", "-m", signed_message]
+        return ["git", "commit", *scope, "-m", signed_message]
 
     email = get_daedalus_email(config)
-    return ["git", "commit", "-a", f"--author=Daedalus <{email}>", "-m", message]
+    return ["git", "commit", *scope, f"--author=Daedalus <{email}>", "-m", message]
 
 
 @dataclass
@@ -69,6 +74,7 @@ class OrchestrationResult:
     conflicts_detected: int = 0
     conflicts_resolved: int = 0
     commits_created: int = 0
+    edicts_done: int = 0
     errors: List[str] = field(default_factory=list)
     started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     completed_at: Optional[str] = None
@@ -128,7 +134,8 @@ class AriadneOrchestrator:
         self.conflict_detector = ConflictDetector()
         self.verifier = CausalSliceVerifier(repo_path)
         self.autonomy = autonomy
-        self.semantic_reviewer = semantic_reviewer or LLMJudge()
+        # Model casting (edict 0002): the judge plays the configured model, or the SDK default
+        self.semantic_reviewer = semantic_reviewer or LLMJudge(model=load_config().ariadne.judge_model)
         self.require_approval_tags = require_approval_tags or [
             "breaking_change", "security", "architecture", "database",
         ]
@@ -153,9 +160,56 @@ class AriadneOrchestrator:
             return analysis.suggested_strategy
         return MergeStrategy.ESCALATE
 
+    def _approved_intent(self, diff: Diff):
+        """
+        (approved intent, reason) for a diff (edict 0001, amended). Read from the stored plan or
+        the edict file, never from the diff's own metadata or description: an approved plan's
+        work package (plus its source and approver), or an accepted edict's Intent and Acceptance
+        criteria. None, with the reason, when there is neither.
+        """
+        from ..edicts import dispatch_block, intent_for_diff
+        from .planner import Planner
+
+        plan_id, spec_id = diff.metadata.get("plan_id"), diff.metadata.get("spec_id")
+        tagged = str(diff.metadata.get("edict") or "").zfill(4) if diff.metadata.get("edict") else None
+        if not (plan_id and spec_id):
+            # A tag alone is metadata; it never grants intent (0001 as amended)
+            if tagged:
+                return None, (f"No approved intent: the diff is tagged edict {tagged} but carries no plan "
+                              "provenance (plan_id/spec_id); edict intent applies only to dispatched work.")
+            return intent_for_diff(self.repo_path, diff.metadata)
+        if plan_id and spec_id:
+            plan = Planner(self.repo_path).load_plan(plan_id)
+            if plan is None:
+                return None, f"No approved intent: plan {plan_id} not found."
+            spec = next((wp for wp in plan.work_packages if wp.id == spec_id), None)
+            if spec is None:
+                return None, f"No approved intent: package {spec_id} is not in plan {plan_id}."
+            if tagged and tagged != (plan.edict or "").zfill(4):
+                return None, (f"No approved intent: the diff is tagged edict {tagged} but plan {plan_id} "
+                              f"comes from {('edict ' + plan.edict) if plan.edict else 'a feature request'}.")
+            if plan.edict:
+                block = dispatch_block(self.repo_path, plan.edict)
+                if block:
+                    return None, f"No approved intent: {block}."
+            if not plan.approval_valid():
+                if plan.edict and not plan.approved:
+                    # Work dispatched from an accepted edict: the edict itself is the approval
+                    return intent_for_diff(self.repo_path, {"edict": plan.edict})
+                why = "is not approved" if not plan.approved else "changed after it was approved"
+                return None, f"No approved intent: plan {plan_id} {why}."
+            source = f"edict {plan.edict}" if plan.edict else f"feature request: {plan.feature_title}"
+            return (
+                f"Approved plan {plan.id} (approved by {plan.approved_by} at {plan.approved_at}; "
+                f"source: {source}).\n\n{spec.package_text()}\n\n## Source\n{plan.source}",
+                "",
+            )
+        return intent_for_diff(self.repo_path, diff.metadata)
+
     def _diff_intent(self, diff: Diff) -> str:
-        """Best available statement of what a diff is supposed to do."""
-        return diff.metadata.get("intent") or diff.description
+        """The approved intent for a diff, or "" when it has none. No fallback to the worker's own
+        description: a worker that misunderstood its task would describe it confidently (0001)."""
+        return self._approved_intent(diff)[0] or ""
 
     def _plan_id_for_diff(self, diff: Diff) -> str:
         """
@@ -188,7 +242,18 @@ class AriadneOrchestrator:
         if existing.get("resolution") == "approved":
             return True
 
-        review = self.semantic_reviewer.review(diff, self._diff_intent(diff), verification)
+        intent, reason = self._approved_intent(diff)
+        if intent is None:
+            # Fail closed in every autonomy mode, without consulting the judge (edicts 0001, 0003)
+            review = SemanticReviewResult(
+                diff_id=diff.id, verdict=ReviewVerdict.NEEDS_HUMAN, reasoning=reason, reviewer="intent-gate",
+            )
+            self.bus.update_diff_status(diff.id, DiffStatus.NEEDS_REVIEW, semantic_review=review.to_dict())
+            if self.tracker:
+                self.tracker.complete_feature(self._plan_id_for_diff(diff))
+            return False
+
+        review = self.semantic_reviewer.review(diff, intent, verification)
 
         if self.autonomy == "supervised":
             self.bus.update_diff_status(
@@ -309,6 +374,7 @@ class AriadneOrchestrator:
                     if merge_result.success:
                         result.commits_created += 1
                         self._mark_committed_in_tracker(approved_for_commit, merge_result)
+                        result.edicts_done += self._close_finished_edicts(approved_for_commit)
                     else:
                         result.errors.append(merge_result.error or "Unknown merge error")
 
@@ -316,6 +382,52 @@ class AriadneOrchestrator:
         result.duration_seconds = time.time() - start_time
 
         return result
+
+    def _close_finished_edicts(self, committed: List[Diff]) -> int:
+        """
+        Move an edict to done once its work has merged (edict 0001): every package of every plan
+        built from it has a merged diff, and no diff tagged with it is still waiting. Returns how
+        many edicts moved.
+        """
+        from ..edicts import EdictError, load_edict, mark_done
+        from .planner import Planner
+
+        planner = Planner(self.repo_path)
+        all_plans = planner.list_plans()
+        plan_edict = {p.id: (p.edict or "").zfill(4) for p in all_plans if p.edict}
+        # The edict comes from the stored plan, not from the diff's tag
+        numbers = {plan_edict[d.metadata.get("plan_id")] for d in committed if d.metadata.get("plan_id") in plan_edict}
+        diffs = self.bus.list_all_diffs()
+        closed = 0
+        for number in sorted(numbers):
+            try:
+                edict = load_edict(self.repo_path, number)
+            except EdictError:
+                continue
+            if edict.status != "accepted":
+                continue
+            ours = [d for d in diffs if plan_edict.get(d.metadata.get("plan_id")) == number]
+            # Work still in flight blocks; a rejected attempt doesn't, if its package merged later
+            if any(d.status in (DiffStatus.PENDING, DiffStatus.VERIFIED, DiffStatus.NEEDS_REVIEW) for d in ours):
+                continue
+            merged = {(d.metadata.get("plan_id"), d.metadata.get("spec_id")) for d in ours if d.status == DiffStatus.MERGED}
+            # The plans that count: approved ones, and any plan that produced a diff (drafts don't block)
+            used = {d.metadata.get("plan_id") for d in ours}
+            plans = [p for p in all_plans if plan_edict.get(p.id) == number and (p.approval_valid() or p.id in used)]
+            if not plans or any((p.id, wp.id) not in merged for p in plans for wp in p.work_packages):
+                continue
+            rel = str(edict.path.relative_to(self.repo_path))
+            dirty = subprocess.run(["git", "status", "--porcelain", "--", rel], cwd=self.repo_path,
+                                   capture_output=True, text=True).stdout.strip()
+            if dirty:
+                # Never commit someone's uncommitted edits to the edict along with the status change
+                continue
+            mark_done(self.repo_path, number)
+            if self.auto_commit:
+                subprocess.run(_commit_args(f"Edict {number}: done (all its planned work has merged)", [rel]),
+                               cwd=self.repo_path, capture_output=True, text=True)
+            closed += 1
+        return closed
 
     def _mark_committed_in_tracker(self, diffs: List[Diff], merge_result: MergeResult) -> None:
         """
@@ -366,11 +478,16 @@ class AriadneOrchestrator:
         # Prepare commit directory
         commit_dir = self.bus.prepare_atomic_commit(merge_result, self.repo_path)
 
-        # Apply the combined diff
+        # Apply the combined diff, staged, so new files are committed and nothing else is. Paths come
+        # from the diff headers too, so a rename commits its old path's deletion as well as the new one.
+        paths = sorted({f for d in diffs for f in d.all_affected_files()} | {
+            p for d in diffs for m in re.finditer(r"^diff --git a/(.+?) b/(.+)$", d.content, re.MULTILINE)
+            for p in m.groups()
+        })
         try:
             diff_file = commit_dir / "combined.diff"
             result = subprocess.run(
-                ["git", "apply", str(diff_file)],
+                ["git", "apply", "--index", str(diff_file)],
                 cwd=self.repo_path,
                 capture_output=True,
                 text=True,
@@ -386,7 +503,7 @@ class AriadneOrchestrator:
             message = message_file.read_text(encoding="utf-8")
 
             result = subprocess.run(
-                _commit_args(message),
+                _commit_args(message, paths or None),
                 cwd=self.repo_path,
                 capture_output=True,
                 text=True,
@@ -582,6 +699,15 @@ def main():
     review_reject.add_argument("--reason", required=True, help="Why it was rejected")
     review_reject.add_argument("--by", default="human", help="Who rejected it")
 
+    # plans: approving a plan is an intent-approval event (edict 0001, amended)
+    plans_parser = subparsers.add_parser("plans", help="List and approve implementation plans")
+    plans_sub = plans_parser.add_subparsers(dest="plans_command", help="Plan commands")
+    plans_sub.add_parser("list", help="List plans and whether their approval is valid")
+    plans_approve = plans_sub.add_parser("approve", help="Approve a plan: its packages become approved intent")
+    plans_approve.add_argument("plan_id")
+    plans_approve.add_argument("--by", required=True,
+                               help="Who approved it: the person, or the main Claude Code session")
+
     args = parser.parse_args()
     repo_path = Path(args.repo).resolve()
 
@@ -636,9 +762,15 @@ def main():
             else:
                 print(f"diff {diff.id} ({diff.work_id})")
                 print(f"description: {diff.description}")
+                print(f"worker model: {diff.metadata.get('worker_model') or '(SDK default)'}")
                 if diff.semantic_review:
-                    print(f"judge verdict: {diff.semantic_review.get('verdict')}")
-                    print(f"judge reasoning: {diff.semantic_review.get('reasoning')}")
+                    review = diff.semantic_review
+                    print(f"judge verdict: {review.get('verdict')}")
+                    if review.get("reviewer") == "llm-judge":
+                        print(f"judged by: llm-judge, model {review.get('model') or '(SDK default)'}")
+                    else:
+                        print(f"judged by: {review.get('reviewer')} (no model)")
+                    print(f"judge reasoning: {review.get('reasoning')}")
                 print("---")
                 print(diff.content)
 
@@ -668,6 +800,32 @@ def main():
 
         else:
             review_parser.print_help()
+
+    elif args.command == "plans":
+        from .planner import Planner
+
+        planner = Planner(repo_path)
+        if args.plans_command == "list":
+            for plan in planner.list_plans():
+                state = ("approved by " + str(plan.approved_by)) if plan.approval_valid() else \
+                    ("approval void: changed since" if plan.approved else "not approved")
+                source = f"edict {plan.edict}" if plan.edict else "feature request"
+                print(f"{plan.id}  {len(plan.work_packages)} packages  {source}  {state}")
+        elif args.plans_command == "approve":
+            if planner.load_plan(args.plan_id) is None:
+                print(f"No such plan: {args.plan_id}")
+                return
+            if planner.load_plan(args.plan_id).edict:
+                from ..edicts import dispatch_block
+
+                block = dispatch_block(repo_path, planner.load_plan(args.plan_id).edict)
+                if block:
+                    print(f"Not approved: {block}")
+                    return
+            plan = planner.approve_plan(args.plan_id, approved_by=args.by)
+            print(f"Approved {plan.id} ({len(plan.work_packages)} packages) by {plan.approved_by}")
+        else:
+            plans_parser.print_help()
 
     else:
         parser.print_help()

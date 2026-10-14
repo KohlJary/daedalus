@@ -45,8 +45,10 @@ def test_ignored_gameplan_gets_unignored_and_rest_stays_local(tmp_path, monkeypa
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     (tmp_path / ".gitignore").write_text("# Daedalus project memory (local, not shared)\n.daedalus/\n")
     out = init(tmp_path, monkeypatch)
-    assert "Un-ignored .daedalus/roadmap/gameplan.json" in out
+    assert "Un-ignored the gameplan" in out
     assert not ignored(tmp_path, ".daedalus/roadmap/gameplan.json")
+    assert not ignored(tmp_path, ".daedalus/gameplans/kohl.json")
+    assert ignored(tmp_path, ".daedalus/gameplans/kohl.pending.json")
     assert ignored(tmp_path, ".daedalus/session-summaries.md")
     assert ignored(tmp_path, ".daedalus/roadmap/index.json")
 
@@ -59,4 +61,5 @@ def test_unignored_project_is_left_alone(tmp_path, monkeypatch):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     (tmp_path / ".gitignore").write_text("*.pyc\n")
     init(tmp_path, monkeypatch)
-    assert (tmp_path / ".gitignore").read_text() == "*.pyc\n"
+    # Only the local settings file is added, so it can never be committed (edict 0008)
+    assert (tmp_path / ".gitignore").read_text() == "*.pyc\n\n# Daedalus: local project settings (edict 0008)\n/.daedalus/config.json\n"

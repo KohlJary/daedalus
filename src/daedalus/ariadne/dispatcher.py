@@ -82,6 +82,7 @@ class Dispatcher:
         icarus_bus: Optional["IcarusBus"] = None,
         state_dir: Optional[Path] = None,
         use_ariadne: bool = True,
+        repo_path: Optional[Path] = None,
     ):
         """
         Initialize dispatcher.
@@ -95,6 +96,7 @@ class Dispatcher:
         self.state_dir = state_dir or Path(".daedalus/ariadne/dispatch")
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.use_ariadne = use_ariadne
+        self.repo_path = Path(repo_path) if repo_path else None
 
     def create_dispatch_state(self, plan: ImplementationPlan) -> PlanDispatchState:
         """Create initial dispatch state for a plan."""
@@ -150,6 +152,14 @@ class Dispatcher:
         if not HAS_ICARUS or not self.icarus_bus:
             raise RuntimeError("Icarus bus not available")
 
+        # Edicts 0001/0003: only accepted edicts without an open dissent are dispatched
+        if spec.edict:
+            from ..edicts import dispatch_block
+
+            block = dispatch_block(Path(project_root or self.repo_path or Path.cwd()), spec.edict)
+            if block:
+                raise RuntimeError(block)
+
         # Build the prompt for the worker
         prompt = self._build_worker_prompt(spec)
 
@@ -162,6 +172,9 @@ class Dispatcher:
                 "files": spec.files,
                 "ariadne_mode": self.use_ariadne,
                 "spec_id": spec.id,
+                "plan_id": state.plan_id,
+                "edict": spec.edict,
+                "package": spec.package_text(),
             },
             outputs={
                 "expected": "Modified files according to spec",

@@ -27,7 +27,7 @@ so a missing file is normal, not an error.
 
 | File | Purpose |
 |------|---------|
-| `roadmap/gameplan.json` | **Record of state.** Phases, the active phase, its tasks and their resolutions; `edict` fields link work to edicts |
+| `roadmap/gameplan.json` | **Record of state.** Phases, the active phase, its tasks and their resolutions; in projects that use edicts, `edict` fields link work to them |
 | `roadmap/pending.json` | Proposed gameplan updates awaiting apply/drop (from the capture hook or a reconstruction) |
 | `roadmap/index.json` | Roadmap items |
 | `session-summaries.md` | Narrative of previous sessions; refers to gameplan tasks by ID |
@@ -57,7 +57,7 @@ so a missing file is normal, not an error.
 | Query Type | Files to Read |
 |------------|---------------|
 | "What's in progress? What's next?" | `.daedalus/roadmap/gameplan.json` (activePhase, then tasks) |
-| "Has edict N been built?" | `.daedalus/roadmap/gameplan.json` (phases/tasks with `"edict": "N"`) |
+| "Has edict N been built?" (projects using edicts) | `.daedalus/roadmap/gameplan.json` (phases/tasks with `"edict": "N"`) |
 | "What's the architecture of X?" | `.daedalus/project-map.md` |
 | "What did we do last session?" | `.daedalus/session-summaries.md` |
 | "How does Y connect to Z?" | `.daedalus/project-map.md`, grep for references |

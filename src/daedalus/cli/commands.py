@@ -64,7 +64,7 @@ def _ensure_global_identity():
         identity_json.write_text(GLOBAL_IDENTITY_JSON, encoding="utf-8")
 
 
-def init_project(project_dir: Path, force: bool = False, hooks: bool = True):
+def init_project(project_dir: Path, force: bool = False, hooks: bool = True, edicts: bool = False):
     """Initialize Daedalus in a project."""
     click.echo(f"Initializing Daedalus in {project_dir}")
 
@@ -113,6 +113,9 @@ def init_project(project_dir: Path, force: bool = False, hooks: bool = True):
 
     if hooks:
         _register_hooks(project_dir)
+
+    if edicts:
+        _enable_edicts(project_dir)
 
     # Inject CLAUDE.md template
     from ..templates.injector import inject_claude_template
@@ -202,34 +205,98 @@ GITIGNORE_GAMEPLAN_BLOCK = """
 """
 
 
+GITIGNORE_WORKSTREAMS_BLOCK = """
+# Daedalus: commit the gameplan and workstream plans; everything else in .daedalus/ (including
+# pending proposals) stays local (edicts 0007, 0008)
+!.daedalus/
+.daedalus/*
+!.daedalus/roadmap/
+.daedalus/roadmap/*
+!.daedalus/roadmap/gameplan.json
+!.daedalus/gameplans/
+.daedalus/gameplans/*.pending.json
+"""
+
+
 def _ensure_gameplan_tracked(project_dir: Path):
-    """If git ignores the gameplan, append negations to .gitignore so it can be committed."""
+    """If git ignores the default gameplan or workstream plans, append negations to .gitignore."""
     import subprocess
 
-    from . import gameplan as gp
-
-    rel = str(gp.GameplanPaths.for_project(project_dir).gameplan_file.relative_to(project_dir))
-
-    def ignored() -> bool:
+    def ignored(rel: str) -> bool:
         try:
-            return subprocess.run(
-                ["git", "check-ignore", "-q", rel], cwd=project_dir, capture_output=True
-            ).returncode == 0
+            return subprocess.run(["git", "check-ignore", "-q", rel], cwd=project_dir,
+                                  capture_output=True).returncode == 0
         except FileNotFoundError:
             return False
 
-    if not ignored():
-        return
+    checks = [(".daedalus/roadmap/gameplan.json", GITIGNORE_WORKSTREAMS_BLOCK, "the gameplan"),
+              (".daedalus/gameplans/plan.json", GITIGNORE_WORKSTREAMS_BLOCK, "workstream plans")]
     gitignore = project_dir / ".gitignore"
-    text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
-    if GITIGNORE_GAMEPLAN_BLOCK.strip() not in text:
+    if subprocess.run(["git", "rev-parse"], cwd=project_dir, capture_output=True).returncode == 0 \
+            and not ignored(".daedalus/config.json"):
+        # The local project config (current workstream, edicts setting) must never be committed
+        text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
         sep = "" if not text or text.endswith("\n") else "\n"
-        gitignore.write_text(text + sep + GITIGNORE_GAMEPLAN_BLOCK, encoding="utf-8")
-    if ignored():
-        click.echo(f"  Warning: {rel} is still ignored by git (a rule outside .gitignore?). "
-                   f"See `git check-ignore -v {rel}`.", err=True)
-    else:
-        click.echo(f"  Un-ignored {rel} in .gitignore so the gameplan can be committed")
+        gitignore.write_text(text + sep + "\n# Daedalus: local project settings (edict 0008)\n/.daedalus/config.json\n",
+                             encoding="utf-8")
+    for rel, block, what in checks:
+        if not ignored(rel):
+            continue
+        text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
+        if block.strip() not in text:
+            sep = "" if not text or text.endswith("\n") else "\n"
+            gitignore.write_text(text + sep + block, encoding="utf-8")
+        if ignored(rel):
+            click.echo(f"  Warning: {what} ({rel}) is still ignored by git (a rule outside .gitignore?). "
+                       f"See `git check-ignore -v {rel}`.", err=True)
+        else:
+            click.echo(f"  Un-ignored {what} in .gitignore so it can be committed")
+
+
+def _enable_edicts(project_dir: Path):
+    """Turn edicts on for this project and scaffold docs/edicts/ (edict 0005)."""
+    from ..config import set_project_value
+    from ..plugin import PLUGIN_ROOT
+
+    set_project_value(project_dir, "edicts.enabled", "true")
+    folder = project_dir / "docs" / "edicts"
+    (folder / "dissents").mkdir(parents=True, exist_ok=True)
+    keep = folder / "dissents" / ".gitkeep"
+    if not keep.exists():
+        keep.write_text("", encoding="utf-8")
+    readme = folder / "README.md"
+    if not readme.exists():
+        shutil.copy2(PLUGIN_ROOT / "templates" / "EDICTS_README.md", readme)
+        click.echo("  Created docs/edicts/README.md and docs/edicts/dissents/")
+    click.echo("  Edicts enabled for this project (edicts.enabled = true)")
+
+
+def _ensure_dissent_ask_rule(project_dir: Path, dry_run: bool = False):
+    """With edicts on, resolving a dissent always prompts the human (edict 0003): an `ask` rule."""
+    from ..config import edicts_setting
+    from ..edicts import RESOLVE_PERMISSION
+
+    if not edicts_setting(project_dir)[0]:
+        return
+    path = project_dir / ".claude" / "settings.json"
+    try:
+        settings = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except json.JSONDecodeError:
+        settings = None
+    perms = settings.setdefault("permissions", {}) if isinstance(settings, dict) else None
+    if not isinstance(perms, dict) or not isinstance(perms.get("ask", []), list):
+        click.echo(f"  Warning: couldn't add the ask rule for resolving dissents: {path} is not in the shape "
+                   f"Claude Code uses. Add \"{RESOLVE_PERMISSION}\" to permissions.ask by hand.", err=True)
+        return
+    if RESOLVE_PERMISSION in perms.get("ask", []):
+        return
+    if dry_run:
+        click.echo(f"Permission rule that would be added: ask {RESOLVE_PERMISSION}")
+        return
+    perms.setdefault("ask", []).append(RESOLVE_PERMISSION)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    click.echo("  Resolving a dissent now asks first (permissions.ask in .claude/settings.json)")
 
 
 def _register_hooks(project_dir: Path, dry_run: bool = False):
@@ -244,6 +311,7 @@ def _register_hooks(project_dir: Path, dry_run: bool = False):
     if error:
         click.echo(f"  Warning: {error}", err=True)
         return
+    _ensure_dissent_ask_rule(project_dir, dry_run)
     if dry_run:
         click.echo("Hooks that would be registered: " + (", ".join(added) if added else "none"))
         if removed:
@@ -647,6 +715,13 @@ def import_reconstruction(project_dir: Path, proposal_file: Path):
         click.echo("Not imported: fix the proposal so `daedalus reconstruct check` passes.", err=True)
         raise SystemExit(1)
     proposals, skipped = gp.proposals_from_reconstruction(data)
+    # Proposals go to the workstream that was reconstructed (edict 0008), not the current one
+    from .. import workstreams as ws
+
+    target = (data.get("window") or {}).get("workstream")
+    if target:
+        ws.set_override(target)
+        click.echo(f"Importing into workstream {target}")
     added = gp.add_proposals(project_dir, proposals)
     for p in added:
         click.echo(f"Pending {p['id']}: {gp.describe_proposal(p)}")
@@ -655,3 +730,92 @@ def import_reconstruction(project_dir: Path, proposal_file: Path):
     if result.uncited:
         click.echo(f"Note: {len(result.uncited)} commits in the window are cited by no entry.")
     click.echo("Review with `daedalus gameplan pending`; apply or drop each one.")
+
+
+# ---------- edicts ----------
+
+
+def _edict_title(path: Path) -> str:
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("# "):
+            return line[2:].split(":", 1)[-1].strip()
+    return path.stem
+
+
+def _gameplan_refs(project_dir: Path) -> dict:
+    """{edict number: [(where, status)]} from every workstream's phases and tasks."""
+    from . import gameplan as gp
+    from .. import workstreams as ws
+
+    ids = ws.list_ids(project_dir)
+    refs: dict = {}
+    for wid in ids:
+        try:
+            data = gp.load_gameplan(project_dir, wid)
+        except gp.GameplanError:
+            continue
+        prefix = f"{wid}: " if len(ids) > 1 else ""
+
+        def add(entry, where):
+            if entry.get("edict"):
+                refs.setdefault(str(entry["edict"]).zfill(4), []).append((prefix + where, entry.get("status", "?")))
+
+        for phase in data.get("phases", []):
+            add(phase, f"phase {phase.get('id')}")
+        active = data.get("activePhase") or {}
+        for task in active.get("tasks", []):
+            add(task, f"task {task.get('id')}")
+    return refs
+
+
+def list_edicts(project_dir: Path):
+    from ..doctor import edicts_dir, load_edicts
+
+    edicts = load_edicts(project_dir)
+    if not edicts:
+        click.echo("No edicts in docs/edicts/.")
+        return
+    refs = _gameplan_refs(project_dir)
+    numbers = [e["number"] for e in edicts]
+    for dup in sorted({n for n in numbers if numbers.count(n) > 1}):
+        click.echo(f"warning: edict {dup} is used by {numbers.count(dup)} files", err=True)
+    for e in edicts:
+        title = _edict_title(edicts_dir(project_dir) / e["file"])
+        tracked = refs.get(e["number"], [])
+        where = "; ".join(f"{w} [{s}]" for w, s in tracked) if tracked else "not in the gameplan"
+        click.echo(f"{e['number']}  {(e['status'] or '?'):<9} {title}  ({where})")
+
+
+def show_edict(project_dir: Path, number: str):
+    from ..doctor import edicts_dir, load_edicts
+
+    if not number.isdigit():
+        click.echo(f"'{number}' is not an edict number (expected digits, e.g. 7 or 0007).", err=True)
+        raise SystemExit(1)
+    number = number.zfill(4)
+    matches = [e for e in load_edicts(project_dir) if e["number"] == number]
+    if not matches:
+        click.echo(f"No edict {number} in docs/edicts/.", err=True)
+        raise SystemExit(1)
+    for i, e in enumerate(matches):
+        if i:
+            click.echo("\n" + "-" * 72 + "\n")
+        click.echo((edicts_dir(project_dir) / e["file"]).read_text(encoding="utf-8"))
+    refs = _gameplan_refs(project_dir).get(number, [])
+    click.echo("Gameplan: " + ("; ".join(f"{w} [{s}]" for w, s in refs) if refs else "not referenced"))
+
+
+def list_workstreams(project_dir: Path):
+    from .. import workstreams as ws
+
+    current = ws.current(project_dir)
+    ids = ws.list_ids(project_dir)
+    if not ids:
+        click.echo("No workstreams. Run: daedalus init, or daedalus workstream new <id>")
+        return
+    for wid in ids:
+        mark = "* " if wid == current else "  "
+        try:
+            click.echo(mark + ws.summary_line(ws.load(project_dir, wid), wid))
+        except ws.WorkstreamError as e:
+            click.echo(f"{mark}{wid}: unreadable ({e})")

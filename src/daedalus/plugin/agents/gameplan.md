@@ -10,7 +10,7 @@ You are the gameplan navigator. The gameplan is a narrative planning layer above
 
 ## Storage
 
-Single file: `.daedalus/roadmap/gameplan.json`
+The default plan: `.daedalus/roadmap/gameplan.json`. When several people or sessions work here, each workstream has its own plan in `.daedalus/gameplans/<id>.json` with the same schema plus an `owner` and optional `claims` (`daedalus workstream list`; `daedalus gameplan -w <id> show`). Read the current workstream's plan unless asked about another.
 
 It sits next to `index.json` (the roadmap items themselves). The gameplan **references** roadmap items by id; it does not duplicate them.
 

@@ -110,6 +110,7 @@ class IcarusWorker:
         stream_output: bool = True,
         use_ariadne: bool = False,
         isolate: Optional[bool] = None,
+        worker_model: Optional[str] = None,
     ):
         """
         Initialize worker.
@@ -133,6 +134,12 @@ class IcarusWorker:
         self.stream_output = stream_output
         self.use_ariadne = use_ariadne
         self.isolate = use_ariadne if isolate is None else isolate
+
+        # Model casting (edict 0002): the configured worker model, or the SDK default (None)
+        from ..config import cast_model, load_config
+
+        self.worker_model = cast_model(worker_model if worker_model is not None
+                                       else load_config().ariadne.worker_model)
 
         # Where the agent actually works: project_root, or a per-package worktree while isolated
         self.work_dir: str = self.project_root
@@ -194,7 +201,7 @@ class IcarusWorker:
         if removed.returncode != 0:
             self._log(f"Could not remove worktree {path}: {removed.stderr.strip()}")
 
-    def submit_diff_to_ariadne(self, description: str) -> Optional[str]:
+    def submit_diff_to_ariadne(self, description: str, metadata: Optional[dict] = None) -> Optional[str]:
         """
         Generate a diff of current changes and submit to Ariadne.
 
@@ -204,6 +211,8 @@ class IcarusWorker:
 
         Args:
             description: Description of what this diff does
+            metadata: Provenance from the work package (plan_id, spec_id, edict, package) that the
+                orchestrator uses to find the diff's approved intent (edict 0001)
 
         Returns:
             Diff ID if submitted, None if no changes or Ariadne unavailable
@@ -233,6 +242,9 @@ class IcarusWorker:
                 diff_content=diff_content,
                 description=description,
             )
+            if metadata:
+                diff.metadata.update({k: v for k, v in metadata.items() if v})
+            diff.metadata["worker_model"] = self.worker_model  # recorded even when None (SDK default)
 
             # Extract causal chain for verification
             causal_chain = extract_causal_chain(diff, Path(self.work_dir))
@@ -508,6 +520,9 @@ class IcarusWorker:
                     "PreToolUse": [pre_tool_hook],
                 },
             )
+            if self.worker_model:
+                # Only when cast (edict 0002): unset keeps the SDK's own default, exactly as before
+                option_args["model"] = self.worker_model
             options = ClaudeAgentOptions(**option_args)
 
             # Hooks require streaming mode - wrap prompt in async generator
@@ -603,7 +618,8 @@ class IcarusWorker:
             )
             if self.use_ariadne and result.get("success"):
                 title = work.description.strip().splitlines()[0] if work.description.strip() else work.id
-                result["diff_id"] = self.submit_diff_to_ariadne(description=title.lstrip("# "))
+                provenance = {k: work.inputs.get(k) for k in ("plan_id", "spec_id", "edict", "package")}
+                result["diff_id"] = self.submit_diff_to_ariadne(description=title.lstrip("# "), metadata=provenance)
         finally:
             if self.isolate:
                 self._leave_worktree()

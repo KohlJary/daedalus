@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from ariadne_intent import approved_plan
 from daedalus.ariadne.diff_bus import AriadneBus
 from daedalus.ariadne.orchestrator import AriadneOrchestrator
 from daedalus.ariadne.semantic_review import ReviewVerdict, SemanticReviewResult
@@ -116,10 +117,10 @@ def real_verifier(repo: Path) -> CausalSliceVerifier:
                                test_cmd=[sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"])
 
 
-async def run_work(project: Path, buses, description: str, **worker_kwargs) -> dict:
+async def run_work(project: Path, buses, description: str, inputs=None, **worker_kwargs) -> dict:
     icarus, ariadne = buses
     work = WorkPackage(id="", type="implementation", description=description,
-                       inputs={"ariadne_mode": True}, outputs={})
+                       inputs={"ariadne_mode": True, **(inputs or {})}, outputs={})
     icarus.post_work(work)
     worker = IcarusWorker(project_root=str(project), bus=icarus, stream_output=False,
                           use_ariadne=True, **worker_kwargs)
@@ -166,8 +167,9 @@ def test_new_files_are_part_of_the_diff(project, buses, fake_sdk):
 
 def test_good_change_is_verified_by_real_tests_and_committed(project, buses, fake_sdk):
     fake_sdk.scripts.append(edit("calc.py", "def mul(a, b):", "def mul(a, b):  # commutative"))
+    plan = approved_plan(project, "Document mul")
 
-    asyncio.run(run_work(project, buses, "Document mul"))
+    asyncio.run(run_work(project, buses, "Document mul", inputs={"plan_id": plan.id, "spec_id": "wp-1"}))
     result = process(project, buses[1])
 
     assert result.errors == [] and result.commits_created == 1, result
@@ -228,3 +230,91 @@ def test_verifier_still_applies_the_diff_when_temp_is_inside_another_repo(projec
     result = process(project, buses[1])
 
     assert result.diffs_rejected == 1 and result.commits_created == 0, result
+
+
+# --- edict 0001 (amended): plan approval is intent approval, through the full path -----------------
+
+def dispatch_and_run(project: Path, buses, plan, tmp_path: Path):
+    """Planner plan -> Dispatcher -> Icarus bus -> real worker harness -> Ariadne -> orchestrator."""
+    from daedalus.ariadne.dispatcher import Dispatcher
+
+    icarus, ariadne = buses
+    dispatcher = Dispatcher(icarus_bus=icarus, state_dir=tmp_path / "dispatch", repo_path=project)
+    state = dispatcher.create_dispatch_state(plan)
+    work_id = dispatcher.dispatch_package(plan.work_packages[0], state, project_root=project)
+    work = icarus.get_work(work_id)
+    worker = IcarusWorker(project_root=str(project), bus=icarus, stream_output=False, use_ariadne=True)
+    worker.ariadne_bus = ariadne
+
+    async def run():
+        try:
+            return await worker.execute_work_package(work)
+        finally:
+            await worker.unregister()
+
+    asyncio.run(run())
+    return process(project, ariadne)
+
+
+def mul_plan(project: Path, approve: bool):
+    from daedalus.ariadne.planner import FeatureRequest, Planner
+
+    planner = Planner(project)
+    plan = planner.analyze_feature(FeatureRequest.create("Document mul", "Add a comment to calc.mul. Files: calc.py"))
+    if approve:
+        planner.approve_plan(plan, approved_by="main-session")
+    return plan
+
+
+def test_package_from_an_approved_plan_auto_commits(project, buses, fake_sdk, tmp_path):
+    """Fresh repo (no .daedalus/ before planning): approve the plan once, no human per diff."""
+    assert not (project / ".daedalus").exists()
+    fake_sdk.scripts.append(edit("calc.py", "def mul(a, b):", "def mul(a, b):  # commutative"))
+
+    result = dispatch_and_run(project, buses, mul_plan(project, approve=True), tmp_path)
+
+    assert result.errors == [] and result.commits_created == 1, result
+    assert "# commutative" in (project / "calc.py").read_text(encoding="utf-8")
+    merged = buses[1].list_all_diffs()[0]
+    assert merged.metadata["plan_id"] and merged.metadata["spec_id"]
+    assert "Work package" in merged.metadata["package"]          # the full package, not just a title
+    assert ".daedalus" not in git(project, "ls-files")
+
+
+def test_same_package_from_an_unapproved_plan_needs_review(project, buses, fake_sdk, tmp_path):
+    fake_sdk.scripts.append(edit("calc.py", "def mul(a, b):", "def mul(a, b):  # commutative"))
+
+    result = dispatch_and_run(project, buses, mul_plan(project, approve=False), tmp_path)
+
+    assert result.commits_created == 0 and result.diffs_needs_review == 1, result
+    diff = buses[1].list_needs_review_diffs()[0]
+    assert "is not approved" in diff.semantic_review["reasoning"]
+
+
+def test_dispatch_refuses_an_edict_with_an_open_dissent(project, buses, tmp_path):
+    from daedalus.ariadne.dispatcher import Dispatcher
+    from daedalus.ariadne.planner import FeatureRequest, Planner
+    from daedalus.edicts import file_dissent
+
+    (project / "docs/edicts").mkdir(parents=True)
+    (project / "docs/edicts/0001-doc.md").write_text(
+        "# Edict 0001: Document mul\nStatus: accepted\n\n## Intent\nComment mul.\n\n## Acceptance criteria\n- Commented.\n")
+    plan = Planner(project).analyze_feature(FeatureRequest.from_edict(project, "1"))
+    file_dissent(project, "1", "icarus", "o", "w", "i")
+    dispatcher = Dispatcher(icarus_bus=buses[0], state_dir=tmp_path / "dispatch", repo_path=project)
+    with pytest.raises(RuntimeError, match="open dissent"):
+        dispatcher.dispatch_package(plan.work_packages[0], dispatcher.create_dispatch_state(plan), project_root=project)
+
+
+def test_judge_prompt_includes_the_full_package(monkeypatch):
+    from daedalus.ariadne import semantic_review
+    from daedalus.ariadne.diff_bus import Diff
+
+    seen = []
+    monkeypatch.setattr(semantic_review, "HAS_AGENT_SDK", True)
+    monkeypatch.setattr(semantic_review.LLMJudge, "_run_query", lambda self, prompt: seen.append(prompt) or "APPROVE\nok")
+    diff = Diff.from_git_diff("w", "i", "", "title only")
+    diff.metadata["package"] = "Work package wp-1: Orders\n\nAdd orders with validation and tests."
+    semantic_review.LLMJudge().review(diff, "Edict 0009: approved intent")
+    assert "## Work package as dispatched to the worker" in seen[0]
+    assert "Add orders with validation and tests." in seen[0]

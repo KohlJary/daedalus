@@ -104,7 +104,8 @@ def _until_args(project_dir: Path, until: Optional[str]) -> tuple[str, list[str]
     return rev, []
 
 
-def find_window(project_dir: Path, since: Optional[str] = None, until: Optional[str] = None) -> Optional[dict]:
+def find_window(project_dir: Path, since: Optional[str] = None, until: Optional[str] = None,
+                workstream: Optional[str] = None) -> Optional[dict]:
     """
     The gap: from the gameplan's last commit (or `since`) to HEAD. A gameplan that was never
     committed falls back to its file time. Returns None when there is no gameplan and no `since`.
@@ -114,9 +115,10 @@ def find_window(project_dir: Path, since: Optional[str] = None, until: Optional[
     end, until_args = _until_args(project_dir, until)
     to = _git(project_dir, "rev-parse", end).strip()
     extra = {"until": until} if until else {}
-    rel = str(gp.GameplanPaths.for_project(project_dir).gameplan_file.relative_to(project_dir))
+    rel = str(gp.GameplanPaths.for_project(project_dir, workstream).gameplan_file.relative_to(project_dir))
     if since and re.fullmatch(r"\d{4}-\d{2}-\d{2}", since):
-        return {"from": None, "from_date": since, "to": to, "range": [f"--since={since}", *until_args, end],
+        # A bare date means that date at the current time of day to git; the window starts at midnight
+        return {"from": None, "from_date": since, "to": to, "range": [f"--since={since}T00:00:00", *until_args, end],
                 "anchor": f"--since {since}", **extra}
     if since:
         base = _git(project_dir, "rev-parse", since).strip()
@@ -129,7 +131,7 @@ def find_window(project_dir: Path, since: Optional[str] = None, until: Optional[
         base, when = last.split()
         return {"from": base, "from_date": when, "to": to, "range": [*until_args, f"{base}..{end}"],
                 "anchor": "last gameplan commit", **extra}
-    path = gp.GameplanPaths.for_project(project_dir).gameplan_file
+    path = gp.GameplanPaths.for_project(project_dir, workstream).gameplan_file
     if not path.exists():
         return None
     stamp = datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")
@@ -187,9 +189,9 @@ class Bundle:
     outside_git: list = field(default_factory=list)
 
 
-def _open_tasks(project_dir: Path) -> list[dict]:
+def _open_tasks(project_dir: Path, workstream: Optional[str] = None) -> list[dict]:
     try:
-        data = gp.load_gameplan(project_dir)
+        data = gp.load_gameplan(project_dir, workstream)
     except (gp.GameplanError, json.JSONDecodeError):
         return []
     active = data.get("activePhase") or {}
@@ -241,7 +243,7 @@ def reconstruct_settings(project_dir: Path) -> dict:
 
 
 def gather(project_dir: Path, since: Optional[str] = None, until: Optional[str] = None,
-           author: Optional[str] = None) -> Optional[Bundle]:
+           author: Optional[str] = None, workstream: Optional[str] = None) -> Optional[Bundle]:
     """
     Build the evidence bundle, or None when the window has no commits.
 
@@ -250,11 +252,26 @@ def gather(project_dir: Path, since: Optional[str] = None, until: Optional[str] 
     the commits to one person (git's --author matching).
     """
     project_dir = Path(project_dir)
-    window = find_window(project_dir, since, until)
+    if workstream is None:
+        from . import workstreams as ws_mod
+
+        current = ws_mod.current(project_dir)
+        workstream = current if current != ws_mod.DEFAULT else None
+    if workstream:
+        # A workstream's window anchors on its own plan and, by default, its owner's commits (0008)
+        from . import workstreams as ws
+
+        if not ws.file_for(project_dir, workstream).exists():
+            raise ValueError(f"No workstream '{workstream}'")
+        if author is None and workstream != ws.DEFAULT:
+            author = ws.owner(ws.load(project_dir, workstream), workstream).get("git_author")
+    window = find_window(project_dir, since, until, workstream)
     if window is None:
         raise ValueError("No gameplan and no --since revision: nothing to measure the gap from.")
     if author:
         window["author"] = author
+    if workstream:
+        window["workstream"] = workstream
     commits = window_commits(project_dir, window, author)
     if not commits:
         return None
@@ -304,7 +321,7 @@ def gather(project_dir: Path, since: Optional[str] = None, until: Optional[str] 
                   for c in scored if RELEASE_SUBJECT.match(c["subject"])],
         documents_added=documents,
         roadmap_diff={"committed": committed, "uncommitted": uncommitted},
-        open_tasks=_open_tasks(project_dir),
+        open_tasks=_open_tasks(project_dir, workstream),
         open_roadmap_items=_open_roadmap(project_dir),
         outside_git=outside,
     )
@@ -421,10 +438,10 @@ def _file_exists(project_dir: Path, rel: str, tracked: list[str]) -> bool:
     return any(t.rsplit("/", 1)[-1].endswith(rel) for t in tracked)
 
 
-def _existing_ids(project_dir: Path) -> tuple[set, set]:
+def _existing_ids(project_dir: Path, workstream: Optional[str] = None) -> tuple[set, set]:
     """(phase ids, task ids) already in the gameplan, including tasks recorded inside phases."""
     try:
-        data = gp.load_gameplan(project_dir)
+        data = gp.load_gameplan(project_dir, workstream)
     except (gp.GameplanError, json.JSONDecodeError):
         return set(), set()
     phases = {p.get("id") for p in data.get("phases", [])}
@@ -499,8 +516,8 @@ def check_proposal(project_dir: Path, proposal: dict) -> CheckResult:
         return ok
 
     tracked = _git(project_dir, "ls-files").splitlines()
-    open_tasks = {t["id"] for t in _open_tasks(project_dir)}
-    existing_phases, existing_tasks = _existing_ids(project_dir)
+    open_tasks = {t["id"] for t in _open_tasks(project_dir, bwin.get("workstream"))}
+    existing_phases, existing_tasks = _existing_ids(project_dir, bwin.get("workstream"))
     roadmap_now = _roadmap_ids(project_dir)
     cited_all: set[str] = set()
 

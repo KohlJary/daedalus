@@ -70,11 +70,22 @@ class GameplanError(Exception):
 class GameplanPaths:
     roadmap_dir: Path
     gameplan_file: Path
+    pending_file: Path = None  # type: ignore[assignment]
+    workstream: str = "default"
 
     @classmethod
-    def for_project(cls, project_dir: Path) -> "GameplanPaths":
+    def for_project(cls, project_dir: Path, workstream: Optional[str] = None) -> "GameplanPaths":
+        """Paths for a workstream's plan (edict 0008); the current workstream when not given."""
+        from .. import workstreams as ws
+
+        project_dir = Path(project_dir)
+        workstream = workstream or ws.current(project_dir)
         roadmap_dir = project_dir / ".daedalus" / "roadmap"
-        return cls(roadmap_dir=roadmap_dir, gameplan_file=roadmap_dir / GAMEPLAN_FILENAME)
+        gameplan_file = ws.file_for(project_dir, workstream)
+        pending = roadmap_dir / PENDING_FILENAME if workstream == ws.DEFAULT \
+            else ws.gameplans_dir(project_dir) / f"{workstream}.pending.json"
+        return cls(roadmap_dir=roadmap_dir, gameplan_file=gameplan_file, pending_file=pending,
+                   workstream=workstream)
 
 
 def empty_gameplan() -> dict[str, Any]:
@@ -85,28 +96,31 @@ def empty_gameplan() -> dict[str, Any]:
     }
 
 
-def load_gameplan(project_dir: Path) -> dict[str, Any]:
-    paths = GameplanPaths.for_project(project_dir)
+def load_gameplan(project_dir: Path, workstream: Optional[str] = None) -> dict[str, Any]:
+    paths = GameplanPaths.for_project(project_dir, workstream)
     if not paths.gameplan_file.exists():
-        raise GameplanError(
-            f"No gameplan found at {paths.gameplan_file}. Run: daedalus init"
-        )
-    return json.loads(paths.gameplan_file.read_text(encoding="utf-8"))
+        hint = "Run: daedalus init" if paths.workstream == "default" \
+            else f"Run: daedalus workstream new {paths.workstream}"
+        raise GameplanError(f"No gameplan found at {paths.gameplan_file}. {hint}")
+    try:
+        return json.loads(paths.gameplan_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise GameplanError(f"{paths.gameplan_file} is not valid JSON: {e}")
 
 
-def save_gameplan(project_dir: Path, data: dict[str, Any]) -> None:
-    paths = GameplanPaths.for_project(project_dir)
-    paths.roadmap_dir.mkdir(parents=True, exist_ok=True)
+def save_gameplan(project_dir: Path, data: dict[str, Any], workstream: Optional[str] = None) -> None:
+    paths = GameplanPaths.for_project(project_dir, workstream)
+    paths.gameplan_file.parent.mkdir(parents=True, exist_ok=True)
     paths.gameplan_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 def ensure_gameplan(project_dir: Path, force: bool = False) -> bool:
-    """Create an empty gameplan if missing. Returns True if created."""
-    paths = GameplanPaths.for_project(project_dir)
+    """Create an empty default gameplan if missing. Returns True if created."""
+    paths = GameplanPaths.for_project(project_dir, "default")
     if paths.gameplan_file.exists() and not force:
         return False
     paths.roadmap_dir.mkdir(parents=True, exist_ok=True)
-    save_gameplan(project_dir, empty_gameplan())
+    save_gameplan(project_dir, empty_gameplan(), "default")
     return True
 
 
@@ -298,7 +312,7 @@ def describe_proposal(proposal: dict[str, Any]) -> str:
 
 
 def pending_path(project_dir: Path) -> Path:
-    return GameplanPaths.for_project(project_dir).roadmap_dir / PENDING_FILENAME
+    return GameplanPaths.for_project(project_dir).pending_file
 
 
 def load_pending(project_dir: Path) -> list[dict[str, Any]]:

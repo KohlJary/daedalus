@@ -341,6 +341,16 @@ class AriadneBus:
                 return Diff(**data)
         return None
 
+    def list_all_diffs(self) -> List[Diff]:
+        """Every diff on the bus, whatever its status."""
+        diffs = []
+        for dir_name in ["pending", "verified", "rejected", "merged", "needs_review"]:
+            for diff_file in self.dirs[dir_name].glob("*.json"):
+                data = json.loads(diff_file.read_text(encoding="utf-8"))
+                data["status"] = DiffStatus(data["status"])
+                diffs.append(Diff(**data))
+        return diffs
+
     def list_pending_diffs(self) -> List[Diff]:
         """List all pending diffs."""
         diffs = []
