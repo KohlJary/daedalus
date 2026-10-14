@@ -113,6 +113,8 @@ def init_project(project_dir: Path, force: bool = False, hooks: bool = True, edi
 
     if hooks:
         _register_hooks(project_dir)
+    else:
+        _ensure_dissent_ask_rule(project_dir)
 
     if edicts:
         _enable_edicts(project_dir)
@@ -139,6 +141,8 @@ def hydrate_project(
     """Update Daedalus assets in project. With dry_run, report what would change and write nothing."""
     if hooks:
         _register_hooks(project_dir, dry_run=dry_run)
+    else:
+        _ensure_dissent_ask_rule(project_dir, dry_run)
 
     if skills:
         skills_dir = project_dir / ".claude" / "skills"
@@ -237,8 +241,8 @@ def _ensure_gameplan_tracked(project_dir: Path):
         # The local project config (current workstream, edicts setting) must never be committed
         text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
         sep = "" if not text or text.endswith("\n") else "\n"
-        gitignore.write_text(text + sep + "\n# Daedalus: local project settings (edict 0008)\n/.daedalus/config.json\n",
-                             encoding="utf-8")
+        gitignore.write_text(text + sep + "\n# Daedalus: local settings, board state, sharing policy (edicts 0008, 0009)\n"
+                             "/.daedalus/config.json\n/.daedalus/board/\n/.daedalus/sharing.md\n", encoding="utf-8")
     for rel, block, what in checks:
         if not ignored(rel):
             continue

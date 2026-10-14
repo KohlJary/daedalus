@@ -146,7 +146,7 @@ def test_hydrate_registers_respects_flags_and_config(tmp_path, monkeypatch):
     assert not (tmp_path / ".claude/settings.json").exists()
 
     runner.invoke(main, flags + ["--no-hooks"])
-    assert not (tmp_path / ".claude/settings.json").exists()
+    assert "hooks" not in settings(tmp_path)                 # no hooks; the board's ask rule still lands
 
     runner.invoke(main, flags)
     assert SESSION_START_COMMAND in (tmp_path / ".claude/settings.json").read_text()
