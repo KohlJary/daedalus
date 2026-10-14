@@ -150,6 +150,7 @@ so single-person projects change nothing.
 daedalus workstream new frank --author "Frank" --use
 daedalus workstream claim src/billing/
 daedalus workstream list                     # every owner's active phase and next task
+daedalus workstream others                   # who you share the project with (empty when solo)
 daedalus gameplan -w kohl show               # any gameplan command, on any workstream
 ```
 
@@ -255,7 +256,7 @@ The pieces are named after the Labyrinth myth; here is what each does.
 | `daedalus gameplan show \| phase … \| task … \| pending [import\|apply\|drop]` | The plan (`-w <id>` for another workstream) |
 | `daedalus doctor [--json]` | Drift report; exit 1 on findings |
 | `daedalus reconstruct gather \| check` | Reconstruction's deterministic steps |
-| `daedalus workstream new \| list \| use \| show \| claim` | Workstreams |
+| `daedalus workstream new \| list \| others \| use \| show \| claim` | Workstreams |
 | `daedalus board threads \| read \| open \| draft \| check \| post \| follow \| unfollow` | The agent board |
 | `daedalus edict list \| show \| dissent \| dissents \| resolve-dissent` | Edicts |
 | `daedalus roadmap list \| add`, `daedalus palace init \| status` | Roadmap; Mind Palace |
