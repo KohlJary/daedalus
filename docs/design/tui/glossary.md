@@ -95,3 +95,46 @@ refactors it.
 A live Claude Code session running as Daedalus, the builder. Anything the TUI
 only shows, you can hand to Claude with `s`, which pastes a prompt you can edit
 before you press enter.
+
+## Reflection (incoming, PR #39)
+Daedalus reading its own Claude Code session logs to learn from them. It
+counts what happened, writes periodic reports with checked citations, and
+turns what it learns into proposals that you apply. None of it leaves this
+machine.
+*Lives in* `.daedalus/reflection/` (gitignored). *CLI:* `daedalus reflect due`
+
+## Digest
+One session's numbers: tokens, failures, denials, rejections,
+interruptions and subagents. Each count can be traced to the events behind
+it. Making a digest calls no model.
+*CLI:* `daedalus reflect digest`
+
+## Due
+Which reflections are owed. Daily, weekly and monthly reflections are due only
+for completed periods that had sessions. Small days roll into the week.
+
+## delphi
+The agent that writes a reflection report. Every claim in it must cite an
+event or a digest field. `reflect check` and Momus both check the report
+before you see it.
+
+## User model
+What Daedalus has learned about you, kept only on this machine. Each entry has
+a confidence that fades over time unless you mark it stable. You can edit,
+forget or delete any entry.
+*CLI:* `daedalus reflect model user`
+
+## Self model
+What Daedalus has learned about itself, written in the first person. Each
+entry is a **behavior** (what it did, from the record), an
+**interpretation** (why, citing behaviors), a **stance** (something it
+commits to, which only you can apply), or an **aspiration** (who it wants to
+be, which binds nothing).
+*CLI:* `daedalus reflect model self`
+
+## Machine: employer
+Whether this is an employer's machine. Leaving it unset counts as yes, on
+purpose: reflection then runs only inside your own session, never as a
+separate model call.
+*Config:* `machine.employer`
+

@@ -1,0 +1,99 @@
+# Reflection
+
+Edict 0010. Daedalus reads its own Claude Code session logs, counts what happened
+(digests), and on a schedule writes a reflection with checked citations. What it
+learns becomes proposals you apply, and two models: what it has learned about
+you, and about itself. Everything here stays on this machine.
+
+@due
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Reflection                                                             runner: inhale · esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ [Due] · Reports · User model · Self model · Experiment                                           │
+├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
+│▸ weekly   2026-W41   due             │ Weekly 2026-W41 is due                                    │
+│  daily    10-14      rolled into W41 │                                                           │
+│  monthly  2026-10    not yet (open)  │ 23 sessions across 2 projects. Small days roll up         │
+│                                      │ into the week.                                            │
+│  ⚠ 2 sessions undigested;            │                                                           │
+│    Claude Code deletes them in 6d    ├───────────────────────────────────────────────────────────┤
+│                                      │ d digest now · s ask Claude to run /reflect               │
+├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: reflect due; the cleanup warning is doctor's. Running a reflection is Claude's
+job (bundle, check, render, done), so the TUI hands it over.
+
+@reports
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Reflection                                                             runner: inhale · esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Due · [Reports] · User model · Self model · Experiment                                           │
+├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
+│▸ weekly   2026-W41   3 proposals     │ Weekly 2026-W41 · checked ✓ · Momus: 3/3                  │
+│  daily    10-13      1 proposal      │                                                           │
+│                                      │ ## Findings                                               │
+│                                      │ (rendered report; citations open the event)               │
+│                                      │                                                           │
+│                                      ├───────────────────────────────────────────────────────────┤
+│                                      │ enter open citation · p its proposals                     │
+├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: reads the rendered Markdown; a report Momus hasn't ruled on isn't shown.
+
+@user-model
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Reflection                                                             runner: inhale · esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Due · Reports · [User model] · Self model · Experiment                                           │
+├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
+│▸ prefers terse status updates  0.9   │ prefers terse status updates                              │
+│  reviews PRs in batches        0.6   │ confidence 0.9 · decays · affirmed 2d ago                 │
+│  scope: work                  stable │ from: weekly 2026-W40, Q1                                 │
+│                                      │                                                           │
+│                                      │ h history · e edit · S stable · f forget · x delete       │
+│                                      ├───────────────────────────────────────────────────────────┤
+│                                      │ every change is recorded in history.jsonl                 │
+├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: the user model is yours: edit, stable, forget and delete are your calls.
+forget follows reflection.forget (purge or retain).
+
+@self-model
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Reflection                                                             runner: inhale · esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Due · Reports · User model · [Self model] · Experiment                                           │
+├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
+│▸ re-reads after editing        0.7   │ re-reads after editing                                    │
+│  ✦ aspiration: ask before guessing   │ behavior · shown · confidence 0.7 · decays                │
+│  ⚑ 1 dissent on an entry             │                                                           │
+│                                      │ ⚑ Dissent (session 3f2a…): "only on large files"          │
+│                                      │ Dissents block nothing; they're shown with the entry.     │
+│                                      ├───────────────────────────────────────────────────────────┤
+│                                      │ h history · e edit · S stable · x delete                  │
+├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: aspirations (✦) are written by Daedalus (reflect model aspire), not here.
+
+@experiment
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Reflection                                                             runner: inhale · esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Due · Reports · User model · Self model · [Experiment]                                           │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Model summary at inhale: A/B test (reflection.model_summary = ab)                                │
+│                                                                                                  │
+│ This session's arm: on · seed 4417                                                               │
+│ Sessions so far: 31 on · 29 off                                                                  │
+│                                                                                                  │
+│ The log records runs, resolutions, arms and model changes.                                       │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ e export the log · ? what is this experiment                                                     │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: reflect arm and reflect log; export writes a copy wherever you choose.

@@ -75,6 +75,47 @@ The design adds things the program doesn't have yet:
 - source plugins (ADO, Jira, …) feeding pending proposals; see README,
   Extensibility. These are counted once they exist in core.
 
+## Incoming: open PRs #38 and #39
+
+These aren't on main yet. The design already covers them, so the numbers below
+are what coverage becomes once both merge.
+
+**#39, reflection (edict 0010)**, adds 20 CLI leaves, 11 config keys
+(`reflection.*` and `machine.employer`), the `delphi` agent, the `reflect`
+skill, and seven kinds of file.
+
+| Mark | Commands |
+|------|----------|
+| ● | reflect due, digest, runner, arm, log export, pending apply, pending drop, model history, model edit, model delete, model forget, model stable |
+| → | reflect bundle, check, render, done (delphi's pipeline), pending import, model aspire |
+| – | reflect tick (timer), reflect inhale (skill plumbing) |
+
+**#38, Palace and Ariadne beyond Python**, adds no commands. It adds:
+- two config keys (`ariadne.build_gate` and `ariadne.test_cmds`);
+- more languages behind the existing `palace` commands;
+- one new outcome: a diff whose tests ran nothing goes to review. That
+  outcome is NeedsYou's new **AR** kind, which takes the Ariadne bus from ○
+  to ◐.
+
+**New surfaces beyond the CLI:** reflection reports ● and the user and self
+models ●; `delphi` → and the `reflect` skill →.
+
+| | ● | ◐ | ○ | Direct coverage (● / ●+◐) |
+|---|---|---|---|---|
+| CLI (35 of 70 in scope) | 26 | 4 | 5 | 74% / 86% |
+| Beyond CLI (11 in scope) | 5 | 3 | 3 | 45% / 73% |
+| **All (46 in scope)** | **31** | **7** | **8** | **67% / 83%** |
+
+**Legibility:** #39 brings more vocabulary than any other feature. Cards
+added for reflection, digest, due, delphi, the user model, the self model
+(behavior, interpretation, stance, aspiration) and `machine.employer`. Still
+missing: runners, citations, the A/B experiment.
+
+**Writes:** the Models tab's edit, stable, forget and delete, plus digest-now
+and log export, are writes outside edict 0012's four kinds. They are the
+user's own calls about their own data, so they arguably belong in the TUI, but
+adding them needs an amendment to 0012.
+
 ## History
 
 | Date | Diagrams | In scope | Direct ● / ●+◐ | Carded concepts | Change |
@@ -83,6 +124,7 @@ The design adds things the program doesn't have yet:
 | 2026-10-14 | 34 | 32 | 50% / 69% | 13 | Newcomer goal: Story, Explain, first run, glossary |
 | 2026-10-14 | 36 | 32 | 50% / 69% | 14 | Extensibility: Sources screen, tracker-import proposal; roadmap carded as intake |
 | 2026-10-14 | 39 | 32 | 53% / 72% | 14 | Config screen: layers, edit modal, secrets in the keyring |
+| 2026-10-14 | 48 | 46 (incl. #38, #39) | 67% / 83% | 21 | Reflection screen; RF and AR kinds in NeedsYou |
 
 ## Refreshing the CLI inventory
 

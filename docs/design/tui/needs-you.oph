@@ -3,7 +3,8 @@
 Everything waiting on the project's owner, oldest first within a kind. Kinds carry a
 two-letter tag so they read without colour: PR (branch awaiting review),
 ED (proposed edict), DS (open dissent), BD (board thread with new posts),
-GP (pending gameplan proposal). Plugins add kinds with their own tag.
+GP (pending gameplan proposal), RF (reflection proposal), AR (Ariadne diff
+sent to review). Plugins add kinds with their own tag.
 
 @compact
 ┌────────────────────────────────┐
@@ -126,6 +127,30 @@ note: replies are drafted by Claude and published with `daedalus board post`, wh
 └───────────────────────────────────────────────────────────┘
 note: a source plugin's import is a pending proposal like any other. Nothing
 reaches the gameplan until the owner applies it.
+
+@reflection-proposal
+┌───────────────────────────────────────────────────────────┐
+│ Q2 · weekly reflection 2026-W41 · Momus: supported        │
+│ Self model · new behavior entry                           │
+│ "Re-reads a file after editing it when a diff             │
+│  would do" [s:3f2a… d:tools.Read.rereads]                 │
+│                                                           │
+├───────────────────────────────────────────────────────────┤
+│ a apply · x drop · r read the report · s ask Claude       │
+└───────────────────────────────────────────────────────────┘
+note: reflect pending apply|drop. Stances apply one at a time; 'apply all' skips them.
+
+@ariadne-review
+┌───────────────────────────────────────────────────────────┐
+│ Ariadne · diff from worker 2 · not verified               │
+│ Package: palace import resolution (T-e23)                 │
+│ Why: selected tests ran nothing (skip-only suite)         │
+│ require_tests is on, so this went to review               │
+│                                                           │
+├───────────────────────────────────────────────────────────┤
+│ d diff · t test log · s ask Claude to review it           │
+└───────────────────────────────────────────────────────────┘
+note: from #38: a diff whose tests executed nothing is never verified.
 
 @gameplan-proposal
 ┌───────────────────────────────────────────────────────────┐

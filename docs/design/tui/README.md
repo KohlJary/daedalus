@@ -37,6 +37,7 @@ PR #38, edict 0011 and the board threads don't exist.
 | `glossary.md` | Draft text for every Explain card |
 | `sources.oph` | Source plugins (ADO, Jira, …): sync health, mapping, write-back |
 | `config.oph` | Every setting, the layer it comes from, editing, and secrets |
+| `reflection.oph` | Reflection (edict 0010, PR #39): due, reports, user and self models, the A/B experiment |
 | `coverage.md` | How much of Daedalus the design shows, tracked over time |
 
 ## Screen map
@@ -51,6 +52,7 @@ shell ── 1 / enter ─▶ needs-you (expanded) ── PR/ED/DS/BD item ─�
       ── s (anywhere with a selection) ─▶ send-to-Claude modal
       ── ? (any panel) ─▶ explain card ── g ─▶ glossary
       ── , ─────────▶ config (also from Sources: c configure)
+      ── R ─────────▶ reflection ── tabs: due · reports · user model · self model · experiment
 esc returns to the shell from any expanded screen.
 ```
 
@@ -168,6 +170,9 @@ Avoid:
 - Should the Roadmap tab be its own view or fold into the gameplan's phase
   column?
 - Is `ctrl+]` really unused by Claude Code? It needs checking.
+- Reflection's model edits, digest-now and log export are writes beyond 0012's
+  four kinds. Amend 0012 to allow them, or send them through Claude? (The
+  user model is the owner's own data, which argues for allowing them.)
 
 ## Ophanic dogfooding log
 
