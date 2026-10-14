@@ -11,7 +11,7 @@ shutil.rmtree(out, ignore_errors=True)
 tar = subprocess.run(["git", "-C", str(repo), "archive", commit, "src"], capture_output=True, check=True).stdout
 tmp = HERE / "_src_tmp"
 shutil.rmtree(tmp, ignore_errors=True)
-tarfile.open(fileobj=io.BytesIO(tar)).extractall(tmp)
+tarfile.open(fileobj=io.BytesIO(tar)).extractall(tmp, filter="data")
 (tmp / "src").rename(out)
 shutil.rmtree(tmp)
 orch = out / "daedalus" / "ariadne" / "orchestrator.py"

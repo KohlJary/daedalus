@@ -224,4 +224,11 @@ COLLIDING = {
             "Change format_price in money.py to round to whole dollars with no cents: 1234.5 becomes '$1234' and 5 becomes '$5'. Update the tests.",
         ],
     ),
+    "collide_semantic": dict(
+        files={"calc.py": CALC, "tests/test_calc.py": "from calc import add, mul\n\n\ndef test_add():\n    assert add(2, 3) == 5\n"},
+        packages=[
+            "Make add(a, b) in calc.py raise ValueError if either argument is negative. Add a test.",
+            "Add a function sum_all(xs) to calc.py that sums a list of numbers, negatives included, by calling add() repeatedly. Add a test.",
+        ],
+    ),
 }

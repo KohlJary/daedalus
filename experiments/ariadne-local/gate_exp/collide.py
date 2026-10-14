@@ -75,12 +75,15 @@ def run_pair(name, pair, worker_model, judge_model):
         statuses[spec_id] = getattr(d.status, "value", str(d.status)) if d else "no_diff"
     merged = [s for s, st in statuses.items() if st in ("merged", "committed")]
     conflicts = ariadne.list_conflicts()
+    merge_failed = any("Failed to apply combined diff" in e for e in o.errors)
+    # escalated: a stored, unresolved conflict held both back (the designed mechanism)
+    # merge_failed: detected but not stored (T-e14); both were sent to commit and the patch didn't apply
     outcome = ("both_merged" if len(merged) == 2 else "one_merged" if len(merged) == 1
-               else "escalated" if conflicts else "none")
+               else "escalated" if conflicts else "merge_failed" if merge_failed else "none")
     rec = dict(pair=name, worker=worker_model, judge=judge_model, outcome=outcome, statuses=statuses,
                conflicts_detected=o.conflicts_detected, conflicts_resolved=o.conflicts_resolved,
                conflicts=[json.loads(json.dumps(getattr(c, "__dict__", str(c)), default=str)) for c in conflicts][:3],
-               verified=o.diffs_verified, rejected=o.diffs_rejected, needs_review=o.diffs_needs_review,
+               verified=o.diffs_verified, rejected=o.diffs_rejected, needs_review=o.diffs_needs_review, errors=o.errors,
                commits=exp.git(repo, "log", "--oneline").stdout.strip().splitlines(), judge_log=judge.log, workers=log,
                diffs={s: (ariadne.get_diff(d).content if d and ariadne.get_diff(d) else "") for s, d in diff_ids.items()})
     import shutil
