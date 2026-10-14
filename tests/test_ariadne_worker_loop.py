@@ -163,6 +163,25 @@ def test_new_files_are_part_of_the_diff(project, buses, fake_sdk):
     assert not (project / "geometry.py").exists()  # handed off, not left behind untracked
 
 
+def test_bytecode_and_test_caches_stay_out_of_the_diff(project, buses, fake_sdk):
+    """A worker that ran pytest leaves __pycache__ and .pytest_cache behind; with no .gitignore they
+    used to ride along as binary patches that git apply refuses (gameplan T-e8)."""
+    def run_tests_and_edit(cwd: Path):
+        edit("calc.py", "return a * b", "return b * a")(cwd)
+        subprocess.run([sys.executable, "-m", "pytest", "-q"], cwd=cwd, capture_output=True)
+        create("pkg/__pycache__/mod.cpython-312.pyc", "\x00bytes")(cwd)
+        create("stray.pyc", "\x00bytes")(cwd)
+
+    fake_sdk.scripts.append(run_tests_and_edit)
+    asyncio.run(run_work(project, buses, "Swap mul operands"))
+
+    pending = buses[1].list_pending_diffs()
+    assert len(pending) == 1
+    assert pending[0].all_affected_files() == {"calc.py"}
+    assert "__pycache__" not in pending[0].content and ".pyc" not in pending[0].content
+    assert ".pytest_cache" not in pending[0].content
+
+
 # --- through verification and merge ---------------------------------------------------------------
 
 def test_good_change_is_verified_by_real_tests_and_committed(project, buses, fake_sdk):
