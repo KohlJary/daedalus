@@ -206,6 +206,13 @@
         "details": "Kohl 2026-10-13: the palace should be usable by the main agent too. Today the main agent's only real route is the labyrinth subagent, at roughly 45-50k tokens of fixed overhead per spawn (measured 2026-10-13), so in practice it greps; 'daedalus palace' has only init and status. Add fast deterministic CLI queries: callers/callees <symbol>, impact <symbol> --tests, path <a> <b>, tests-for <file|diff> (full-suite fallback when nothing is found). The graph builds in 0.3 s, so rebuild or cache by HEAD. Then a Reach for Your Tools row and a mind-palace skill that uses the CLI instead of the subagent. Design rule: Daedalus capabilities the main agent should use often are CLI commands, and subagents are for long, context-heavy jobs. Shares the graph-recall work with T-e17.",
         "updated": "2026-10-13",
         "resolution": "PR #33 (merged 2026-10-14), shipped in 0.2.0: daedalus palace callers|callees|impact [--tests]|path|tests-for [--diff], read-only, built from source in ~0.3 s. Against coverage ground truth over 8 symbols: lists 118/127 executing tests (the palace builder's graph: 37/127); a superset (88 of 206 listings extra, concentrated in interface methods); production callers never link to test doubles. Momus-reviewed, with fixes. Graph-recall work shared with T-e17, which stays open for the verifier, planner and conflict detector integration."
+      },
+      {
+        "id": "T-e19",
+        "title": "Ariadne package contracts, ported from Wonderland",
+        "status": "pending",
+        "details": "Multi-file features fail locally (toy features 1/45 pass, unaudited). Port Wonderland's answers into Ariadne's planner instead of designing fresh: versioned contract at each package seam that every implementation must name (wonderland contract_note.py, implementation.py); an upfront conventions charter plus shared primitives handed to every worker and checked in review (807c233); cross-package duplicate/scope-leak detection (cross_feature.py, scope_leak.py); red tests before code. Constraint (Kohl, 2026-10-14): shape the package and contract format so Ariadne can later slot into Wonderland as a component, e.g. reuse Wonderland's ticket/contract artifact shapes, not Ariadne-only ones. Not now; first audit the 0/0 runs (suspect: tests run under the wrong interpreter, see wonderland 03a1836 and verification.pytest_collects).",
+        "updated": "2026-10-14"
       }
     ],
     "deferred": []
