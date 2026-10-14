@@ -766,7 +766,10 @@ def main():
                 if diff.semantic_review:
                     review = diff.semantic_review
                     print(f"judge verdict: {review.get('verdict')}")
-                    print(f"judged by: {review.get('reviewer')}, model {review.get('model') or '(SDK default)'}")
+                    if review.get("reviewer") == "llm-judge":
+                        print(f"judged by: llm-judge, model {review.get('model') or '(SDK default)'}")
+                    else:
+                        print(f"judged by: {review.get('reviewer')} (no model)")
                     print(f"judge reasoning: {review.get('reasoning')}")
                 print("---")
                 print(diff.content)

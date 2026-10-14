@@ -513,7 +513,6 @@ class IcarusWorker:
 
             # Build options using SDK types
             option_args = dict(
-                model=self.worker_model,
                 permission_mode=permission_mode,
                 cwd=self.work_dir,
                 system_prompt=system_prompt,
@@ -521,6 +520,9 @@ class IcarusWorker:
                     "PreToolUse": [pre_tool_hook],
                 },
             )
+            if self.worker_model:
+                # Only when cast (edict 0002): unset keeps the SDK's own default, exactly as before
+                option_args["model"] = self.worker_model
             options = ClaudeAgentOptions(**option_args)
 
             # Hooks require streaming mode - wrap prompt in async generator

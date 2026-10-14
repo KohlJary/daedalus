@@ -72,7 +72,8 @@ def test_worker_model_reaches_options_and_the_diff(project, buses, fake_sdk, mod
         set_models(worker=model)
     fake_sdk.scripts.append(edit("calc.py", "def mul(a, b):", "def mul(a, b):  # note"))
     asyncio.run(run_work(project, buses, "Document mul"))
-    assert getattr(fake_sdk.calls[0], "model", "absent") == model
+    # Unset passes no model at all, so the real SDK keeps its own default (as before 0002)
+    assert getattr(fake_sdk.calls[0], "model", "absent") == (model or "absent")
     (diff,) = buses[1].list_pending_diffs()
     assert diff.metadata.get("worker_model") == model
 

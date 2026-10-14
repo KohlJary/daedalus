@@ -297,7 +297,7 @@ Config is stored in platform-appropriate location:
 | `icarus.enabled` | Enable parallel workers | false |
 | `ariadne.enabled` | Enable Ariadne orchestration | false |
 | `ariadne.worker_model` | Model for Icarus workers; unset (or `default`) uses the SDK default. Recorded on each diff | unset |
-| `ariadne.judge_model` | Model for the semantic judge; unset uses the SDK default. Recorded on each review | unset |
+| `ariadne.judge_model` | Model for the semantic judge; unset uses the SDK default. Recorded on each review the judge makes | unset |
 | `git.authorship` | `daedalus`: commits authored as Daedalus (`--author`). `user`: authored as your git identity, with a `- Daedalus` sign-off in the body | daedalus |
 | `sections.squash` | Include the Squash for Merge section in CLAUDE.md | true |
 | `sections.versioning` | Include the Versioning section in CLAUDE.md | true |
