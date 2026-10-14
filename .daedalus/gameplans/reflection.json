@@ -65,10 +65,11 @@
       {
         "id": "T-r6",
         "title": "Windows CI job, docs, Momus review, PR",
-        "status": "in_progress",
+        "status": "done",
         "details": "",
         "updated": "2026-10-14",
-        "edict": "0010"
+        "edict": "0010",
+        "resolution": "PR #39 (commits c4a2ec8, c524e37, 5845e75). CI green on Linux (3.10, 3.12 x3 TZ) and windows-latest (94 passed; the drive-letter test ran there). Momus: all 13 implementation defects fixed with tests."
       },
       {
         "id": "T-r7",
