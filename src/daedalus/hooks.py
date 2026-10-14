@@ -99,7 +99,7 @@ def session_start_brief(project_dir: Path) -> str:
     from . import workstreams as ws
 
     mine = ws.current(project_dir)
-    others = [w for w in ws.list_ids(project_dir) if w != mine]
+    others = ws.others(project_dir, mine)
     if data is not None and mine != ws.DEFAULT:
         lines[1:1] = [f"**Workstream:** {mine}"]
     if others:

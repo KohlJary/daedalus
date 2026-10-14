@@ -211,3 +211,24 @@ def summary_line(data: dict[str, Any], workstream: str) -> str:
                  if t.get("status") == status), None)
     nxt = f"next {task['id']} [{task['status']}] {task.get('title', '')}" if task else "no open task"
     return f"{workstream} ({who.get('kind')}): {active.get('id')} - {nxt}"
+
+
+def others(project_dir: Path, me: str) -> list[str]:
+    """
+    The workstreams that make this a shared project, from `me`'s point of view: every workstream but
+    `me`, leaving out the default one while nobody uses it (no active phase and no claims). A solo
+    user with their own named workstream and an untouched default has none.
+    """
+    result = []
+    for wid in list_ids(project_dir):
+        if wid == me:
+            continue
+        if wid == DEFAULT:
+            try:
+                data = load(project_dir, wid)
+            except WorkstreamError:
+                continue
+            if not data.get("activePhase") and not data.get("claims"):
+                continue
+        result.append(wid)
+    return result
