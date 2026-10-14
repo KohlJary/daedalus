@@ -221,6 +221,34 @@
         "status": "pending",
         "details": "Multi-file features fail locally (toy features 1/45 pass, unaudited). Port Wonderland's answers into Ariadne's planner instead of designing fresh: versioned contract at each package seam that every implementation must name (wonderland contract_note.py, implementation.py); an upfront conventions charter plus shared primitives handed to every worker and checked in review (807c233); cross-package duplicate/scope-leak detection (cross_feature.py, scope_leak.py); red tests before code. Constraint (Kohl, 2026-10-14): shape the package and contract format so Ariadne can later slot into Wonderland as a component, e.g. reuse Wonderland's ticket/contract artifact shapes, not Ariadne-only ones. Not now; first audit the 0/0 runs (suspect: tests run under the wrong interpreter, see wonderland 03a1836 and verification.pytest_collects).",
         "updated": "2026-10-14"
+      },
+      {
+        "id": "T-e20",
+        "title": "Palace beyond Python: tree-sitter frontend",
+        "status": "in_progress",
+        "details": "Kohl 2026-10-14: the palace is Python-only; add a tree-sitter frontend. Grammar delivery (Kohl): both, per-language wheels by default (daedalus[palace]) and tree-sitter-language-pack when installed. Scope: element extraction, call graph, spans and tests-for, so the palace CLI queries work on JS/TS, Go, Rust, Java, C#, C/C++, Ruby (+ Kotlin/PHP/Scala/Lua via the pack). Constraint (daedalus-d9): Python query results must not change; d9's coverage measurement (118/127) quotes them. Follow-ups: T-e21, T-e22, T-e23.",
+        "updated": "2026-10-14"
+      },
+      {
+        "id": "T-e21",
+        "title": "Palace builder: non-Python module discovery",
+        "status": "pending",
+        "details": "Cartographer still assumes Python for package/module discovery: __init__.py anchors and docstrings, analyze_python_file bypassing the registry, *.py globs, def/class module anchors, dunder skips (theseus inventory 2026-10-14: cartographer.py:180-251, 279, 371, 438-443, 634). The query CLI is language-aware after T-e20; palace rooms are not yet.",
+        "updated": "2026-10-14"
+      },
+      {
+        "id": "T-e22",
+        "title": "Ariadne verification: language-aware test selection and runner",
+        "status": "pending",
+        "details": "ariadne/verification.py maps .py paths to modules, globs test_*.py, and runs pytest; it never calls the palace. Wire it to query.tests_reaching/convention_tests (language-aware since T-e20) and pick the test runner per language (pytest, go test, cargo test, jest/vitest, ...). causal_slice.py's dataclass/def pattern extraction and indentation block ends should move to element spans.",
+        "updated": "2026-10-14"
+      },
+      {
+        "id": "T-e23",
+        "title": "Palace: import-aware call resolution",
+        "status": "pending",
+        "details": "Calls resolve by name only (same module, else every same-named definition up to a cap), so interface-heavy code over-links: snapd's Lock() reaches 2,667 callers. Resolving through imports (Python imports, TS paths and index files, Go packages) is the precision fix, per language. Measure against coverage ground truth as T-e18 did before and after.",
+        "updated": "2026-10-14"
       }
     ],
     "deferred": []

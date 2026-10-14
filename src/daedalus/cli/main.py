@@ -716,6 +716,31 @@ def palace_tests_for(target: str, diff: bool, base: str, depth: int, as_json: bo
     tests_for(Path.cwd(), target, diff, base, depth, as_json)
 
 
+@palace.command("languages")
+def palace_languages():
+    """Which languages the palace analyzes here, and where each grammar comes from."""
+    from ..labyrinth.languages import get_language_registry
+    from ..labyrinth.treesitter import GRAMMARS, grammar_source, tree_sitter_available
+
+    registry = get_language_registry()
+    click.echo("Python        .py .pyi  (stdlib ast)")
+    for g in GRAMMARS:
+        source = grammar_source(g)
+        exts = " ".join(g.extensions)
+        if source == "wheel":
+            support = registry.get_by_extension(Path("x" + g.extensions[0]))
+            works = getattr(support, "available", lambda: False)()
+            click.echo(f"{g.name:13} {exts}  ({'tree-sitter' if works else 'tree-sitter, but the grammar failed to load'})")
+        elif source == "pack":
+            click.echo(f"{g.name:13} {exts}  (tree-sitter-language-pack; downloads the grammar on first use)")
+        elif g.name == "TypeScript" or g.name == "JavaScript":
+            fallback = registry.get_by_extension(Path("x" + g.extensions[0]))
+            note = "basic regex analyzer, no call graph" if fallback is not None else "not analyzed"
+            click.echo(f"{g.name:13} {exts}  ({note})")
+    if not tree_sitter_available():
+        click.echo("\nOther languages need tree-sitter: pip install 'daedalus[palace]'")
+
+
 @main.group()
 def roadmap():
     """Roadmap operations."""

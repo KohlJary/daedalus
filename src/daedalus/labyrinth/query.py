@@ -8,8 +8,8 @@ these queries:
 - Private methods and dunders are nodes. The room builder's noise filter drops them, which cuts every
   call chain that passes through a private helper.
 - A class links to its __init__, so construction (`Foo()`) carries on into the constructor's calls.
-- The analyzer records calls made through an object (`orch.process_pending()`) by bare name; for Python,
-  the query graph re-parses each def to tell `obj.name()` from a plain `name()`. A plain call to a name
+- The analyzer records calls made through an object (`orch.process_pending()`) by bare name, and lists
+  those names separately so the graph can tell `obj.name()` from a plain `name()`. A plain call to a name
   defined in the same module links to that definition. A call through an object links to every node
   with that name when there are at most `max_candidates` (for callers outside tests, definitions inside
   test files don't count: test doubles are injected at runtime); past the cap, only same-module definitions
@@ -20,9 +20,15 @@ Recall is good where the call target is unique or nearly so. For interfaces with
 (e.g. an injected `reviewer.review`), every implementation is linked, so precision is low: test lists are
 a superset. Calls made through dispatch (CLI runners, callbacks) stay invisible, which is why test
 selection falls back to "run the full suite" when it finds nothing.
+
+Languages: whatever the palace's language registry analyzes. Python uses the stdlib ast; with
+`daedalus[palace]` installed, tree-sitter grammars cover JavaScript/TypeScript, Go, Rust, Java, C#,
+C/C++ and Ruby (see treesitter.py). Test conventions (which files and symbols are tests, where a
+file's tests usually live) come from each language's support class.
 """
 
-import ast
+import logging
+import os
 import re
 import subprocess
 from dataclasses import dataclass, field
@@ -32,13 +38,40 @@ from typing import Dict, List, Set, Tuple
 from .pathfinding import CallGraph, GraphNode
 
 SKIP_DIRS = {"node_modules", "venv", ".venv", "env", "__pycache__", ".git", "dist", "build", ".mind-palace"}
+# Build output and vendored dependencies of other ecosystems. Applied to non-Python files only, so Python
+# results stay as they were; .gitignore usually covers these anyway.
+OTHER_SKIP_DIRS = {".next", ".nuxt", ".svelte-kit", ".output", "bower_components", "target", "vendor", "coverage",
+                   ".gradle", "Pods", "DerivedData"}
+MAX_FILE_BYTES = 1_000_000  # non-Python sources this big are generated or minified bundles
 
 
-def in_test_file(file: str) -> bool:
-    """Defined in test code (tests/, test_*.py, *_test.py, conftest.py)."""
+def _language(file: str):
+    from .languages import get_language_registry
+    return get_language_registry().get_by_extension(Path(file))
+
+
+FAMILIES = {"TypeScript": "JavaScript", "TSX": "JavaScript", "C++": "C"}  # languages that call each other's code
+
+
+def _family(file: str) -> str:
+    language = _language(file)
+    name = language.name if language else "Python"
+    return FAMILIES.get(name, name)
+
+
+def _python_test_file(file: str) -> bool:
     name = Path(file).name
     return (file.startswith("tests/") or "/tests/" in file or name.startswith("test_")
             or name.endswith("_test.py") or name == "conftest.py")
+
+
+def in_test_file(file: str) -> bool:
+    """Defined in test code, by the file's language's conventions (Python: tests/, test_*.py, *_test.py,
+    conftest.py; files no analyzer covers use the Python rule)."""
+    language = _language(file)
+    if language is None or language.name == "Python":
+        return _python_test_file(file)
+    return language.is_test_file(file)
 
 
 class GitError(RuntimeError):
@@ -52,21 +85,22 @@ class QueryGraph:
     skipped: Dict[str, int] = field(default_factory=dict)  # bare name -> number of definitions (over the cap)
 
 
-def _python_info(path: Path) -> Tuple[Dict[int, int], Dict[int, Set[str]]]:
-    """For a Python file: start line -> end line of each def/class, and start line -> names it calls through
-    an attribute (`obj.name(...)`). The analyzer records neither."""
+PYTHON_EXTS = (".py", ".pyi")
+
+
+def _git_ignored(project_root: Path) -> Set[str]:
+    """Untracked paths git ignores, relative to project_root (directories end in /). Empty outside git.
+    Tracked files are never listed, even when they match an ignore rule."""
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-    except (SyntaxError, UnicodeDecodeError, OSError):
-        return {}, {}
-    ends: Dict[int, int] = {}
-    attr_calls: Dict[int, Set[str]] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            ends[node.lineno] = node.end_lineno or node.lineno
-            attr_calls[node.lineno] = {c.func.attr for c in ast.walk(node)
-                                       if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)}
-    return ends, attr_calls
+        r = subprocess.run(["git", "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"],
+                           cwd=project_root, capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    if r.returncode != 0:
+        if (project_root / ".git").exists():  # a repo git couldn't read (dubious ownership, ...): say so
+            logging.getLogger(__name__).warning(f"palace: git ls-files failed, .gitignore not applied: {r.stderr.strip()}")
+        return set()
+    return set(filter(None, r.stdout.split("\0")))
 
 
 def _collect_nodes(project_root: Path) -> Dict[str, dict]:
@@ -76,24 +110,44 @@ def _collect_nodes(project_root: Path) -> Dict[str, dict]:
 
     # analyze_file reads only source; the palace argument is used by palace-building methods
     cart = Cartographer(None, PalaceStorage(project_root))  # type: ignore[arg-type]
+    exts = set(cart.language_registry.supported_extensions())  # case-sensitive, as the old rglob was
+    ignored = _git_ignored(project_root)
     files = []
-    for ext in cart.language_registry.supported_extensions():
-        files.extend(f for f in project_root.rglob(f"*{ext}") if not SKIP_DIRS & set(f.relative_to(project_root).parts))
+    # One walk that never enters skipped or git-ignored directories (an rglob per extension walked
+    # node_modules each time). SKIP_DIRS is the default when the project isn't a git repository.
+    for dirpath, dirnames, filenames in os.walk(project_root):
+        rel_dir = Path(dirpath).relative_to(project_root).as_posix()
+        prefix = "" if rel_dir == "." else rel_dir + "/"
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and f"{prefix}{d}/" not in ignored]
+        files.extend(Path(dirpath) / n for n in filenames
+                     if os.path.splitext(n)[1] in exts and f"{prefix}{n}" not in ignored)
     raw: Dict[str, dict] = {}
     for f in sorted(set(files)):
+        if f.suffix not in PYTHON_EXTS:
+            if f.name.endswith((".min.js", ".bundle.js")) or OTHER_SKIP_DIRS & set(f.relative_to(project_root).parts):
+                continue
+            try:
+                if f.stat().st_size > MAX_FILE_BYTES:
+                    continue
+            except OSError:
+                continue
         try:
             elements, _ = cart.analyze_file(f)
         except Exception:
             continue
         rel = f.relative_to(project_root)
-        module = str(rel.with_suffix("")).replace("/", ".")
-        ends, attr_calls = _python_info(f) if f.suffix == ".py" else ({}, {})
+        # Python modules are dotted paths; other languages keep their extension, so view.ts can't overwrite
+        # (or be overwritten by) view.py's nodes
+        module = str(rel.with_suffix("") if rel.suffix in PYTHON_EXTS else rel).replace("/", ".")
+        family = _family(str(rel))
+        language = _language(str(rel))
+        implicit_self = language.implicit_self if language else True
         for el in elements:
             node_id = f"{module}.{el.name}"
-            raw[node_id] = {"id": node_id, "name": el.name, "simple_name": el.simple_name or el.name.split(".")[-1],
-                            "type": el.element_type, "module": module, "file": str(rel), "line": el.line,
-                            "end_line": ends.get(el.line), "attr_calls": sorted(attr_calls.get(el.line, ())),
-                            "signature": el.signature,
+            raw[node_id] = {"family": family, "implicit_self": implicit_self, "id": node_id, "name": el.name, "simple_name": el.simple_name or el.name.split(".")[-1],
+                            "type": el.element_type, "module": module, "file": rel.as_posix(), "line": el.line,
+                            "end_line": el.end_line, "attr_calls": sorted(set(el.member_calls)),
+                            "is_test": el.is_test, "signature": el.signature,
                             "docstring": (el.docstring or "")[:200], "calls": list(el.calls)}
     return raw
 
@@ -120,7 +174,11 @@ def build_query_graph(project_root: Path, max_candidates: int = 10) -> QueryGrap
             if local in raw and not through_object:  # a plain call: the module's own definition is the target
                 targets.add(local)
                 continue
-            candidates = by_simple.get(call.split(".")[-1], [])
+            # A name only resolves within its own language family: JS `path.resolve()` is not Python's resolve
+            candidates = [c for c in by_simple.get(call.split(".")[-1], []) if raw[c]["family"] == node["family"]]
+            if not through_object and not node["implicit_self"]:
+                # Go/JS/Rust: a plain call reaches functions only (`append(...)` is not History.append)
+                candidates = [c for c in candidates if raw[c]["type"] != "method"]
             if not in_test_file(node["file"]):
                 # Production code never calls into test files statically; test doubles are injected at runtime
                 candidates = [c for c in candidates if not in_test_file(raw[c]["file"])]
@@ -134,9 +192,12 @@ def build_query_graph(project_root: Path, max_candidates: int = 10) -> QueryGrap
                 else:
                     skipped[call.split(".")[-1]] = len(candidates)
         resolved[node_id] = targets
-    for node_id, node in raw.items():  # Foo() carries on into Foo.__init__
-        if node["type"] == "class" and f"{node_id}.__init__" in raw:
-            resolved[node_id].add(f"{node_id}.__init__")
+    for node_id, node in raw.items():  # Foo() carries on into its constructor (Foo.__init__, Foo.constructor, ...)
+        if node["type"] == "class":
+            language = _language(node["file"])
+            for ctor in (language.constructor_of(node["simple_name"]) if language else ("__init__",)):
+                if f"{node_id}.{ctor}" in raw:
+                    resolved[node_id].add(f"{node_id}.{ctor}")
 
     graph = CallGraph()
     for node_id, node in raw.items():
@@ -163,6 +224,8 @@ def resolve_symbol(graph: CallGraph, symbol: str) -> List[str]:
 
 
 def is_test_node(node: GraphNode) -> bool:
+    if node.is_test is not None:  # the language's analyzer decided
+        return node.is_test
     name = Path(node.file).name
     return (node.file.startswith("tests/") or "/tests/" in node.file or name.startswith("test_")) and \
         node.simple_name.startswith("test")
@@ -185,12 +248,13 @@ def tests_reaching(graph: CallGraph, node_ids: List[str], max_depth: int = 6) ->
 
 
 def convention_tests(project_root: Path, files: List[str]) -> List[str]:
-    """tests/test_<stem>.py files for the given source files, when they exist."""
+    """Conventional test files for the given source files (Python: tests/test_<stem>.py; Go: <stem>_test.go;
+    TypeScript: <stem>.test.ts, ...), when they exist."""
     out = []
     for f in files:
-        candidate = Path("tests") / f"test_{Path(f).stem}.py"
-        if (Path(project_root) / candidate).exists():
-            out.append(str(candidate))
+        language = _language(f)
+        candidates = language.test_file_candidates(f) if language else [str(Path("tests") / f"test_{Path(f).stem}.py")]
+        out.extend(c for c in candidates if c != f and (Path(project_root) / c).exists())
     return sorted(set(out))
 
 
@@ -200,7 +264,8 @@ def nodes_in_file(graph: CallGraph, rel_path: str) -> List[str]:
 
 
 def _spans(graph: CallGraph) -> Dict[str, List[Tuple[int, int, str]]]:
-    """Per file: (start, end, node_id). Python end lines are exact; otherwise up to the next node's start."""
+    """Per file: (start, end, node_id). End lines are exact where the analyzer knows them (Python, tree-sitter);
+    otherwise up to the next node's start."""
     end_lines = getattr(graph, "end_lines", {})
     per_file: Dict[str, List[GraphNode]] = {}
     for node in graph.nodes.values():

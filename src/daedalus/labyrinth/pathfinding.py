@@ -38,6 +38,7 @@ class GraphNode:
     docstring: Optional[str] = None
     calls: List[str] = field(default_factory=list)
     called_by: List[str] = field(default_factory=list)
+    is_test: Optional[bool] = None  # set by analyzers that know their language's test conventions
 
     @classmethod
     def from_dict(cls, data: Dict) -> "GraphNode":
@@ -53,6 +54,7 @@ class GraphNode:
             docstring=data.get("docstring"),
             calls=data.get("calls", []),
             called_by=data.get("called_by", []),
+            is_test=data.get("is_test"),
         )
 
 
