@@ -2,17 +2,22 @@
 Diff Verification
 
 Ariadne's mechanical gate. Each worker diff is applied to a fresh copy of the whole repository
-(not a slice of it) and checked there. What is narrowed is which checks run: the tests are chosen
-by name from the modules the diff touches, not from a call graph. The name "causal slice" is the
-goal; the Palace call graph (`daedalus palace tests-for`) is not wired in yet.
+(not a slice of it) and checked there. What is narrowed is which tests run: those whose call chains
+reach the definitions the diff touches, by the palace's call graph of the patched code (the same
+graph as `daedalus palace tests-for`), plus each language's conventional test files, the tests the
+older name match finds, and any changed test files.
 
 Flow:
 1. Copy the repository to a temp workspace and apply the diff
-2. Compile every changed Python file (a syntax gate that runs even when no test does)
-3. Type check and lint the changed modules
-4. Run the tests matched by name to the changed modules, plus any changed test files
-5. If no test matched, the diff is not verified (`no_tests_matched`): it fails closed, and the
-   orchestrator routes it to human review instead of merging it (gameplan T-e4, issue #15)
+2. Syntax-check every changed file: Python by compiling it, other languages by parsing them with
+   tree-sitter (a gate that runs even when no test does)
+3. Type check and lint the changed Python modules
+4. Run the selected tests with each language's runner (test_runners.py: pytest, go test, cargo,
+   jest/vitest, Maven/Gradle, rspec, dotnet; override per language with `test_cmds`)
+5. If no test was selected, or the runners ran none (the files vanished, `[no test files]`), the diff
+   is not verified (`no_tests_matched`): it fails closed, and the orchestrator routes it to human
+   review instead of merging it (gameplan T-e4, issue #15). `tests_run` tells the two apart from a
+   pass.
 """
 
 import re
@@ -25,6 +30,7 @@ from typing import List, Dict, Optional, Set
 from datetime import datetime, timezone
 
 from .diff_bus import Diff, CausalChain, DiffStatus
+from .test_runners import BUILD_SOURCES, dotnet_build, plan_runs, run_tests, select_tests
 
 
 @dataclass
@@ -54,6 +60,11 @@ class VerificationResult:
     # What was verified
     modules_checked: List[str] = field(default_factory=list)
     tests_executed: List[str] = field(default_factory=list)
+    # Why each test file was selected: palace (call graph), convention, name (the older match), changed
+    tests_selected_by: Dict[str, List[str]] = field(default_factory=dict)
+    test_commands: List[str] = field(default_factory=list)
+    # Checks that couldn't run here (no tree-sitter for a language's syntax gate, the palace graph failing)
+    skipped_checks: List[str] = field(default_factory=list)
 
     # Timestamps
     started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -83,11 +94,14 @@ class VerificationResult:
                 "run": self.tests_run,
                 "failed": self.tests_failed,
                 "errors": self.test_errors,
+                "commands": self.test_commands,
             },
             "scope": {
                 "modules": self.modules_checked,
                 "tests": self.tests_executed,
+                "selected_by": self.tests_selected_by,
             },
+            "skipped_checks": self.skipped_checks,
             "timing": {
                 "started": self.started_at,
                 "completed": self.completed_at,
@@ -114,6 +128,8 @@ class CausalSliceVerifier:
         lint_cmd: Optional[List[str]] = None,
         test_cmd: Optional[List[str]] = None,
         require_tests: bool = True,
+        test_cmds: Optional[Dict[str, List[str]]] = None,
+        build_gate: bool = True,
     ):
         """
         Initialize verifier.
@@ -123,9 +139,13 @@ class CausalSliceVerifier:
             python_path: Python interpreter to use
             typecheck_cmd: Command for type checking (default: mypy)
             lint_cmd: Command for linting (default: ruff)
-            test_cmd: Command for running tests (default: pytest)
+            test_cmd: Command for running Python tests (default: pytest)
             require_tests: A diff no test matched is not verified (default). False lets it pass
                 on the other checks alone; for harnesses that stub the test command out.
+            test_cmds: Per-language test commands, keyed by language name ("Go", "TypeScript", ...),
+                replacing the built-in runner; the selected test files are appended.
+            build_gate: Build the .NET projects a diff touches (`dotnet build`) as their type check;
+                C# type errors only show at build time. Config: ariadne.build_gate.
         """
         self.repo_path = Path(repo_path)
         self.python_path = python_path
@@ -133,6 +153,8 @@ class CausalSliceVerifier:
         self.lint_cmd = lint_cmd or ["ruff", "check"]
         self.test_cmd = test_cmd or ["pytest", "-x", "-q"]
         self.require_tests = require_tests
+        self.build_gate = build_gate
+        self.test_cmds = dict(test_cmds or {})
 
     def verify(self, diff: Diff, causal_chain: Optional[CausalChain] = None) -> VerificationResult:
         """
@@ -168,29 +190,46 @@ class CausalSliceVerifier:
             # Determine scope from causal chain or diff
             if causal_chain:
                 modules = causal_chain.affected_modules
-                test_files = causal_chain.test_files
+                named = list(causal_chain.test_files)
             else:
                 modules = self._extract_modules_from_diff(diff)
-                test_files = self._find_tests_for_modules(workspace, modules)
+                named = self._find_tests_for_modules(workspace, modules)
 
-            # A changed test file is a test of this diff, whatever its name matches
             repo = workspace / "repo"
-            changed_tests = [f for f in sorted(diff.all_affected_files())
-                             if _is_test_file(f) and (repo / f).exists()]
-            test_files = list(dict.fromkeys([*test_files, *changed_tests]))
+            changed = sorted(diff.all_affected_files())
+            # The palace's call graph of the patched code: tests that reach what changed
+            selection = select_tests(repo, diff.content, changed)
+            # A changed test file is a test of this diff, whatever its name matches
+            changed_tests = [f for f in changed if _is_test_file(f) and (repo / f).exists()]
+            test_files = list(dict.fromkeys([*selection.palace, *selection.convention, *named, *changed_tests]))
+            result.tests_selected_by = {"palace": selection.palace, "convention": selection.convention,
+                                        "name": named, "changed": changed_tests}
+            if selection.error:
+                result.test_errors.append(selection.error)
 
             result.modules_checked = modules
             result.tests_executed = test_files
 
-            # Compile every changed Python file, so a syntax error fails even when no test runs
+            # Syntax-check every changed file, so a syntax error fails even when no test runs
+            self._unchecked = []
             result.compile_passed, result.compile_errors = self._run_compile(
                 workspace, diff.all_affected_files()
             )
+            if self._unchecked:
+                result.skipped_checks.append("syntax (tree-sitter is missing; reinstall daedalus-cli): "
+                                             + ", ".join(self._unchecked))
+            if selection.error:
+                result.skipped_checks.append(f"palace test selection: {selection.error}")
 
-            # Run type checking
+            # Run type checking: mypy for Python, `dotnet build` for the .NET projects the diff touches
             result.typecheck_passed, result.typecheck_errors = self._run_typecheck(
                 workspace, modules
             )
+            if self.build_gate and any(f.endswith(BUILD_SOURCES) for f in changed):
+                built, build_errors, build_skipped = dotnet_build(repo, changed)
+                result.typecheck_passed = result.typecheck_passed and built
+                result.typecheck_errors.extend(build_errors)
+                result.skipped_checks.extend(build_skipped)
 
             # Run linting
             result.lint_passed, result.lint_errors = self._run_lint(
@@ -198,16 +237,24 @@ class CausalSliceVerifier:
             )
 
             # Run tests
+            ran_nothing = not test_files
             if test_files:
-                result.tests_passed, result.tests_run, result.tests_failed, result.test_errors = (
-                    self._run_tests(workspace, test_files)
-                )
-            else:
-                # Nothing checked the behavior, so this is not a pass: fail closed (T-e4)
+                runs, problems = plan_runs(repo, test_files, self.test_cmd, self.test_cmds)
+                result.test_commands = [f"(cd {r.cwd}) {' '.join(r.command)}" for r in runs]
+                outcome = run_tests(repo, runs)
+                result.tests_passed = outcome.passed
+                result.tests_run, result.tests_failed = outcome.ran, outcome.failed
+                result.test_errors.extend(problems + outcome.errors)
+                # A selected test no runner could run leaves part of the change unverified
+                ran_nothing = outcome.ran_nothing or bool(problems)
+            if ran_nothing:
+                # Nothing checked the behavior, so this is not a pass: fail closed (T-e4). This covers a
+                # selection that ran nothing too: files that no longer exist, a package with no tests.
                 result.no_tests_matched = True
                 if self.require_tests:
                     result.tests_passed = False
-                    result.test_errors = ["No tests matched the changed modules: not verified"]
+                    result.test_errors.append("No tests matched the changed code: not verified" if not test_files
+                                              else "Some selected tests did not run: not verified")
 
         # Overall result
         result.passed = (
@@ -312,17 +359,25 @@ class CausalSliceVerifier:
         return test_files
 
     def _run_compile(self, workspace: Path, files: Set[str]) -> tuple[bool, List[str]]:
-        """Compile each changed Python file in place (no bytecode written). Deleted files are skipped."""
+        """Syntax-check each changed file: compile Python in place (no bytecode written), parse other
+        languages with tree-sitter when it's installed. Deleted files are skipped."""
         repo = workspace / "repo"
         errors = []
         for f in sorted(files):
             path = repo / f
-            if not f.endswith(".py") or not path.is_file():
+            if not path.is_file():
                 continue
-            try:
-                compile(path.read_bytes(), f, "exec", dont_inherit=True)
-            except (SyntaxError, ValueError) as e:
-                errors.append(f"{f}: {e}")
+            if f.endswith(".py"):
+                try:
+                    compile(path.read_bytes(), f, "exec", dont_inherit=True)
+                except (SyntaxError, ValueError) as e:
+                    errors.append(f"{f}: {e}")
+                continue
+            problem = _tree_sitter_syntax_error(path)
+            if problem is SYNTAX_UNCHECKED:
+                self._unchecked.append(f)
+            elif problem:
+                errors.append(f"{f}: {problem}")
         return not errors, errors
 
     def _run_typecheck(
@@ -408,111 +463,97 @@ class CausalSliceVerifier:
             # ruff not installed - skip
             return True, []
 
-    def _run_tests(
-        self,
-        workspace: Path,
-        test_files: List[str],
-    ) -> tuple[bool, int, int, List[str]]:
-        """
-        Run specified tests.
-
-        Returns: (passed, total_run, failed_count, error_messages)
-        """
-        if not test_files:
-            return True, 0, 0, []
-
-        repo = workspace / "repo"
-
-        # Filter to existing test files
-        existing = [f for f in test_files if (repo / f).exists()]
-        if not existing:
-            return True, 0, 0, []
-
-        try:
-            result = subprocess.run(
-                self.test_cmd + existing,
-                cwd=repo,
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-
-            # Parse pytest output for counts
-            # Look for "X passed" or "X failed" in output
-            passed_match = re.search(r"(\d+) passed", result.stdout)
-            failed_match = re.search(r"(\d+) failed", result.stdout)
-
-            passed_count = int(passed_match.group(1)) if passed_match else 0
-            failed_count = int(failed_match.group(1)) if failed_match else 0
-            total = passed_count + failed_count
-
-            errors = []
-            if result.returncode != 0:
-                # Extract failure info
-                errors = [line for line in result.stdout.split("\n")
-                         if "FAILED" in line or "ERROR" in line]
-
-            return result.returncode == 0, total, failed_count, errors
-
-        except subprocess.TimeoutExpired:
-            return False, 0, 0, ["Tests timed out"]
-        except FileNotFoundError:
-            return False, 0, 0, ["pytest not found"]
-
 
 def _is_test_file(path: str) -> bool:
-    name = path.replace("\\", "/").rsplit("/", 1)[-1]
-    return name.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
+    """Test code by its language's conventions (test_*.py, *_test.go, *.test.ts, src/test/..., spec/...)."""
+    from ..labyrinth.query import in_test_file
+    path = path.replace("\\", "/")
+    name = path.rsplit("/", 1)[-1]
+    if name.endswith(".py"):
+        return name.startswith("test_") or name.endswith("_test.py")
+    return in_test_file(path)
+
+
+def _language_of(path: str):
+    from ..labyrinth.query import _language
+    return _language(path)
+
+
+SYNTAX_UNCHECKED = "unchecked"
+
+
+def _tree_sitter_syntax_error(path: Path) -> Optional[str]:
+    """The first parse error tree-sitter finds in a non-Python file, or None (also when the language isn't
+    analyzed or tree-sitter isn't installed)."""
+    from ..labyrinth.languages import get_language_registry
+    from ..labyrinth.treesitter import TreeSitterSupport
+
+    support = get_language_registry().get_by_extension(path)
+    if not isinstance(support, TreeSitterSupport) or not support.available():
+        # A language the palace knows of but can't parse here (no tree-sitter) is unchecked, not clean
+        from ..labyrinth.treesitter import GRAMMARS
+        return SYNTAX_UNCHECKED if any(path.suffix in g.extensions for g in GRAMMARS) else None
+    try:
+        _, tree = support._parse(path)
+    except OSError:
+        return None
+    if not tree.root_node.has_error:
+        return None
+    stack = [tree.root_node]
+    while stack:
+        node = stack.pop()
+        if node.type == "ERROR" or node.is_missing:
+            return f"syntax error at line {node.start_point[0] + 1}"
+        stack.extend(reversed([c for c in node.children if c.has_error or c.is_missing or c.type == "ERROR"]))
+    return "syntax error"
 
 
 def extract_causal_chain(diff: Diff, repo_path: Path) -> CausalChain:
     """
-    Extract the causal chain from a diff.
+    Extract the causal chain from a diff: the files and definitions it touches, their modules, and the
+    tests likely to cover them.
 
-    This is a simplified version - full implementation would integrate
-    with the Palace/Labyrinth pathfinding for accurate call graph analysis.
-
-    For now, we do basic extraction:
-    - Files affected directly
-    - Functions modified (parsed from diff)
-    - Modules touched
-    - Tests that likely cover this code
+    Definitions and tests come from the palace's call graph of `repo_path` (the worker's directory,
+    where the change is applied; at the orchestrator, the base). For Python the older name-based
+    extraction (def/class lines, tests/test_<part>.py) is kept alongside, so nothing it found is lost.
     """
+    from ..labyrinth.sources import module_id
+
     affected_files = list(diff.all_affected_files())
 
-    # Extract function names from diff (look for def/class lines)
-    affected_functions = []
+    # Definitions the diff touches, by the palace (any language), plus Python def/class lines it adds
+    affected_functions: List[str] = []
+    selection = select_tests(Path(repo_path), diff.content, sorted(affected_files))
+    affected_functions.extend(n.rsplit(".", 1)[-1] for n in selection.changed_nodes)
     for line in diff.content.split("\n"):
         if line.startswith("+") and not line.startswith("+++"):
-            # Look for function/class definitions
             func_match = re.match(r"\+\s*def\s+(\w+)", line)
             class_match = re.match(r"\+\s*class\s+(\w+)", line)
             if func_match:
                 affected_functions.append(func_match.group(1))
             elif class_match:
                 affected_functions.append(class_match.group(1))
+    affected_functions = list(dict.fromkeys(affected_functions))
 
-    # Extract module names
+    # Module names: dotted for Python (as before), the palace's module ids for other languages
     affected_modules = []
+    python_modules = []
     for filepath in affected_files:
         if filepath.endswith(".py"):
             module = filepath.replace("/", ".").replace("\\", ".")
             if module.endswith(".py"):
                 module = module[:-3]
             affected_modules.append(module)
+            python_modules.append(module)
+        elif _language_of(filepath):
+            affected_modules.append(module_id(Path(filepath)))
 
-    # Find test files
-    test_files = []
-    for module in affected_modules:
-        parts = module.split(".")
-        for part in parts:
-            test_patterns = [
-                f"tests/test_{part}.py",
-                f"test_{part}.py",
-                f"tests/{part}_test.py",
-            ]
-            for pattern in test_patterns:
-                if (repo_path / pattern).exists():
+    # Tests: the palace's selection, then the older Python name patterns
+    test_files = list(selection.files)
+    for module in python_modules:
+        for part in module.split("."):
+            for pattern in (f"tests/test_{part}.py", f"test_{part}.py", f"tests/{part}_test.py"):
+                if (repo_path / pattern).exists() and pattern not in test_files:
                     test_files.append(pattern)
 
     return CausalChain(
@@ -520,6 +561,6 @@ def extract_causal_chain(diff: Diff, repo_path: Path) -> CausalChain:
         affected_files=affected_files,
         affected_functions=affected_functions,
         affected_modules=affected_modules,
-        call_depth=1,  # Basic extraction doesn't follow call graph
+        call_depth=6 if selection.changed_nodes else 1,  # the palace follows call chains up to 6 deep
         test_files=test_files,
     )

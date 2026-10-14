@@ -96,6 +96,72 @@ ENTRY_POINT_MODULES = {
 }
 
 
+# Names other languages' runtimes and frameworks call: entry points, interface/trait methods the type
+# system dispatches, framework hooks. Keyed by the registry's language name.
+JS_ENTRY = {"render", "constructor", "componentDidMount", "componentDidUpdate", "componentWillUnmount",
+            "shouldComponentUpdate", "getDerivedStateFromProps", "getServerSideProps", "getStaticProps",
+            "getStaticPaths", "generateMetadata", "generateStaticParams", "middleware", "default",
+            "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "loader", "action", "setup"}
+LANGUAGE_ENTRY_POINTS: Dict[str, Set[str]] = {
+    "Go": {"main", "init", "String", "Error", "ServeHTTP", "Len", "Less", "Swap", "MarshalJSON", "UnmarshalJSON",
+           "MarshalText", "UnmarshalText", "Read", "Write", "Close", "Format", "Scan", "Value"},
+    "Rust": {"main", "fmt", "from", "into", "drop", "default", "deref", "deref_mut", "clone", "eq", "ne",
+             "partial_cmp", "cmp", "hash", "next", "try_from", "from_str", "as_ref", "borrow", "index", "poll",
+             "serialize", "deserialize", "build"},
+    "Java": {"main", "toString", "equals", "hashCode", "compareTo", "run", "call", "close", "apply", "accept",
+             "get", "test", "iterator", "configure", "onCreate", "onStart", "onResume", "onPause", "onDestroy"},
+    "Kotlin": {"main", "toString", "equals", "hashCode", "compareTo", "invoke", "run", "close", "onCreate",
+               "onStart", "onResume", "onPause", "onDestroy"},
+    "C#": {"Main", "ToString", "Equals", "GetHashCode", "Dispose", "DisposeAsync", "CompareTo", "GetEnumerator",
+           "Configure", "ConfigureServices", "ExecuteAsync", "StartAsync", "StopAsync", "InvokeAsync", "Invoke",
+           # Blazor component lifecycle
+           "OnInitialized", "OnInitializedAsync", "OnParametersSet", "OnParametersSetAsync", "OnAfterRender",
+           "OnAfterRenderAsync", "SetParametersAsync", "ShouldRender", "BuildRenderTree",
+           # Unity messages
+           "Awake", "Start", "Update", "FixedUpdate", "LateUpdate", "OnEnable", "OnDisable", "OnDestroy",
+           "OnValidate", "Reset", "OnGUI", "OnDrawGizmos", "OnDrawGizmosSelected", "OnApplicationQuit",
+           "OnApplicationPause", "OnApplicationFocus", "OnBecameVisible", "OnBecameInvisible",
+           "OnTriggerEnter", "OnTriggerExit", "OnTriggerStay", "OnTriggerEnter2D", "OnTriggerExit2D",
+           "OnTriggerStay2D", "OnCollisionEnter", "OnCollisionExit", "OnCollisionStay", "OnCollisionEnter2D",
+           "OnCollisionExit2D", "OnCollisionStay2D", "OnMouseDown", "OnMouseUp", "OnMouseEnter", "OnMouseExit",
+           "OnAnimatorMove", "OnAnimatorIK", "OnRenderObject", "OnPreRender", "OnPostRender"},
+    "Scala": {"main", "apply", "unapply", "toString", "equals", "hashCode"},
+    "Ruby": {"initialize", "to_s", "to_h", "to_a", "inspect", "call", "method_missing", "respond_to_missing?",
+             "each", "<=>", "==", "perform"},
+    "PHP": {"__construct", "__toString", "__invoke", "__get", "__set", "__call", "handle", "boot", "register",
+            "up", "down"},
+    "JavaScript": JS_ENTRY, "TypeScript": JS_ENTRY, "TSX": JS_ENTRY,
+    "C": {"main"}, "C++": {"main"}, "Lua": set(),
+}
+RAILS_ACTIONS = {"index", "show", "new", "create", "edit", "update", "destroy"}
+
+
+def _classify_by_language(name: str, node: dict) -> Optional[Tuple[bool, str, str]]:
+    """Entry points by the conventions of the node's language; None for Python and anything unmatched."""
+    language = node.get("language")
+    if not language or language == "Python":
+        return None
+    if name in LANGUAGE_ENTRY_POINTS.get(language, set()):
+        return False, "low", f"{language} entry point or interface method"
+    file = node.get("file", "")
+    if language in ("JavaScript", "TypeScript", "TSX"):
+        if re.match(r"^use[A-Z]", name):
+            return False, "low", "React hook"
+        if file.endswith((".tsx", ".jsx")) and re.match(r"^[A-Z]", name) and node["type"] == "function":
+            return False, "low", "React component"
+    if language == "Ruby" and file.endswith("_controller.rb") and name in RAILS_ACTIONS:
+        return False, "low", "Rails controller action"
+    if language == "C#":
+        owner = node.get("name", "").rsplit(".", 1)[0] if "." in node.get("name", "") else ""
+        if owner.endswith("Controller") and node["type"] == "method":
+            return False, "low", "ASP.NET controller action"
+        if re.match(r"^On(Get|Post|Put|Delete|Patch)\w*(Async)?$", name):
+            return False, "low", "Razor Pages handler"
+    if language == "Go" and name[:1].isupper():
+        return True, "medium", "Exported identifier - may be used by other packages"
+    return None
+
+
 def _classify_potential_orphan(
     node_id: str,
     node: dict,
@@ -109,6 +175,12 @@ def _classify_potential_orphan(
     name = node["simple"]
     module = node["module"]
     element_type = node["type"]
+
+    if node.get("test"):
+        return False, "low", "Test"
+    by_language = _classify_by_language(name, node)
+    if by_language is not None:
+        return by_language
 
     # Check module-level entry points
     for pattern in ENTRY_POINT_MODULES:
@@ -202,60 +274,32 @@ def detect_orphans(
     Returns:
         OrphanSummary with detection results
     """
-    registry = get_language_registry()
+    from types import SimpleNamespace
 
-    # Build call graph
+    from .query import _language, build_query_graph, is_test_node
+
+    # The palace's query graph: every language the registry analyzes, calls resolved by name within a
+    # language family (see query.py). A name with too many definitions to resolve counts as called, so
+    # its definitions aren't reported as orphans on that evidence alone.
+    query_graph = build_query_graph(project_root)
+    graph = query_graph.graph
     nodes: Dict[str, dict] = {}
-
-    # Collect all source files
-    skip_dirs = {"node_modules", "venv", "__pycache__", ".git", "dist", "build", ".venv", "env"}
-    source_files = []
-
-    for ext in registry.supported_extensions():
-        source_files.extend(project_root.rglob(f"*{ext}"))
-
-    source_files = [
-        f for f in source_files
-        if not any(skip in f.parts for skip in skip_dirs)
-    ]
-
-    # First pass: collect all nodes
-    for source_file in source_files:
-        try:
-            lang = registry.get_by_extension(source_file)
-            if not lang:
-                continue
-
-            elements = lang.analyze_file(source_file, project_root)
-            rel_path = source_file.relative_to(project_root)
-            module = str(rel_path.with_suffix("")).replace("/", ".")
-
-            for element in elements:
-                if _is_noise_element(element):
-                    continue
-
-                node_id = f"{module}.{element.name}"
-                nodes[node_id] = {
-                    "name": element.name,
-                    "simple": element.simple_name,
-                    "type": element.element_type,
-                    "file": str(rel_path),
-                    "line": element.line,
-                    "calls": element.calls,
-                    "called_by": [],
-                    "module": module,
-                }
-        except Exception as e:
-            logger.warning(f"Error analyzing {source_file}: {e}")
+    for node_id, n in graph.nodes.items():
+        if _is_noise_element(SimpleNamespace(name=n.name, simple_name=n.simple_name)):
             continue
-
-    # Second pass: build called_by relationships
-    for node_id, node in nodes.items():
-        for call in node["calls"]:
-            # Find target by simple name
-            for target_id, target in nodes.items():
-                if target["simple"] == call or target["name"] == call:
-                    target["called_by"].append(node_id)
+        language = _language(n.file)
+        nodes[node_id] = {
+            "name": n.name,
+            "simple": n.simple_name,
+            "type": n.type,
+            "file": n.file,
+            "line": n.line,
+            "calls": list(n.calls),
+            "called_by": list(n.called_by) + (["<ambiguous>"] if n.simple_name in query_graph.skipped else []),
+            "module": n.module,
+            "language": language.name if language else None,
+            "test": is_test_node(n),
+        }
 
     # Find orphans
     total_functions = len([n for n in nodes.values() if n["type"] in ("function", "method")])

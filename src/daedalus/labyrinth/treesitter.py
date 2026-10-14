@@ -7,9 +7,9 @@ references from the matches, so adding a language is a table row, not a parser.
 
 Grammars come from two places, tried in order:
 
-1. Per-language wheels (tree-sitter-go, tree-sitter-rust, ...), installed by `daedalus[palace]`.
+1. Per-language wheels (tree-sitter-go, tree-sitter-rust, ...), dependencies of daedalus-cli.
    They ship with pip and never touch the network.
-2. tree-sitter-language-pack, if installed (`daedalus[palace-all]`). It covers hundreds of
+2. tree-sitter-language-pack, if installed (`daedalus-cli[palace-all]`). It covers hundreds of
    languages but downloads each grammar the first time it is used, so a language that only it
    provides fails offline; that failure is logged once and the language yields no elements.
 
@@ -19,6 +19,7 @@ Python stays on the stdlib ast analyzer, which reads signatures and docstrings m
 import importlib
 import importlib.util
 import logging
+import posixpath
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,6 +54,11 @@ class Grammar:
     test_candidates: Tuple[str, ...] = ()  # templates: {dir} {stem} {ext}
     attribute_tests: bool = False          # Rust: #[test], #[tokio::test], #[rstest] functions
     test_marker: Optional[str] = None      # regex on a definition's text before its name (@Test, [Fact])
+    package_markers: Tuple[str, ...] = ()  # files that stand for their directory (index.ts, mod.rs)
+    doc_files: Tuple[str, ...] = ()        # files holding a directory's documentation (Go's doc.go)
+    imports: Optional[str] = None          # import syntax we resolve: "js", "go", "java", "cs" (others: name-based)
+    skip_kinds: Tuple[str, ...] = ()       # definition kinds that aren't code units (C# namespaces)
+    top_level_node: bool = False           # give top-level statements a node (C#'s Program.cs)
     implicit_self: bool = True             # False: a plain `name()` can't reach a method (needs obj./this./self.)
 
 
@@ -62,25 +68,26 @@ JS_CANDIDATES = ("{dir}/{stem}.test{ext}", "{dir}/{stem}.spec{ext}", "{dir}/__te
 
 GRAMMARS: List[Grammar] = [
     Grammar("JavaScript", [".js", ".jsx", ".mjs", ".cjs"], wheel="tree_sitter_javascript", pack="javascript",
-            constructor_names=("constructor",), test_file=JS_TEST_FILE, test_candidates=JS_CANDIDATES, implicit_self=False),
+            constructor_names=("constructor",), test_file=JS_TEST_FILE, test_candidates=JS_CANDIDATES, package_markers=("index.ts", "index.tsx", "index.js", "index.jsx", "index.mjs"), imports="js", implicit_self=False),
     Grammar("TypeScript", [".ts", ".mts", ".cts"], wheel="tree_sitter_typescript", wheel_fn="language_typescript",
             pack="typescript", vendored_tags="typescript-tags.scm", base_query_from="tree_sitter_javascript",
-            constructor_names=("constructor",), test_file=JS_TEST_FILE, test_candidates=JS_CANDIDATES, implicit_self=False),
+            constructor_names=("constructor",), test_file=JS_TEST_FILE, test_candidates=JS_CANDIDATES, package_markers=("index.ts", "index.tsx", "index.js", "index.jsx", "index.mjs"), imports="js", implicit_self=False),
     Grammar("TSX", [".tsx"], wheel="tree_sitter_typescript", wheel_fn="language_tsx", pack="tsx",
             vendored_tags="typescript-tags.scm", base_query_from="tree_sitter_javascript",
-            constructor_names=("constructor",), test_file=JS_TEST_FILE, test_candidates=JS_CANDIDATES, implicit_self=False),
+            constructor_names=("constructor",), test_file=JS_TEST_FILE, test_candidates=JS_CANDIDATES, package_markers=("index.ts", "index.tsx", "index.js", "index.jsx", "index.mjs"), imports="js", implicit_self=False),
     Grammar("Go", [".go"], wheel="tree_sitter_go", pack="go", test_file=r"_test\.go$",
-            test_symbol=r"^(Test|Benchmark|Example|Fuzz)", test_candidates=("{dir}/{stem}_test.go",), implicit_self=False),
+            test_symbol=r"^(Test|Benchmark|Example|Fuzz)", test_candidates=("{dir}/{stem}_test.go",), doc_files=("doc.go",), imports="go", implicit_self=False),
     Grammar("Rust", [".rs"], wheel="tree_sitter_rust", pack="rust", constructor_names=("new",),
             supplement="rust-supplement.scm",
-            test_file=r"(^|/)tests/", attribute_tests=True, test_candidates=("tests/{stem}.rs",), implicit_self=False),
+            test_file=r"(^|/)tests/", attribute_tests=True, test_candidates=("tests/{stem}.rs",), package_markers=("mod.rs", "lib.rs"), implicit_self=False),
     Grammar("Java", [".java"], wheel="tree_sitter_java", pack="java", constructor_is_class_name=True,
-            test_marker=r"@(Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate)\b",
+            imports="java", test_marker=r"@(Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate)\b",
             test_file=r"(^|/)src/test/|Tests?\.java$|(^|/)Test[A-Z]\w*\.java$",
             test_candidates=("{testdir}/{stem}Test.java", "{testdir}/{stem}Tests.java", "{dir}/{stem}Test.java")),
     Grammar("C#", [".cs"], wheel="tree_sitter_c_sharp", pack="csharp", constructor_is_class_name=True,
-            vendored_tags="c_sharp-tags.scm", supplement="c_sharp-supplement.scm",
-            test_marker=r"\[\s*(Test|TestMethod|TestCase|Fact|Theory)\b",
+            vendored_tags="c_sharp-tags.scm", supplement="c_sharp-supplement.scm", imports="cs",
+            skip_kinds=("module",), top_level_node=True,
+            test_marker=r"\[\s*(Test|TestMethod|TestCase|TestCaseSource|Fact|Theory|UnityTest)\b",
             test_file=r"(^|/)[^/]*Tests?/|Tests?\.cs$"),
     Grammar("C", [".c", ".h"], wheel="tree_sitter_c", pack="c", test_file=r"(^|/)tests?/|_test\.c$|^test_"),
     Grammar("C++", [".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx"], wheel="tree_sitter_cpp", pack="cpp",
@@ -133,6 +140,19 @@ class TreeSitterSupport(LanguageSupport):
         self._parser = None
         self._query = None
         self.fallback: Optional[LanguageSupport] = None  # e.g. the regex TypeScript analyzer
+        self._last_parse: Optional[Tuple[object, bytes, object]] = None  # (key, source, tree)
+
+    def _parse(self, file_path: Path) -> Tuple[bytes, object]:
+        """Parse a file, reusing the last parse when the same unchanged file is asked for again (analysis
+        and import extraction read the same file back to back)."""
+        st = Path(file_path).stat()
+        key = (str(file_path), st.st_mtime_ns, st.st_size)
+        if self._last_parse is not None and self._last_parse[0] == key:
+            return self._last_parse[1], self._last_parse[2]
+        source = Path(file_path).read_bytes()
+        tree = self._parser.parse(source)
+        self._last_parse = (key, source, tree)
+        return source, tree
 
     @property
     def name(self) -> str:
@@ -196,12 +216,12 @@ class TreeSitterSupport(LanguageSupport):
         if not self._load():
             return self.fallback.analyze_file(file_path, project_root) if self.fallback else []
         try:
-            source = Path(file_path).read_bytes()
+            source, tree = self._parse(file_path)
         except OSError as e:
             logger.warning(f"Failed to read {file_path}: {e}")
             return []
         rel = Path(file_path).relative_to(project_root).as_posix()
-        return extract_elements(self, source, rel)
+        return extract_elements(self, source, rel, tree)
 
     def generate_anchor_pattern(self, element: CodeElement) -> AnchorPattern:
         # The definition's line from its start up to and including the name, whitespace-tolerant and
@@ -232,6 +252,45 @@ class TreeSitterSupport(LanguageSupport):
     def implicit_self(self) -> bool:
         return self.grammar.implicit_self
 
+    @property
+    def package_markers(self) -> Tuple[str, ...]:  # type: ignore[override]
+        return self.grammar.package_markers
+
+    @property
+    def doc_files(self) -> Tuple[str, ...]:
+        return self.grammar.doc_files
+
+    def module_doc(self, file_path: Path) -> Optional[str]:
+        """The comment block at the top of the file (after a shebang or package line), markers stripped."""
+        if not self._load():
+            return None
+        try:
+            tree = self._parser.parse(Path(file_path).read_bytes())
+        except OSError:
+            return None
+        block = []
+        for child in tree.root_node.named_children:
+            if "comment" in child.type:
+                block.append(child.text.decode("utf-8", "replace"))
+            elif block or child.type not in ("package_clause", "package_declaration", "hash_bang_line"):
+                break
+        text = "\n".join(block)
+        lines = [re.sub(r"^\s*(//[/!]?|/\*\*?|\*/|\*|#)\s?", "", ln).rstrip() for ln in text.splitlines()]
+        doc = "\n".join(ln for ln in lines if ln.strip() and ln.strip() != "*/").strip()
+        return doc or None
+
+    def file_imports(self, file_path: Path, project_root: Path) -> Dict[str, Tuple[str, Optional[str]]]:
+        kind = self.grammar.imports
+        if kind is None or not self._load():
+            return {}
+        try:
+            _, tree = self._parse(file_path)
+        except OSError:
+            return {}
+        rel = Path(file_path).relative_to(project_root).as_posix()
+        return {"js": _js_imports, "go": _go_imports, "java": _java_imports,
+                "cs": _cs_imports}[kind](tree.root_node, rel)
+
     def constructor_of(self, class_name: str) -> Tuple[str, ...]:
         names = self.grammar.constructor_names
         return names + ((class_name,) if self.grammar.constructor_is_class_name else ())
@@ -250,11 +309,12 @@ def _kind(capture: str) -> str:
     return capture.split(".", 1)[1] if "." in capture else capture
 
 
-def extract_elements(support: TreeSitterSupport, source: bytes, rel: str) -> List[CodeElement]:
+def extract_elements(support: TreeSitterSupport, source: bytes, rel: str, tree=None) -> List[CodeElement]:
     """Definitions and call references from one parsed file."""
     from tree_sitter import QueryCursor
 
-    tree = support._parser.parse(source)
+    if tree is None:
+        tree = support._parser.parse(source)
     lines = source.split(b"\n")
     defs: Dict[Tuple[int, int], _Def] = {}
     calls: List[Tuple[object, object, str]] = []  # (reference node, name node, kind)
@@ -304,6 +364,8 @@ def extract_elements(support: TreeSitterSupport, source: bytes, rel: str) -> Lis
             element_type = "class"
         if not callable_ and enclosing(d.node, CALLABLE_KINDS):
             continue  # a type declared inside a function body
+        if not callable_ and d.kind in support.grammar.skip_kinds:
+            continue  # a C# namespace is a scope, not a code unit
         full = f"{class_name}.{d.name}" if (class_name and (element_type == "method" or in_module)) else d.name
         # The definition's first source line, from its start (so `type Calc struct`, not `Calc struct`)
         row = d.node.start_point[0]
@@ -324,29 +386,35 @@ def extract_elements(support: TreeSitterSupport, source: bytes, rel: str) -> Lis
     # as Python's ast.walk over a class body does).
     top_level: Set[str] = set()
     top_level_member: Set[str] = set()
+    top_level_sites: Set[Tuple[str, str]] = set()
     for ref, name_node, kind in calls:
         callee = name_node.text.decode("utf-8", "replace")
         through_object = kind in ("call", "send") and _through_object(ref, name_node)
+        site = (_qualifier(ref, name_node) if through_object else "", callee)
         owners = [el for (a, b, el) in spans if a <= ref.start_byte < b]
         for el in owners:
             if callee not in el.calls:
                 el.calls.append(callee)
             if through_object and callee not in el.member_calls:
                 el.member_calls.append(callee)
+            if site not in el.call_sites:
+                el.call_sites.append(site)
         if not owners:
             top_level.add(callee)
+            top_level_sites.add(site)
             if through_object:
                 top_level_member.add(callee)
 
     # Test files whose tests are calls, not definitions (describe/it, RSpec): one node for the file's
     # top-level code, so tests-for can reach what it calls.
-    if is_test_file and top_level:
+    if top_level and (is_test_file or support.grammar.top_level_node):
         stem = Path(rel).name
         el = CodeElement(name=f"<{stem}>", element_type="module", file=rel, line=1, signature=rel,
                          calls=sorted(top_level), simple_name=f"<{stem}>")
         el.end_line = None
         el.member_calls = sorted(top_level_member)
-        el.is_test = True
+        el.call_sites = sorted(top_level_sites)
+        el.is_test = is_test_file
         elements.append(el)
     return elements
 
@@ -360,6 +428,152 @@ def _through_object(ref, name_node) -> bool:
     if parent is not None and parent != ref:
         return True
     return any(ref.child_by_field_name(f) is not None for f in ("object", "receiver"))
+
+
+IDENTIFIER_TYPES = {"identifier", "package_identifier", "type_identifier", "constant", "name"}
+SELF_WORDS = {"this", "self", "Self", "super", "base"}
+
+
+def _qualifier(ref, name_node) -> str:
+    """What a call goes through: an identifier (`pkg` in pkg.F(), `Foo` in Foo.bar()), "self" for
+    this/self, or "?" for anything else (a field, a call result, ...)."""
+    parent = name_node.parent
+    while parent is not None and parent.type == "parenthesized_expression":
+        parent = parent.parent
+    holder = ref if parent == ref or parent is None else parent
+    obj = None
+    for f in ("object", "operand", "path", "expression", "value", "receiver", "scope", "argument"):
+        obj = holder.child_by_field_name(f)
+        if obj is not None and obj != name_node:
+            break
+        obj = None
+    if obj is None:
+        return "?"
+    text = obj.text.decode("utf-8", "replace")
+    if text in SELF_WORDS or obj.type in ("this", "self", "super"):
+        return "self"
+    return text if obj.type in IDENTIFIER_TYPES else "?"
+
+
+def _text(node) -> str:
+    return node.text.decode("utf-8", "replace") if node is not None else ""
+
+
+def _unquote(s: str) -> str:
+    return s.strip().strip("'\"`")
+
+
+def _top_level(root, wanted: str):
+    """Nodes of type `wanted` among the file's top-level statements and inside its import declarations
+    (imports never sit inside functions in the languages resolved here, so the bodies aren't walked)."""
+    for child in root.named_children:
+        if child.type == wanted:
+            yield child
+        elif "import" in child.type:
+            yield from (n for n in _walk(child) if n.type == wanted)
+
+
+def _js_imports(root, rel: str) -> Dict[str, Tuple[str, Optional[str]]]:
+    """import X from './x'; import {a as b} from './x'; import * as m from './x' (relative specs only are
+    the project's; bare specs are packages)."""
+    out: Dict[str, Tuple[str, Optional[str]]] = {}
+    for node in _top_level(root, "import_statement"):
+        if node.type != "import_statement":
+            continue
+        source = _unquote(_text(node.child_by_field_name("source")))
+        if not source:
+            continue
+        spec = ("js:" + posixpath.normpath(posixpath.join(posixpath.dirname(rel), source))
+                if source.startswith(".") else "ext:" + source)
+        for clause in (c for c in node.named_children if c.type == "import_clause"):
+            for part in clause.named_children:
+                if part.type == "identifier":  # default import
+                    out[_text(part)] = (spec, "default")
+                elif part.type == "namespace_import":
+                    ident = next((c for c in part.named_children if c.type == "identifier"), None)
+                    if ident is not None:
+                        out[_text(ident)] = (spec, None)
+                elif part.type == "named_imports":
+                    for item in (c for c in part.named_children if c.type == "import_specifier"):
+                        name = _text(item.child_by_field_name("name"))
+                        alias = _text(item.child_by_field_name("alias")) or name
+                        if name:
+                            out[alias] = (spec, name)
+    return out
+
+
+def _go_imports(root, rel: str) -> Dict[str, Tuple[str, Optional[str]]]:
+    """import "example.com/m/pkg" binds pkg (or its alias); query.py maps the path to a directory via go.mod."""
+    out: Dict[str, Tuple[str, Optional[str]]] = {}
+    for node in _top_level(root, "import_spec"):
+        if node.type != "import_spec":
+            continue
+        path = _unquote(_text(node.child_by_field_name("path")))
+        alias = _text(node.child_by_field_name("name"))
+        if alias in ("_", "."):
+            continue
+        if not alias:
+            segments = [p for p in path.split("/") if p]
+            if not segments:
+                continue
+            alias = segments[-2] if re.fullmatch(r"v\d+", segments[-1]) and len(segments) > 1 else segments[-1]
+            alias = alias.replace("-", "_").split(".")[0]
+        out[alias] = ("go:" + path, None)
+    return out
+
+
+def _java_imports(root, rel: str) -> Dict[str, Tuple[str, Optional[str]]]:
+    """import com.x.Foo binds Foo; import static com.x.Util.helper binds helper. Wildcards are skipped."""
+    out: Dict[str, Tuple[str, Optional[str]]] = {}
+    for node in _top_level(root, "import_declaration"):
+        if node.type != "import_declaration":
+            continue
+        text = _text(node)
+        if "*" in text:
+            continue
+        static = re.search(r"\bstatic\b", text) is not None
+        target = next((c for c in node.named_children if c.type in ("scoped_identifier", "identifier")), None)
+        if target is None:
+            continue
+        parts = _text(target).split(".")
+        if static and len(parts) >= 2:
+            out[parts[-1]] = ("java:" + "/".join(parts[:-1]), parts[-2] + "." + parts[-1])
+        else:
+            out[parts[-1]] = ("java:" + "/".join(parts), parts[-1])
+    return out
+
+
+def _cs_imports(root, rel: str) -> Dict[str, Tuple[str, Optional[str]]]:
+    """C# imports namespaces, not files. Recorded as "using:<ns>" entries (global ones as "global:<ns>"),
+    `using X = A.B.C;` aliases, and the file's own namespace under "__namespace__"; query.py resolves type
+    names against the namespaces a file can see."""
+    out: Dict[str, Tuple[str, Optional[str]]] = {}
+
+    def visit(node, namespace: str):
+        for child in node.named_children:
+            if child.type == "using_directive":
+                text = _text(child)
+                if re.search(r"\busing\s+static\b", text):
+                    continue
+                alias = child.child_by_field_name("name")
+                target = next((c for c in child.named_children if c.type in ("qualified_name", "identifier")
+                               and c != alias), None)
+                if target is None:
+                    continue
+                name = _text(target)
+                if alias is not None:  # using Json = Newtonsoft.Json.JsonConvert;
+                    head, _, last = name.rpartition(".")
+                    out[_text(alias)] = ("cs:" + head, last)
+                else:
+                    out[("global:" if text.lstrip().startswith("global") else "using:") + name] = ("cs:" + name, None)
+            elif child.type in ("namespace_declaration", "file_scoped_namespace_declaration"):
+                name = _text(child.child_by_field_name("name"))
+                full = f"{namespace}.{name}" if namespace else name
+                out.setdefault("__namespace__", ("cs:" + full, None))
+                body = child.child_by_field_name("body")
+                visit(body if body is not None else child, full)
+    visit(root, "")
+    return out
 
 
 def _receiver(node) -> Optional[str]:

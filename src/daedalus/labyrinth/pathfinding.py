@@ -144,9 +144,15 @@ class CallGraph:
         """
         graph_path = project_root / ".mind-palace" / "codebase-graph.json"
 
-        # Try to load cached graph
+        # Try to load cached graph, unless it predates the current format (raw call names, old node ids)
         if use_cache and graph_path.exists():
-            return cls.load(graph_path)
+            from .cartographer import GRAPH_FORMAT
+            try:
+                cached_format = json.loads(graph_path.read_text()).get("format", 1)
+            except (OSError, ValueError):
+                cached_format = None
+            if cached_format == GRAPH_FORMAT:
+                return cls.load(graph_path)
 
         # Build fresh graph using Cartographer
         # Import here to avoid circular dependency

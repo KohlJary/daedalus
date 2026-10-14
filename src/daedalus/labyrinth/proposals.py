@@ -22,6 +22,7 @@ from .models import Palace, Room, Building, Anchor, Hazard, HazardType
 from .storage import PalaceStorage
 from .cartographer import Cartographer
 from .languages import get_language_registry, CodeElement
+from .sources import source_files
 
 logger = logging.getLogger(__name__)
 
@@ -139,72 +140,70 @@ class ProposalManager:
         found_rooms: Set[str] = set()
 
         # Scan code for elements
-        for ext in registry.supported_extensions():
-            for file_path in directory.rglob(f"*{ext}"):
-                # Skip non-code directories
-                if any(part.startswith(".") or part in ("__pycache__", "node_modules", "venv", "data")
-                       for part in file_path.parts):
-                    continue
+        for file_path in source_files(project_root, registry.supported_extensions(), under=directory):
+            # Skip non-code directories
+            if any(part.startswith(".") or part == "data" for part in file_path.relative_to(project_root).parts):
+                continue
 
-                lang = registry.get_by_extension(file_path)
-                if not lang:
-                    continue
+            lang = registry.get_by_extension(file_path)
+            if not lang:
+                continue
 
-                try:
-                    elements = lang.analyze_file(file_path, project_root)
-                    relative_path = str(file_path.relative_to(project_root))
+            try:
+                elements = lang.analyze_file(file_path, project_root)
+                relative_path = str(file_path.relative_to(project_root))
 
-                    for element in elements:
-                        room_name = element.name
-                        found_rooms.add(room_name)
+                for element in elements:
+                    room_name = element.name
+                    found_rooms.add(room_name)
 
-                        if room_name not in existing_rooms:
-                            # Propose new room
-                            anchor_pattern = lang.generate_anchor_pattern(element)
-                            proposal = Proposal(
-                                id=self._generate_id(),
-                                type=ProposalType.ADD_ROOM,
-                                target=room_name,
-                                reason=f"New {element.element_type} found in {relative_path}",
-                                details={
-                                    "element_type": element.element_type,
-                                    "file": relative_path,
-                                    "line": element.line,
-                                    "signature": element.signature,
-                                    "docstring": element.docstring[:200] if element.docstring else None,
-                                    "anchor_pattern": anchor_pattern.pattern,
-                                    "anchor_is_regex": anchor_pattern.is_regex,
-                                },
-                            )
-                            proposal_set.proposals.append(proposal)
+                    if room_name not in existing_rooms:
+                        # Propose new room
+                        anchor_pattern = lang.generate_anchor_pattern(element)
+                        proposal = Proposal(
+                            id=self._generate_id(),
+                            type=ProposalType.ADD_ROOM,
+                            target=room_name,
+                            reason=f"New {element.element_type} found in {relative_path}",
+                            details={
+                                "element_type": element.element_type,
+                                "file": relative_path,
+                                "line": element.line,
+                                "signature": element.signature,
+                                "docstring": element.docstring[:200] if element.docstring else None,
+                                "anchor_pattern": anchor_pattern.pattern,
+                                "anchor_is_regex": anchor_pattern.is_regex,
+                            },
+                        )
+                        proposal_set.proposals.append(proposal)
 
-                        else:
-                            # Check if existing room needs update
-                            existing = self.palace.rooms[room_name]
-                            if existing.anchor:
-                                # Check if anchor still valid
-                                try:
-                                    with open(file_path) as f:
-                                        content = f.read()
-                                    anchor_pattern = lang.generate_anchor_pattern(element)
-                                    if not anchor_pattern.matches(content):
-                                        proposal = Proposal(
-                                            id=self._generate_id(),
-                                            type=ProposalType.UPDATE_ANCHOR,
-                                            target=room_name,
-                                            reason="Anchor pattern no longer matches code",
-                                            details={
-                                                "old_pattern": existing.anchor.pattern,
-                                                "new_pattern": anchor_pattern.pattern,
-                                                "file": relative_path,
-                                            },
-                                        )
-                                        proposal_set.proposals.append(proposal)
-                                except Exception:
-                                    pass
+                    else:
+                        # Check if existing room needs update
+                        existing = self.palace.rooms[room_name]
+                        if existing.anchor:
+                            # Check if anchor still valid
+                            try:
+                                with open(file_path) as f:
+                                    content = f.read()
+                                anchor_pattern = lang.generate_anchor_pattern(element)
+                                if not anchor_pattern.matches(content):
+                                    proposal = Proposal(
+                                        id=self._generate_id(),
+                                        type=ProposalType.UPDATE_ANCHOR,
+                                        target=room_name,
+                                        reason="Anchor pattern no longer matches code",
+                                        details={
+                                            "old_pattern": existing.anchor.pattern,
+                                            "new_pattern": anchor_pattern.pattern,
+                                            "file": relative_path,
+                                        },
+                                    )
+                                    proposal_set.proposals.append(proposal)
+                            except Exception:
+                                pass
 
-                except Exception as e:
-                    logger.warning(f"Failed to analyze {file_path}: {e}")
+            except Exception as e:
+                logger.warning(f"Failed to analyze {file_path}: {e}")
 
         # Check for removed rooms (only for rooms with anchors in this directory)
         for room_name in existing_rooms:
