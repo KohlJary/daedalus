@@ -194,6 +194,8 @@ daedalus gameplan pending                       # proposed updates; apply or dro
 daedalus doctor                                 # has the plan fallen behind the code?
 ```
 
+If several people or sessions work here, each has its own workstream (`daedalus workstream list`): the brief shows yours first and the others in a line each, and `daedalus doctor` reports when two workstreams collide on the same work or the same paths. Work in your own workstream; if a collision shows up, agree who takes what before both sides do it.
+
 Use the `gameplan` subagent for detailed queries. When a task ships, record the resolution - future sessions read it instead of re-deriving from git. Hooks and reconstructions never write the gameplan; they leave proposals in `daedalus gameplan pending` for you to apply or drop.
 
 <!-- DAEDALUS_IF edicts.enabled -->

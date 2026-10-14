@@ -164,7 +164,9 @@ def reconstruct():
 @click.option("--since", default=None, help="Window start: a revision or YYYY-MM-DD (default: the gameplan's last commit)")
 @click.option("--until", default=None, help="Window end: a revision or YYYY-MM-DD (default: HEAD)")
 @click.option("--author", default=None, help="Only commits by this author (git --author matching)")
-def reconstruct_gather(since: str | None, until: str | None, author: str | None):
+@click.option("--workstream", "-w", default=None,
+              help="Anchor on this workstream's plan and its owner's commits (edict 0008)")
+def reconstruct_gather(since: str | None, until: str | None, author: str | None, workstream: str | None):
     """Find the gap (or the given window) and write the evidence bundle to .daedalus/reconstruction/.
 
     Long histories: reconstruct one window at a time with --since/--until.
@@ -172,7 +174,7 @@ def reconstruct_gather(since: str | None, until: str | None, author: str | None)
     from ..reconstruct import gather, write_bundle
 
     try:
-        bundle = gather(Path.cwd(), since=since, until=until, author=author)
+        bundle = gather(Path.cwd(), since=since, until=until, author=author, workstream=workstream)
     except ValueError as e:
         click.echo(str(e), err=True)
         raise SystemExit(2)
@@ -292,6 +294,93 @@ def edict_resolve_dissent(name: str, outcome: str, note: str):
         click.echo(str(e), err=True)
         raise SystemExit(1)
     click.echo(f"Resolved {path.name}: {outcome}.")
+
+
+@main.group("workstream")
+def workstream():
+    """Workstreams: one committed plan per owner, a person or a session (edict 0008)."""
+    pass
+
+
+@workstream.command("new")
+@click.argument("workstream_id")
+@click.option("--kind", type=click.Choice(["person", "session"]), default="person")
+@click.option("--author", default=None, help="Pattern for git --author that matches this owner's commits")
+@click.option("--use", "make_current", is_flag=True, help="Also make it the current workstream here")
+def workstream_new(workstream_id, kind, author, make_current):
+    """Create a workstream plan in .daedalus/gameplans/."""
+    from .. import workstreams as ws
+
+    try:
+        path = ws.create(Path.cwd(), workstream_id, kind=kind, git_author=author)
+        from .commands import _ensure_gameplan_tracked
+
+        _ensure_gameplan_tracked(Path.cwd())
+        if make_current:
+            ws.use(Path.cwd(), workstream_id)
+    except ws.WorkstreamError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(1)
+    click.echo(f"Created {path.relative_to(Path.cwd())}" + (" (now current)" if make_current else ""))
+
+
+@workstream.command("list")
+def workstream_list():
+    """Every workstream, its owner, active phase, and next task."""
+    from .commands import list_workstreams
+
+    list_workstreams(Path.cwd())
+
+
+@workstream.command("use")
+@click.argument("workstream_id")
+def workstream_use(workstream_id):
+    """Make a workstream current in this checkout (local config; DAEDALUS_WORKSTREAM overrides)."""
+    from .. import workstreams as ws
+
+    try:
+        ws.use(Path.cwd(), workstream_id)
+    except ws.WorkstreamError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(1)
+    click.echo(f"Current workstream: {workstream_id}")
+
+
+@workstream.command("show")
+@click.argument("workstream_id", required=False)
+def workstream_show(workstream_id):
+    """Show a workstream's owner, claims, and plan (the current one by default)."""
+    from .. import workstreams as ws
+    from .commands import show_gameplan
+
+    wid = workstream_id or ws.current(Path.cwd())
+    try:
+        data = ws.load(Path.cwd(), wid)
+    except ws.WorkstreamError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(1)
+    owner = ws.owner(data, wid)
+    click.echo(f"Workstream {wid}: {owner.get('kind')}" + (f", git author {owner['git_author']}" if owner.get("git_author") else ""))
+    if data.get("claims"):
+        click.echo("Claims: " + ", ".join(data["claims"]))
+    click.echo("")
+    ws.set_override(wid)
+    show_gameplan(Path.cwd())
+
+
+@workstream.command("claim")
+@click.argument("paths", nargs=-1, required=True)
+@click.option("--release", is_flag=True, help="Remove these claims instead")
+def workstream_claim(paths, release):
+    """Claim paths or globs the current workstream intends to change (collisions show in doctor)."""
+    from .. import workstreams as ws
+
+    wid = ws.current(Path.cwd())
+    if not ws.file_for(Path.cwd(), wid).exists():
+        click.echo(f"No workstream '{wid}' here. Run: daedalus init, or daedalus workstream new {wid}", err=True)
+        raise SystemExit(1)
+    claims = ws.set_claims(Path.cwd(), wid, remove=paths) if release else ws.set_claims(Path.cwd(), wid, add=paths)
+    click.echo(f"{wid} claims: " + (", ".join(claims) if claims else "none"))
 
 
 @main.command("doctor")
@@ -420,14 +509,17 @@ def roadmap_add(title: str, description: str, priority: str, item_type: str):
 
 
 @main.group()
-def gameplan():
+@click.option("--workstream", "-w", default=None, help="Act on this workstream (default: the current one)")
+def gameplan(workstream):
     """Multi-phase plan tracking (survives compactions).
 
     A gameplan groups roadmap items into phases and breaks the currently
-    active phase into concrete tasks. Stored at .daedalus/roadmap/gameplan.json
-    so a fresh session can pick up in-flight work.
+    active phase into concrete tasks. Each workstream (edict 0008) has its own;
+    the default one is .daedalus/roadmap/gameplan.json.
     """
-    pass
+    from .. import workstreams as ws
+
+    ws.set_override(workstream)
 
 
 @gameplan.command("show")

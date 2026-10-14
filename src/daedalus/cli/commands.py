@@ -205,34 +205,45 @@ GITIGNORE_GAMEPLAN_BLOCK = """
 """
 
 
+GITIGNORE_WORKSTREAMS_BLOCK = """
+# Daedalus: commit the gameplan and workstream plans; everything else in .daedalus/ (including
+# pending proposals) stays local (edicts 0007, 0008)
+!.daedalus/
+.daedalus/*
+!.daedalus/roadmap/
+.daedalus/roadmap/*
+!.daedalus/roadmap/gameplan.json
+!.daedalus/gameplans/
+.daedalus/gameplans/*.pending.json
+"""
+
+
 def _ensure_gameplan_tracked(project_dir: Path):
-    """If git ignores the gameplan, append negations to .gitignore so it can be committed."""
+    """If git ignores the default gameplan or workstream plans, append negations to .gitignore."""
     import subprocess
 
-    from . import gameplan as gp
-
-    rel = str(gp.GameplanPaths.for_project(project_dir).gameplan_file.relative_to(project_dir))
-
-    def ignored() -> bool:
+    def ignored(rel: str) -> bool:
         try:
-            return subprocess.run(
-                ["git", "check-ignore", "-q", rel], cwd=project_dir, capture_output=True
-            ).returncode == 0
+            return subprocess.run(["git", "check-ignore", "-q", rel], cwd=project_dir,
+                                  capture_output=True).returncode == 0
         except FileNotFoundError:
             return False
 
-    if not ignored():
-        return
+    checks = [(".daedalus/roadmap/gameplan.json", GITIGNORE_WORKSTREAMS_BLOCK, "the gameplan"),
+              (".daedalus/gameplans/plan.json", GITIGNORE_WORKSTREAMS_BLOCK, "workstream plans")]
     gitignore = project_dir / ".gitignore"
-    text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
-    if GITIGNORE_GAMEPLAN_BLOCK.strip() not in text:
-        sep = "" if not text or text.endswith("\n") else "\n"
-        gitignore.write_text(text + sep + GITIGNORE_GAMEPLAN_BLOCK, encoding="utf-8")
-    if ignored():
-        click.echo(f"  Warning: {rel} is still ignored by git (a rule outside .gitignore?). "
-                   f"See `git check-ignore -v {rel}`.", err=True)
-    else:
-        click.echo(f"  Un-ignored {rel} in .gitignore so the gameplan can be committed")
+    for rel, block, what in checks:
+        if not ignored(rel):
+            continue
+        text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
+        if block.strip() not in text:
+            sep = "" if not text or text.endswith("\n") else "\n"
+            gitignore.write_text(text + sep + block, encoding="utf-8")
+        if ignored(rel):
+            click.echo(f"  Warning: {what} ({rel}) is still ignored by git (a rule outside .gitignore?). "
+                       f"See `git check-ignore -v {rel}`.", err=True)
+        else:
+            click.echo(f"  Un-ignored {what} in .gitignore so it can be committed")
 
 
 def _enable_edicts(project_dir: Path):
@@ -697,6 +708,13 @@ def import_reconstruction(project_dir: Path, proposal_file: Path):
         click.echo("Not imported: fix the proposal so `daedalus reconstruct check` passes.", err=True)
         raise SystemExit(1)
     proposals, skipped = gp.proposals_from_reconstruction(data)
+    # Proposals go to the workstream that was reconstructed (edict 0008), not the current one
+    from .. import workstreams as ws
+
+    target = (data.get("window") or {}).get("workstream")
+    if target:
+        ws.set_override(target)
+        click.echo(f"Importing into workstream {target}")
     added = gp.add_proposals(project_dir, proposals)
     for p in added:
         click.echo(f"Pending {p['id']}: {gp.describe_proposal(p)}")
@@ -774,3 +792,16 @@ def show_edict(project_dir: Path, number: str):
         click.echo((edicts_dir(project_dir) / e["file"]).read_text(encoding="utf-8"))
     refs = _gameplan_refs(project_dir).get(number, [])
     click.echo("Gameplan: " + ("; ".join(f"{w} [{s}]" for w, s in refs) if refs else "not referenced"))
+
+
+def list_workstreams(project_dir: Path):
+    from .. import workstreams as ws
+
+    current = ws.current(project_dir)
+    ids = ws.list_ids(project_dir)
+    if not ids:
+        click.echo("No workstreams. Run: daedalus init, or daedalus workstream new <id>")
+        return
+    for wid in ids:
+        data = ws.load(project_dir, wid)
+        click.echo(("* " if wid == current else "  ") + ws.summary_line(data, wid))

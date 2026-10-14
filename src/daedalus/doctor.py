@@ -52,27 +52,31 @@ def _is_git_repo(project_dir: Path) -> bool:
     return _git(project_dir, "rev-parse", "--is-inside-work-tree") == "true"
 
 
-def _gameplan_rel(project_dir: Path) -> str:
-    return str(gp.GameplanPaths.for_project(project_dir).gameplan_file.relative_to(project_dir))
+def _gameplan_rel(project_dir: Path, workstream: Optional[str] = None) -> str:
+    return str(gp.GameplanPaths.for_project(project_dir, workstream).gameplan_file.relative_to(project_dir))
 
 
 # ---------- gameplan ----------
 
 
-def check_commits_after_gameplan(project_dir: Path, threshold: int) -> list[Finding]:
+def check_commits_after_gameplan(project_dir: Path, threshold: int, workstream: Optional[str] = None,
+                                 author: Optional[str] = None) -> list[Finding]:
+    """Commits since the plan last changed; for a workstream with an owner pattern, only theirs."""
     if not _is_git_repo(project_dir):
         return []
-    rel = _gameplan_rel(project_dir)
+    rel = _gameplan_rel(project_dir, workstream)
     last = _git(project_dir, "log", "-1", "--format=%H %as", "--", rel)
     if not last:
         return []  # never committed: check_gameplan_ignored / untracked covers it
     sha, when = last.split()
-    count = int(_git(project_dir, "rev-list", "--count", "--no-merges", f"{sha}..HEAD") or 0)
+    who = [f"--author={author}"] if author else []
+    count = int(_git(project_dir, "rev-list", "--count", "--no-merges", *who, f"{sha}..HEAD") or 0)
     if count < threshold:
         return []
+    whose = f" by {author}" if author else ""
     return [Finding(
         "commits-after-gameplan",
-        f"{count} commits since the gameplan was last updated ({when}, {sha[:7]}). "
+        f"{count} commits{whose} since the gameplan was last updated ({when}, {sha[:7]}). "
         "Record what shipped, or run /reconstruct.",
     )]
 
@@ -114,10 +118,10 @@ def check_stale_tasks(data: dict, max_days: int, today: Optional[date] = None) -
     return findings
 
 
-def check_gameplan_ignored(project_dir: Path) -> list[Finding]:
+def check_gameplan_ignored(project_dir: Path, workstream: Optional[str] = None) -> list[Finding]:
     if not _is_git_repo(project_dir):
         return []
-    rel = _gameplan_rel(project_dir)
+    rel = _gameplan_rel(project_dir, workstream)
     try:
         ignored = subprocess.run(
             ["git", "check-ignore", "-q", rel], cwd=project_dir, capture_output=True
@@ -195,8 +199,10 @@ def _referenced_edicts(data: dict) -> set[str]:
     return refs
 
 
-def check_unreferenced_edicts(edicts: list[dict], data: dict) -> list[Finding]:
-    refs = _referenced_edicts(data)
+def check_unreferenced_edicts(edicts: list[dict], data) -> list[Finding]:
+    """data: one gameplan, or a list of them (every workstream)."""
+    plans = data if isinstance(data, list) else [data]
+    refs = set().union(*(_referenced_edicts(d) for d in plans)) if plans else set()
     return [
         Finding(
             "edict-not-in-gameplan",
@@ -302,33 +308,66 @@ def check_empty_templates_read(project_dir: Path, max_days: int, today: Optional
 # ---------- entry point ----------
 
 
+def check_collisions(plans: dict) -> list[Finding]:
+    """Two workstreams with open work citing the same edict, or with overlapping path claims."""
+    from . import workstreams as ws
+
+    findings = []
+    ids = sorted(plans)
+    for i, a in enumerate(ids):
+        for b in ids[i + 1:]:
+            shared = ws.open_edicts(plans[a]) & ws.open_edicts(plans[b])
+            for number in sorted(shared):
+                findings.append(Finding(
+                    "collision-edict",
+                    f"Workstreams {a} and {b} both have open work on edict {number}. Agree who takes what.",
+                ))
+            pairs = sorted({(x, y) for x in plans[a].get("claims", []) for y in plans[b].get("claims", [])
+                            if ws.claims_overlap(x, y)})
+            if pairs:
+                listed = "; ".join(f"{x} / {y}" for x, y in pairs[:4]) + (" ..." if len(pairs) > 4 else "")
+                findings.append(Finding(
+                    "collision-claims",
+                    f"Workstreams {a} and {b} claim overlapping paths: {listed}.",
+                ))
+    return findings
+
+
 def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Finding], list[str]]:
     """(findings, hints). Hints are informational and never fail the run."""
+    from . import workstreams as ws
+
     project_dir = Path(project_dir)
     settings = get_project_settings(project_dir, "doctor")
     findings: list[Finding] = []
     hints: list[str] = []
 
-    try:
-        data = gp.load_gameplan(project_dir)
-    except gp.GameplanError:
-        data = None
+    plans: dict = {}
+    ids = ws.list_ids(project_dir)
+    if not ids:
         hints.append("No gameplan in this project. `daedalus init` creates one.")
-    except json.JSONDecodeError as e:
-        data = None
-        findings.append(Finding("gameplan-unreadable", f"{_gameplan_rel(project_dir)} is not valid JSON: {e}"))
-
-    if data is not None:
-        findings += check_commits_after_gameplan(project_dir, settings["stale_commits"])
-        findings += check_phase_all_done(data)
-        findings += check_stale_tasks(data, settings["stale_task_days"], today=today)
-        findings += check_gameplan_ignored(project_dir)
+    several = len(ids) > 1
+    for wid in ids:
+        label = (lambda f, wid=wid: Finding(f.name, f"[{wid}] {f.message}")) if several else (lambda f: f)
+        try:
+            data = gp.load_gameplan(project_dir, wid)
+        except json.JSONDecodeError as e:
+            findings.append(label(Finding("gameplan-unreadable", f"{_gameplan_rel(project_dir, wid)} is not valid JSON: {e}")))
+            continue
+        plans[wid] = data
+        author = ws.owner(data, wid).get("git_author") if wid != ws.DEFAULT else None
+        found = check_commits_after_gameplan(project_dir, settings["stale_commits"], wid, author)
+        found += check_phase_all_done(data)
+        found += check_stale_tasks(data, settings["stale_task_days"], today=today)
+        found += check_gameplan_ignored(project_dir, wid)
+        findings += [label(f) for f in found]
+    findings += check_collisions(plans)
 
     edicts = load_edicts(project_dir)
     findings += check_edict_status(edicts)
     findings += check_duplicate_edicts(edicts)
-    if data is not None and edicts_enabled(project_dir):
-        findings += check_unreferenced_edicts(edicts, data)
+    if plans and edicts_enabled(project_dir):
+        findings += check_unreferenced_edicts(edicts, list(plans.values()))
 
     findings += check_project_map(project_dir)
     findings += check_empty_templates_read(project_dir, settings["stale_task_days"], today=today)

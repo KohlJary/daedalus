@@ -235,6 +235,20 @@ daedalus reconstruct check .daedalus/reconstruction/proposal-....json
 daedalus gameplan pending import .daedalus/reconstruction/proposal-....json
 ```
 
+**Workstreams** let several people or sessions plan in one repository without sharing a single
+active phase: each owner gets a committed plan in `.daedalus/gameplans/<id>.json`.
+
+```bash
+daedalus workstream new memory --kind session --author "memory-session" --use
+daedalus workstream list                             # every owner's active phase and next task
+daedalus gameplan -w ariadne show                    # any gameplan command, on any workstream
+daedalus workstream claim src/daedalus/ariadne/      # paths you intend to change
+```
+
+The brief leads with your workstream and lists the others in a line each. `doctor` checks drift
+per owner (counting only that owner's commits) and reports collisions: two workstreams with open
+work on the same edict, or overlapping claims. Collisions are findings, never locks.
+
 `init` and `hydrate` register the session-start hook (`--no-hooks` to skip; `hydrate --dry-run`
 lists it). They merge into existing `.claude/settings.json` and never overwrite a file they can't parse.
 

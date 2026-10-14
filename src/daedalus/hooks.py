@@ -93,6 +93,29 @@ def session_start_brief(project_dir: Path) -> str:
     elif data is not None:
         lines.append("**Phase:** none active (`daedalus gameplan phase activate <id>`)")
 
+    # Other workstreams, one line each (edict 0008)
+    from . import workstreams as ws
+
+    mine = ws.current(project_dir)
+    others = []
+    for w in ws.list_ids(project_dir):
+        if w == mine:
+            continue
+        try:
+            if ws.load(project_dir, w).get("activePhase"):   # idle workstreams would only be noise
+                others.append(w)
+        except (ws.WorkstreamError, json.JSONDecodeError):
+            others.append(w)
+    if data is not None and mine != ws.DEFAULT:
+        lines[1:1] = [f"**Workstream:** {mine}"]
+    if others:
+        lines.append("**Other workstreams:**")
+        for wid in others[:6]:
+            try:
+                lines.append("- " + ws.summary_line(ws.load(project_dir, wid), wid))
+            except (ws.WorkstreamError, json.JSONDecodeError):
+                lines.append(f"- {wid}: unreadable")
+
     roadmap = _roadmap_in_progress(project_dir)
     if roadmap:
         lines.append("**Roadmap in progress:** " + "; ".join(roadmap[:3]))
