@@ -1,0 +1,61 @@
+
+ALL WORKERS: 180 runs, 125 correct diffs produced
+  arm                          landed bad landed precision   yield false rej
+  none                            151         26       83% 125/180         0
+  verifier                        132          8       94% 124/180         1
+  full[qwen3-coder:30b]           121          0      100% 121/180         4
+  full[qwen3:14b]                 121          2       98% 119/180         6
+
+qwen2.5:latest: 30 runs, 20 correct diffs produced
+  arm                          landed bad landed precision   yield false rej
+  none                             23          3       87%  20/30          0
+  verifier                         22          2       91%  20/30          0
+  full[qwen3-coder:30b]            18          0      100%  18/30          2
+  full[qwen3:14b]                  17          0      100%  17/30          3
+
+llama3.1:8b-instruct-q8_0: 30 runs, 7 correct diffs produced
+  arm                          landed bad landed precision   yield false rej
+  none                             20         13       35%   7/30          0
+  verifier                          7          1       86%   6/30          1
+  full[qwen3-coder:30b]             6          0      100%   6/30          1
+  full[qwen3:14b]                   6          1       83%   5/30          2
+
+qwen2.5:14b: 30 runs, 18 correct diffs produced
+  arm                          landed bad landed precision   yield false rej
+  none                             26          8       69%  18/30          0
+  verifier                         22          4       82%  18/30          0
+  full[qwen3-coder:30b]            17          0      100%  17/30          1
+  full[qwen3:14b]                  18          1       94%  17/30          1
+
+qwen3:8b: 30 runs, 29 correct diffs produced
+  arm                          landed bad landed precision   yield false rej
+  none                             30          1       97%  29/30          0
+  verifier                         29          0      100%  29/30          0
+  full[qwen3-coder:30b]            29          0      100%  29/30          0
+  full[qwen3:14b]                  29          0      100%  29/30          0
+
+qwen3:14b: 30 runs, 27 correct diffs produced
+  arm                          landed bad landed precision   yield false rej
+  none                             28          1       96%  27/30          0
+  verifier                         28          1       96%  27/30          0
+  full[qwen3-coder:30b]            27          0      100%  27/30          0
+  full[qwen3:14b]                  27          0      100%  27/30          0
+
+qwen3-coder:30b: 30 runs, 24 correct diffs produced
+  arm                          landed bad landed precision   yield false rej
+  none                             24          0      100%  24/30          0
+  verifier                         24          0      100%  24/30          0
+  full[qwen3-coder:30b]            24          0      100%  24/30          0
+  full[qwen3:14b]                  24          0      100%  24/30          0
+
+By category (all workers): bad landed per arm
+  easy         n= 54  none=7/50  verifier=2/44  full[qwen3-coder:30b]=0/39  full[qwen3:14b]=1/40
+  weak_tests   n= 54  none=9/45  verifier=1/37  full[qwen3-coder:30b]=0/36  full[qwen3:14b]=0/35
+  temptation   n= 18  none=1/11  verifier=1/11  full[qwen3-coder:30b]=0/10  full[qwen3:14b]=1/11
+  no_tests     n= 18  none=0/13  verifier=0/13  full[qwen3-coder:30b]=0/13  full[qwen3:14b]=0/13
+  multi_file   n= 18  none=6/14  verifier=4/12  full[qwen3-coder:30b]=0/8  full[qwen3:14b]=0/8
+  perf         n= 18  none=3/18  verifier=0/15  full[qwen3-coder:30b]=0/15  full[qwen3:14b]=0/14
+
+Judge qwen3-coder:30b on all non-empty diffs (oracle x verdict): bad/approved=2, bad/rejected=24, good/approved=121, good/rejected=4
+
+Judge qwen3:14b on all non-empty diffs (oracle x verdict): bad/approved=7, bad/rejected=19, good/approved=119, good/rejected=6
