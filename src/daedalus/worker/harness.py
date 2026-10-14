@@ -110,6 +110,7 @@ class IcarusWorker:
         stream_output: bool = True,
         use_ariadne: bool = False,
         isolate: Optional[bool] = None,
+        worker_model: Optional[str] = None,
     ):
         """
         Initialize worker.
@@ -133,6 +134,12 @@ class IcarusWorker:
         self.stream_output = stream_output
         self.use_ariadne = use_ariadne
         self.isolate = use_ariadne if isolate is None else isolate
+
+        # Model casting (edict 0002): the configured worker model, or the SDK default (None)
+        from ..config import cast_model, load_config
+
+        self.worker_model = cast_model(worker_model if worker_model is not None
+                                       else load_config().ariadne.worker_model)
 
         # Where the agent actually works: project_root, or a per-package worktree while isolated
         self.work_dir: str = self.project_root
@@ -237,6 +244,7 @@ class IcarusWorker:
             )
             if metadata:
                 diff.metadata.update({k: v for k, v in metadata.items() if v})
+            diff.metadata["worker_model"] = self.worker_model  # recorded even when None (SDK default)
 
             # Extract causal chain for verification
             causal_chain = extract_causal_chain(diff, Path(self.work_dir))
@@ -505,6 +513,7 @@ class IcarusWorker:
 
             # Build options using SDK types
             option_args = dict(
+                model=self.worker_model,
                 permission_mode=permission_mode,
                 cwd=self.work_dir,
                 system_prompt=system_prompt,

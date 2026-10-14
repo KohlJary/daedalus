@@ -58,6 +58,7 @@ class SemanticReviewResult:
     reasoning: str
     reviewer: str  # "llm-judge" or a human identifier
     reviewed_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    model: Optional[str] = None  # the judge's model (edict 0002); None for the SDK default or a human
 
     def to_dict(self) -> dict:
         return {
@@ -66,6 +67,7 @@ class SemanticReviewResult:
             "reasoning": self.reasoning,
             "reviewer": self.reviewer,
             "reviewed_at": self.reviewed_at,
+            "model": self.model,
         }
 
 
@@ -143,7 +145,9 @@ class LLMJudge:
     """
 
     def __init__(self, model: Optional[str] = None):
-        self.model = model
+        from ..config import cast_model
+
+        self.model = cast_model(model)
 
     def review(
         self,
@@ -158,6 +162,7 @@ class LLMJudge:
                 reasoning="claude-agent-sdk not installed; cannot run the LLM judge. "
                           "Routed to human review rather than approved unverified.",
                 reviewer="llm-judge",
+                model=self.model,
             )
 
         package = diff.metadata.get("package") if isinstance(diff.metadata, dict) else None
@@ -177,6 +182,7 @@ class LLMJudge:
                 reasoning=f"LLM judge call failed ({e}); routed to human review rather than "
                           "approved unverified.",
                 reviewer="llm-judge",
+                model=self.model,
             )
 
         return SemanticReviewResult(
@@ -184,6 +190,7 @@ class LLMJudge:
             verdict=_parse_verdict(response_text),
             reasoning=response_text.strip(),
             reviewer="llm-judge",
+            model=self.model,
         )
 
     def _run_query(self, prompt: str) -> str:

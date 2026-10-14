@@ -134,7 +134,8 @@ class AriadneOrchestrator:
         self.conflict_detector = ConflictDetector()
         self.verifier = CausalSliceVerifier(repo_path)
         self.autonomy = autonomy
-        self.semantic_reviewer = semantic_reviewer or LLMJudge()
+        # Model casting (edict 0002): the judge plays the configured model, or the SDK default
+        self.semantic_reviewer = semantic_reviewer or LLMJudge(model=load_config().ariadne.judge_model)
         self.require_approval_tags = require_approval_tags or [
             "breaking_change", "security", "architecture", "database",
         ]
@@ -761,9 +762,12 @@ def main():
             else:
                 print(f"diff {diff.id} ({diff.work_id})")
                 print(f"description: {diff.description}")
+                print(f"worker model: {diff.metadata.get('worker_model') or '(SDK default)'}")
                 if diff.semantic_review:
-                    print(f"judge verdict: {diff.semantic_review.get('verdict')}")
-                    print(f"judge reasoning: {diff.semantic_review.get('reasoning')}")
+                    review = diff.semantic_review
+                    print(f"judge verdict: {review.get('verdict')}")
+                    print(f"judged by: {review.get('reviewer')}, model {review.get('model') or '(SDK default)'}")
+                    print(f"judge reasoning: {review.get('reasoning')}")
                 print("---")
                 print(diff.content)
 

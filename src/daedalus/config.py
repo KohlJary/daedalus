@@ -42,6 +42,9 @@ class AriadneConfig:
     ])
     max_parallel_workers: int = 4
     theseus_analysis: bool = True  # Run Theseus before planning
+    # Model casting (edict 0002): None means the SDK default. "none" or "default" also unset.
+    worker_model: Optional[str] = None
+    judge_model: Optional[str] = None
 
 
 @dataclass
@@ -147,6 +150,13 @@ def get_git_user_email() -> Optional[str]:
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         pass
     return None
+
+
+def cast_model(value: Optional[str]) -> Optional[str]:
+    """A configured model name, or None for the SDK default ("", "none", "default" also mean default)."""
+    if value is None or str(value).strip().lower() in ("", "none", "default"):
+        return None
+    return str(value).strip()
 
 
 def get_daedalus_email(config: Optional[DaedalusConfig] = None) -> str:
