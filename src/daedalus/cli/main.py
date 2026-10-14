@@ -332,6 +332,15 @@ def workstream_list():
     list_workstreams(Path.cwd())
 
 
+@workstream.command("others")
+def workstream_others():
+    """Print the other workstreams sharing this project (empty when you're working alone)."""
+    from .. import workstreams as ws
+
+    for wid in ws.others(Path.cwd(), ws.current(Path.cwd())):
+        click.echo(wid)
+
+
 @workstream.command("use")
 @click.argument("workstream_id")
 def workstream_use(workstream_id):
