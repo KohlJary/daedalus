@@ -56,6 +56,14 @@ default inside the next session instead of on separate API credit.
   re-reads; `denied_by_classifier` and `rejected_by_user`; user
   interruptions; subagent count and their token totals; and the event UUIDs
   behind each count, so later reflection can cite them.
+- Each counted event also carries `details`: the tool, what was called (the command or path),
+  the first 160 characters of the error, and the exit code for Bash. Anything that looks like a
+  credential (API keys, tokens, bearer headers, passwords) is redacted before it is stored.
+  Details stay on the machine with the rest of the digest, and nothing copies them into a
+  tracked file except through a proposal the user applies.
+- Tool calls the user approved at a permission prompt (`permissionDecision.source` beginning
+  `user`) are counted as `approved_at_prompt`, labelled `inferred`: the evidence for permission
+  proposals.
 - Token totals count each API message once, keyed by `message.id`. One
   message is written as several assistant events (up to five were observed),
   so summing per event overcounts.
@@ -320,6 +328,27 @@ Where the rules below differ from the shared rules above, these govern.
 - Thresholds, the half-life, the retry window and the cleanup warning window
   live in config with the defaults above.
 
+### Experiment log
+- Reflection is an experiment, and is kept as one: every run and its outcome is recorded so it
+  can be judged later, including by the benchmark.
+- `.daedalus/reflection/experiment-log.jsonl` is append-only. Records are written by the
+  deterministic commands, never by a model:
+  - a **run**, by `reflect done`: level, period, runner, the model IDs of delphi and Momus,
+    sessions covered, the tokens the run spent (as the session reports them, passed to `done`),
+    findings by type, proposals by target, label and verdict, and the check iterations;
+  - a **resolution**, by `reflect pending apply` and `drop`: the report and proposal, its target,
+    label and verdict, applied or dropped, and how many days it waited;
+  - an **arm assignment**, by `reflect arm`: session, mode and arm;
+  - a **model change** summary, by `reflect done` at the monthly level: counts of adds, affirms,
+    revisions, retirements, aspirations, user edits and forgets that month.
+- The log holds no free text: no transcript content, details, findings, proposal text or model
+  observations. Counts, IDs, labels, verdicts, model IDs and dates only. So it can be shared.
+- `daedalus reflect log` prints a summary (runs, acceptance rate by target and label, verdict
+  rates, tokens per run, arms). `daedalus reflect log export <path>` copies the log to a path;
+  committing that copy is the user's choice.
+- In this repository, the narrative of each notable run (what was learned, what changed because
+  of it) is kept by hand in `docs/experiments/reflection.md`, alongside the exported log.
+
 ### Windows
 - Everything in this edict works on Windows as well as Linux and macOS.
 - Claude Code's directory is `CLAUDE_CONFIG_DIR` when set, otherwise
@@ -417,6 +446,13 @@ Where the rules below differ from the shared rules above, these govern.
   test imports every reflection module with `fcntl` unavailable.
 - With `machine.employer` true or unset, setting the runner to `local` or
   `headless` is refused; with it `false`, both are allowed.
+- Digest details redact a fixture's API key, bearer token and password (tested), and
+  `approved_at_prompt` matches a fixture's real prompt approvals by hand count.
+- `reflect done`, `pending apply` and `drop`, and `arm` each append one record to the experiment
+  log; the log's previous bytes are a prefix of its new contents; and every field of every record
+  is from an allowlist of non-text fields (tested by writing a run whose report and proposals
+  contain distinctive text, and finding none of it in the log). `reflect log export` writes a
+  copy and nothing else.
 - `doctor` reports undigested sessions inside the cleanup warning window,
   using `cleanupPeriodDays` from settings when present.
 - Scope: reflection on a fixture `work` project rejects a `personal`
@@ -484,3 +520,8 @@ Where the rules below differ from the shared rules above, these govern.
   writes the answer itself, without the user's approval; the record then
   shows whether behavior moves toward it. Aspirations bind nothing unless
   promoted to a stance, which the user applies.
+- 2026-10-14, requested by Kohl after the build: digests carry per-event `details` (with
+  secrets redacted) and count `approved_at_prompt`, both added during the build after delphi's
+  dry run found it couldn't say why anything failed or justify a permission proposal. And
+  reflection keeps an experiment log of runs, resolutions, arms and model changes, with no free
+  text, because it is an unusual feature and its record will be wanted later.
