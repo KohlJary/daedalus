@@ -37,6 +37,7 @@ SCREENS = {
     "config": "config:ConfigScreen",
     "sources": "sources:SourcesScreen",
     "reflection": "reflection:ReflectionScreen",
+    "dream": "dream:DreamScreen",
     "plugins": "plugins:PluginMenu",
 }
 
@@ -127,6 +128,7 @@ class DaedalusShell(App, inherit_bindings=False):
         ("w", "panel('story')", "Story"), ("c", "focus_claude", "Claude"), ("e", "panel('edicts')", "Edicts"),
         ("b", "panel('board')", "Board"), ("comma", "panel('config')", "Config"),
         ("R", "panel('reflection')", "Reflection"), ("S", "panel('sources')", "Sources"),
+        ("D", "panel('dream')", "Dream"),
         ("enter", "expand", "Expand"), ("question_mark", "explain", "Explain"),
         ("s", "send", "Send to Claude"), ("q", "quit", "Quit"), ("t", "theme", "Theme"),
         ("m", "plugins", "Plugins"),

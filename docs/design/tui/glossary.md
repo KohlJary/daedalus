@@ -151,6 +151,14 @@ the project's value wins. Tokens are never settings: they live in the system
 keyring and are never shown.
 *Lives in* `~/.config/daedalus/config.json` (yours) and `.daedalus/config.json` (this project's, not committed). *CLI:* `daedalus config --schema`, `daedalus config <key> <value>`
 
+## Dream
+A protected phase where Daedalus generates widely about where the project
+could go, judged only afterwards and only by you. Seeds come from what it
+already keeps; a cold waking pass picks three to five ideas. Every dream is
+labelled speculative: not a proposal, not evidence, not reviewed. Picks reach
+the roadmap only through the `dream` source, as proposals you apply or drop.
+*Lives in* `.daedalus/dreams/` (gitignored). *CLI:* `daedalus dream show`, `daedalus dream log`
+
 ## A/B experiment
 Whether showing Daedalus its models at the start of a session helps. Each
 session is put in an arm, `on` (it sees the models) or `off`, chosen in code
