@@ -2,13 +2,18 @@
 """
 generate.py: deterministic task generator for the Ophanic perception experiment (see DESIGN.md).
 
-    python generate.py --seed 1015 [--per-cell 10] [--out tasks]
+    python generate.py --seed 5016 [--per-cell 10] [--out tasks] [--harness 2]
 
 For each structure type (layout, graph, containment) and size (small, medium, large) it makes
 `--per-cell` structures. Each structure carries:
 - `data`: the generator's own data (the `json` encoding is exactly this, indented);
-- `encodings`: ophanic@100, ophanic@60, ophanic-noise@100, ophanic-noise@60, prose, json, list;
+- `encodings`: ophanic@100, ophanic@60, ophanic-noise@100, ophanic-noise@60, prose, json, list (and, from harness 2,
+  json-compact);
 - `questions`: one per question kind for the type, each with its gold answer and answer type.
+
+`--harness 1` reproduces the pilot's tasks byte for byte. `--harness 2` (the default) implements DESIGN.md's
+proposed amendments: layouts state character widths instead of percentages in the text arms (A1), and the graph's
+aggregate question is "how many nodes have no incoming edge" (A2). The prompt framing (A3) is in `build_prompt`.
 
 Everything comes from `random.Random("<seed>:<type>:<size>:<i>")`, so the same seed gives the same file.
 Every clean ophanic diagram must pass the Ophanic lint (oph_lint.py); every noisy one must fail it with
@@ -35,6 +40,8 @@ SIZES = {"small": (5, 8), "medium": (15, 25), "large": (40, 60)}
 WIDTHS = (100, 60)
 EDGE_LABELS = ("needs", "calls", "feeds", "extends")
 INSTRUCTION = "Answer with only the answer."
+HARNESS = 2          # the default task format; 1 is the pilot's
+PROPORTION_WIDTH = 60  # harness 2: the text arms state widths from the 60-column drawing (span 59, not 100)
 
 LAYOUT_NAMES = """Header Footer Sidebar Nav Search Logo Menu Tabs Toolbar Status Editor Preview Console
 Inbox Profile Avatar Badge Cart Filter Map Legend Chart Table Log Help Alerts Notes Calendar Tasks Files
@@ -62,6 +69,11 @@ assert not {n.lower() for n in GROUP_NAMES} & {n.lower() for n in ITEM_NAMES}
 ARM_CHAR = {frozenset("LR"): "─", frozenset("UD"): "│", frozenset("RD"): "┌", frozenset("LD"): "┐",
             frozenset("RU"): "└", frozenset("LU"): "┘", frozenset("UDR"): "├", frozenset("UDL"): "┤",
             frozenset("LRD"): "┬", frozenset("LRU"): "┴", frozenset("UDLR"): "┼"}
+
+
+# Seeds (README, "Seeds"): never reuse one between a pilot and a confirmatory run
+RESERVED_PAST = {1015: "pilot 1", 99001: "tests", 5016: "pilot 2"}
+CONFIRMATORY_SEEDS = (2000, 2999)   # reserved for confirmatory runs; no pilot or test uses them
 
 
 class HarnessBug(Exception):
@@ -160,6 +172,44 @@ def ordered(node):
         out["rows"] = [ordered(c) for c in node["rows"]]
     else:
         out["columns"] = [ordered(c) for c in node["columns"]]
+    return out
+
+
+def node_spans(root, W):
+    """Border-to-border width of every node at diagram width W, with place_layout's arithmetic: {id(node): span}."""
+    spans = {}
+
+    def go(node, x0, x1):
+        spans[id(node)] = x1 - x0
+        if "panel" in node:
+            return
+        if "rows" in node:
+            for c in node["rows"]:
+                go(c, x0, x1)
+            return
+        cum, px = 0, x0
+        for i, c in enumerate(node["columns"]):
+            cum += c["share"]
+            nx = x1 if i == len(node["columns"]) - 1 else x0 + round(Fraction(cum, 100) * (x1 - x0))
+            go(c, px, nx)
+            px = nx
+    go(root, 0, W - 1)
+    return spans
+
+
+def ordered_widths(node, spans, in_columns=False):
+    """Harness 2's layout data: like ordered(), but a column and a set of columns carry "width" (characters,
+    border to border, at PROPORTION_WIDTH) instead of a percentage "share". A column's share of its row is its
+    width over the width of the columns node holding it."""
+    out = {}
+    if in_columns or "columns" in node:
+        out["width"] = spans[id(node)]
+    if "panel" in node:
+        out["panel"] = node["panel"]
+    elif "rows" in node:
+        out["rows"] = [ordered_widths(c, spans) for c in node["rows"]]
+    else:
+        out["columns"] = [ordered_widths(c, spans, True) for c in node["columns"]]
     return out
 
 
@@ -283,7 +333,7 @@ def layout_below(root, parent, leaf, rect_sets):
         cur = p
 
 
-def make_layout(rng, n):
+def make_layout(rng, n, harness=HARNESS):
     for _ in range(400):
         root = {"rows": build_layout(rng, n, "rows", 0)["rows"]}
         if not assign_shares(rng, root, 59):
@@ -320,7 +370,7 @@ def make_layout(rng, n):
         x, s = rng.choice(prop)
         qs.append(q("proportion", "share", f"What percentage of its row's width does {x} take up? Answer with a "
                     f"number.", s, "percent", x=x))
-        data = ordered(root)
+        data = ordered(root) if harness == 1 else ordered_widths(root, node_spans(root, PROPORTION_WIDTH))
         return data, drawings, qs, len(leaves(root))
     raise HarnessBug("could not draw a layout in 400 tries")
 
@@ -328,13 +378,20 @@ def make_layout(rng, n):
 def layout_prose(data):
     out = [f"The screen is split into {len(data['rows'])} rows, top to bottom."]
 
+    def size(c, total):
+        if "share" in c:
+            return f"{c['share']}% of the row's width"
+        return f"{c['width']} of the row's {total} characters"
+
     def describe(node, label):
         if "panel" in node:
             out.append(f"{label} is the {node['panel']} panel, at full width.")
         elif "columns" in node:
-            parts = [f"{c['panel']} ({c['share']}% of the row's width)" if "panel" in c
-                     else f"column {j} ({c['share']}% of the row's width)" for j, c in enumerate(node["columns"], 1)]
-            out.append(f"{label} is split into {len(parts)} columns, left to right: {oxford(parts)}.")
+            total = node.get("width")
+            parts = [f"{c['panel']} ({size(c, total)})" if "panel" in c
+                     else f"column {j} ({size(c, total)})" for j, c in enumerate(node["columns"], 1)]
+            wide = f", {total} characters wide in all" if total is not None else ""
+            out.append(f"{label} is split into {len(parts)} columns, left to right{wide}: {oxford(parts)}.")
             for j, c in enumerate(node["columns"], 1):
                 if "panel" not in c:
                     describe(c, f"{label}, column {j}")
@@ -353,9 +410,14 @@ def layout_prose(data):
 def layout_list(data):
     out = ["- screen: rows, top to bottom"]
 
-    def go(node, label, depth):
+    def go(node, label, depth, total=None):
         pad = "  " * depth
-        share = f": {node['share']}%" if "share" in node else ""
+        if "share" in node:
+            share = f": {node['share']}%"
+        elif total is not None:
+            share = f": {node['width']} of {total} characters"
+        else:
+            share = ""
         if "panel" in node:
             out.append(f"{pad}- {node['panel']}{share}")
         elif "rows" in node:
@@ -363,9 +425,10 @@ def layout_list(data):
             for j, c in enumerate(node["rows"], 1):
                 go(c, f"row {j}", depth + 1)
         else:
-            out.append(f"{pad}- {label}{share}, columns, left to right")
+            wide = f", {node['width']} characters wide" if "width" in node and total is None else ""
+            out.append(f"{pad}- {label}{share}, columns, left to right{wide}")
             for j, c in enumerate(node["columns"], 1):
-                go(c, f"column {j}", depth + 1)
+                go(c, f"column {j}", depth + 1, node.get("width"))
 
     for j, row in enumerate(data["rows"], 1):
         go(row, f"row {j}", 1)
@@ -478,7 +541,7 @@ def draw_graph(data, W):
     return lines, after, {"drawn": len(drawn), "listed": len(listed), "bands": nbands}
 
 
-def make_graph(rng, n):
+def make_graph(rng, n, harness=HARNESS):
     for _ in range(400):
         L = rng.randint(3, 4) if n <= 8 else rng.randint(4, 5) if n <= 25 else rng.randint(6, 8)
         sizes = spread(rng, n, L)
@@ -524,8 +587,13 @@ def make_graph(rng, n):
         qs.append(q("path", "path_length", f"How many edges are on the shortest directed path from {a} to {b}? "
                     f"Answer with a number.", dist[a][b], "int", a=a, b=b))
         sources = sorted(x for x in order if layer[x] == 0)
-        qs.append(q("aggregate", "no_dependents", "Which nodes have no dependents, that is, no edge pointing to "
-                    "them? List them all, separated by commas.", sources, "set"))
+        if harness == 1:
+            qs.append(q("aggregate", "no_dependents", "Which nodes have no dependents, that is, no edge pointing to "
+                        "them? List them all, separated by commas.", sources, "set"))
+        else:
+            # A2: one number, not a list the model can loop on
+            qs.append(q("aggregate", "no_incoming", "How many nodes have no incoming edge, that is, no edge pointing "
+                        "to them? Answer with a number.", len(sources), "int"))
         drawings = {W: draw_graph(data, W) for W in WIDTHS}
         return data, drawings, qs, n
     raise HarnessBug("could not make a graph in 400 tries")
@@ -737,15 +805,15 @@ def lint(text):
     return oph_lint.check_text("generated.oph", text)
 
 
-def make_structure(seed, typ, size, i):
+def make_structure(seed, typ, size, i, harness=HARNESS):
     rng = random.Random(f"{seed}:{typ}:{size}:{i}")
     n = rng.randint(*SIZES[size])
     if typ == "layout":
-        data, drawings, qs, count = make_layout(rng, n)
+        data, drawings, qs, count = make_layout(rng, n, harness)
         drawn = {W: (rows, notes, {}) for W, (rows, notes) in drawings.items()}
         prose, lst = layout_prose(data), layout_list(data)
     elif typ == "graph":
-        data, drawn, qs, count = make_graph(rng, n)
+        data, drawn, qs, count = make_graph(rng, n, harness)
         prose, lst = graph_prose(data), graph_list(data)
     else:
         data, drawn, qs, count = make_containment(rng, n)
@@ -770,18 +838,107 @@ def make_structure(seed, typ, size, i):
     enc["prose"] = prose
     enc["json"] = json.dumps(data, indent=2, ensure_ascii=False)
     enc["list"] = lst
+    if harness >= 2:
+        enc["json-compact"] = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
     for k, qq in enumerate(qs):
         qq["id"] = f"q{k}"
-    return {"id": sid, "seed": seed, "type": typ, "size": size, "index": i, "elements": count,
-            "data": data, "encodings": enc, "draw_info": meta, "questions": qs}
+    out = {"id": sid, "seed": seed, "type": typ, "size": size, "index": i, "elements": count,
+           "data": data, "encodings": enc, "draw_info": meta, "questions": qs}
+    if harness >= 2:
+        out["harness"] = harness
+    return out
 
 
 def prompt(encoding_text, question_text):
+    """The pilot's prompt: the encoding, the question, the instruction. No framing, no fence."""
     return f"{encoding_text}\n\n{question_text}\n{INSTRUCTION}"
 
 
-def generate(seed, per_cell):
-    return [make_structure(seed, t, s, i) for t in TYPES for s in SIZES for i in range(per_cell)]
+# ---------------------------------------------------------------------------------------------------------
+# Framing (A3): one neutral sentence per arm saying what the structure is and how to read it
+# ---------------------------------------------------------------------------------------------------------
+
+FRAMING = {
+    ("ophanic", "layout"): "The diagram below is a screen layout drawn with box-drawing characters: each box is a "
+        "panel labelled with its name, and a box's width in characters, border to border, measured against the "
+        "width of the row it sits in gives its share of that row; a label cut short with … is spelled out in a "
+        "note under the diagram.",
+    ("ophanic", "graph"): "The diagram below is a directed graph drawn with box-drawing characters: each box is a "
+        "node, an arrow such as ─█R01─▶ is an edge from the box on its left to the box on its right, the legend "
+        "under the diagram gives each slug's edge label, and edges not drawn as arrows are listed under it as "
+        "note: A ─▶ B (label).",
+    ("ophanic", "containment"): "The diagram below shows groups drawn with box-drawing characters: each box is a "
+        "group with its name above the divider and its items below it, a box inside a box is a subgroup, and an "
+        "item drawn in two boxes belongs to both groups.",
+    ("prose", "layout"): "The text below describes a screen layout of nested rows and columns in sentences, giving "
+        "each column's width in characters and the width of the row it divides.",
+    ("prose", "graph"): "The text below describes a directed graph in sentences: it names the nodes, then states "
+        "each edge as \"A label B\", an edge from A to B.",
+    ("prose", "containment"): "The text below describes groups and the items they hold in sentences, including "
+        "subgroups inside groups.",
+    ("json", "layout"): "The JSON below describes a screen layout: \"rows\" run top to bottom, \"columns\" run "
+        "left to right, each panel is named, and \"width\" is a width in characters, so a column's share of its "
+        "row is its width over the width of the columns it belongs to.",
+    ("json", "graph"): "The JSON below describes a directed graph: a list of nodes, and a list of edges, each from "
+        "one node to another with a label.",
+    ("json", "containment"): "The JSON below describes groups: each group has a name, the items it holds directly, "
+        "and any subgroups.",
+    ("list", "layout"): "The outline below describes a screen layout: indentation shows nesting, rows run top to "
+        "bottom and columns left to right, and each column's width is given in characters out of its row's width.",
+    ("list", "graph"): "The list below describes a directed graph: its nodes, then its edges, each written "
+        "A -> B (label) for an edge from A to B.",
+    ("list", "containment"): "The outline below describes groups: an entry marked (group) is a group, and the "
+        "entries indented under it are what it holds.",
+}
+# The pilot's tasks (harness 1) state shares as percentages in the text arms
+FRAMING_V1_LAYOUT = {
+    "prose": "The text below describes a screen layout of nested rows and columns in sentences, giving each "
+        "column's share of its row as a percentage.",
+    "json": "The JSON below describes a screen layout: \"rows\" run top to bottom, \"columns\" run left to right, "
+        "each panel is named, and \"share\" is a column's percentage of its row's width.",
+    "list": "The outline below describes a screen layout: indentation shows nesting, rows run top to bottom and "
+        "columns left to right, and each column's share of its row is given as a percentage.",
+}
+MODIFIERS = ("fenced", "unframed")
+
+
+def parse_arm(arm: str) -> tuple[str, set[str]]:
+    """'ophanic@100+fenced' -> ('ophanic@100', {'fenced'}). Modifiers: fenced (ophanic only), unframed."""
+    base, *mods = arm.split("+")
+    bad = set(mods) - set(MODIFIERS)
+    if bad:
+        raise ValueError(f"unknown arm modifier(s) {sorted(bad)} in {arm!r}")
+    if "fenced" in mods and not base.startswith("ophanic"):
+        raise ValueError(f"fenced applies to ophanic arms only, not {arm!r}")
+    return base, set(mods)
+
+
+def family(base: str) -> str:
+    return "ophanic" if base.startswith("ophanic") else "json" if base.startswith("json") else base
+
+
+def framing_for(task: dict, base: str) -> str:
+    fam = family(base)
+    if task["type"] == "layout" and fam != "ophanic" and task.get("harness", 1) == 1:
+        return FRAMING_V1_LAYOUT[fam]
+    return FRAMING[(fam, task["type"])]
+
+
+def build_prompt(task: dict, arm: str, question_text: str, framing: bool = True) -> str:
+    """The prompt for one call. With framing (A3) it starts with the arm's framing sentence; `+fenced` wraps an
+    ophanic diagram in a ``` fence; `+unframed` drops the framing for that arm. Unframed and unfenced, this is
+    exactly the pilot's prompt()."""
+    base, mods = parse_arm(arm)
+    text = task["encodings"][base]
+    if "fenced" in mods:
+        text = f"```\n{text}\n```"
+    if framing and "unframed" not in mods:
+        return f"{framing_for(task, base)}\n\n{text}\n\n{question_text}\n{INSTRUCTION}"
+    return prompt(text, question_text)
+
+
+def generate(seed, per_cell, harness=HARNESS):
+    return [make_structure(seed, t, s, i, harness) for t in TYPES for s in SIZES for i in range(per_cell)]
 
 
 def main(argv=None):
@@ -789,8 +946,12 @@ def main(argv=None):
     ap.add_argument("--seed", type=int, required=True)
     ap.add_argument("--per-cell", type=int, default=10)
     ap.add_argument("--out", default=str(HERE / "tasks"))
+    ap.add_argument("--harness", type=int, choices=[1, 2], default=HARNESS,
+                    help="task format: 1 reproduces the pilot's tasks, 2 implements the proposed amendments")
     a = ap.parse_args(argv)
-    tasks = generate(a.seed, a.per_cell)
+    if CONFIRMATORY_SEEDS[0] <= a.seed <= CONFIRMATORY_SEEDS[1]:
+        print(f"note: seed {a.seed} is in the range reserved for confirmatory runs (README, Seeds)", file=sys.stderr)
+    tasks = generate(a.seed, a.per_cell, a.harness)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"{a.seed}.jsonl"
