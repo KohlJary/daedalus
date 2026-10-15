@@ -361,3 +361,10 @@ Whether dreaming earns its slot is an open question, so it is recorded like 0010
   gives the same seeds, and the recency penalty that varies the top seed would otherwise make reordered material look
   independent. A recurring theme on unchanged project state is therefore not elevated; it needs new material or an
   owner's theme. `dream keep` refuses to overwrite an existing file unless `--force`. Made under Kohl's overnight grant.
+- **2026-10-15 (later), at Kohl's request:** the first dream moved out of git into `.daedalus/dreams/2026-10-15/`, as
+  a dream in this edict's own format (39 ideas, 5 picks, marked hand-made and outside the A/B), so its ideas and
+  picks have IDs. What's built from it is tracked the way this edict intends: its picks came in through the `dream`
+  source as roadmap `idea` items, whose status says built (`done`) or in review; an idea built without being a pick
+  (idea 25) has its own item citing it. The acceptance criterion about keeping `docs/dreams/2026-10-15.md` is
+  superseded by this.
+
