@@ -540,4 +540,85 @@ def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Fi
         hints += [f"{f.name}: {f.message}" for f in check_install()]
     findings += check_project_map(project_dir)
     findings += check_empty_templates_read(project_dir, settings["stale_task_days"], today=today)
+    findings += check_sources(project_dir, plans)
     return findings, hints
+
+
+# ---------- sources (edict 0011) ----------
+#
+# From the last sync's state, the roadmap index and the plans: no network, no plugin imports, so the
+# session-start hook can run them too.
+
+
+def check_sources(project_dir: Path, plans: Optional[dict] = None) -> list[Finding]:
+    """A source that couldn't authenticate or reach its server at its last sync; an item the tracker has
+    closed that is still open here; a done task whose write-back is neither pending nor recorded."""
+    from . import roadmap
+    from .sources import state as source_state
+
+    project_dir = Path(project_dir)
+    states = source_state.load(project_dir)
+    findings: list[Finding] = []
+    for name, entry in sorted(states.items()):
+        health = entry.get("health")
+        if health == "auth-failed":
+            findings.append(Finding("source-auth-failed", f"Source {name} couldn't authenticate at its last sync "
+                                    f"({entry.get('last_attempt', '?')}): {entry.get('error', '')} "
+                                    f"Fix the token (`daedalus source login {name}`), then `daedalus source sync {name}`."))
+        elif health == "unreachable":
+            findings.append(Finding("source-unreachable", f"Source {name} couldn't be reached at its last sync "
+                                    f"({entry.get('last_attempt', '?')}): {entry.get('error', '')}"))
+    try:
+        index = roadmap.load_index(project_dir)
+    except roadmap.RoadmapError:
+        return findings
+    items = {i.get("id"): i for i in index.get("items", [])}
+    for item in index.get("items", []):
+        if not roadmap.is_sourced(item):
+            continue
+        seen = (item.get("synced") or {}).get("fields", {})
+        if seen.get("status") == "done" and item.get("status") != "done":
+            o = roadmap.origin(item)
+            findings.append(Finding("source-drift", f"Roadmap item {item.get('id')} is closed in {o['source']} "
+                                    f"({o.get('external_id')}) but {item.get('status')} here. Apply its pending "
+                                    "update, or mark it done (`daedalus roadmap show` it first)."))
+
+    if plans is None:
+        from . import workstreams as ws
+
+        plans = {}
+        for wid in ws.list_ids(project_dir):
+            try:
+                plans[wid] = gp.load_gameplan(project_dir, wid)
+            except gp.GameplanError:
+                continue
+    writable = {n for n, e in states.items() if e.get("supports_write_back")}
+    if not writable:
+        return findings
+    pending_keys = set()
+    for wid in plans:
+        path = gp.GameplanPaths.for_project(project_dir, wid).pending_file
+        try:
+            props = json.loads(path.read_text(encoding="utf-8")).get("proposals", []) if path.exists() else []
+        except (OSError, ValueError, AttributeError):
+            props = []
+        for p in props:
+            if p.get("kind") == "write-back":
+                pending_keys.add(p.get("task"))
+    for wid, data in plans.items():
+        for _, task in roadmap.all_tasks(data):
+            if task.get("status") != "done" or task.get("writeBack") or task.get("id") in pending_keys:
+                continue
+            origin = task.get("origin") if isinstance(task.get("origin"), dict) else None
+            item = items.get(task.get("roadmapItem"))
+            if not origin or origin.get("source") in (None, "local"):
+                if item is None or not roadmap.is_sourced(item) or (item.get("synced") or {}).get("write_back"):
+                    continue
+                origin = roadmap.origin(item)
+            if origin["source"] not in writable:
+                continue
+            findings.append(Finding("source-write-back-missing", f"[{wid}] Task {task.get('id')} is done, but nothing "
+                                    f"was written back to {origin['source']} {origin.get('external_id')} and no "
+                                    "write-back is pending or recorded. Set it done again with "
+                                    "`daedalus gameplan task status` to propose one, then apply or drop it."))
+    return findings

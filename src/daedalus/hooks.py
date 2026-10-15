@@ -116,6 +116,13 @@ def session_start_brief(project_dir: Path) -> str:
     if roadmap:
         lines.append("**Roadmap in progress:** " + "; ".join(roadmap[:3]))
 
+    # Sources (edict 0011): the last sync times from the state file. The hook never touches the network.
+    from .sources.state import brief_line
+
+    synced = brief_line(project_dir)
+    if synced:
+        lines.append(f"**{synced.split(':', 1)[0]}:**{synced.split(':', 1)[1]}")
+
     findings, _ = run_checks(project_dir)
     if findings:
         lines.append("**Drift (daedalus doctor):**")

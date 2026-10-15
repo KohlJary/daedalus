@@ -26,7 +26,7 @@ claude        # the session opens with a brief: your active phase, next task, an
 - [Quick start](#quick-start)
 - [How a session works](#how-a-session-works)
 - [Memory that stays current](#memory-that-stays-current): gameplan, doctor, reconstruction, reflection
-- [Working with others](#working-with-others): workstreams, the agent board, edicts
+- [Working with others](#working-with-others): workstreams, the agent board, edicts, sources
 - [Ariadne: parallel workers (experimental)](#ariadne-parallel-workers-experimental)
 - [The cast](#the-cast): agents and skills
 - [Reference](#reference): commands, settings, files, the CLAUDE.md template
@@ -239,6 +239,36 @@ daedalus edict resolve-dissent 0007-daedalus --outcome overruled --note "..."   
 Off by default, so projects whose designs live in tickets aren't told to wait for them. [How edicts
 work](docs/edicts/README.md).
 
+### Sources: work from GitHub Issues, Azure DevOps, or a plugin
+
+The **roadmap** is intake: everything that's been asked for, whether typed in here or brought in from
+a tracker. The gameplan is the plan; its phases pull roadmap items in. A **source** connects a
+tracker to the two. A sync turns the tracker's items into pending proposals, so nothing changes the
+plan until you apply them. Finishing sourced work proposes a **write-back** (closing the issue,
+moving the work item), which calls the tracker only when you apply it.
+
+```bash
+daedalus source sync --dry-run          # first run: see what it would propose, write nothing
+daedalus source sync                    # proposals for the current workstream
+daedalus gameplan pending               # review; apply or drop each
+daedalus source status                  # last sync, item count, health
+daedalus roadmap show github-12         # an item, its origin, the phases and tasks that use it
+```
+
+- **GitHub Issues** works with no configuration in a repository whose `origin` is on GitHub: your open
+  issues there, using `gh`'s login or a token. Milestones become phases, issues roadmap items, sub-issues
+  tasks. Pull requests are left out; they're work already in flight.
+- **Azure DevOps** needs `sources.ado.organization` and `.project` (and `.team` for its current
+  iteration) and a personal access token: `daedalus source login ado`. Epics and Features become
+  phases, stories and bugs roadmap items, Tasks tasks. **Unverified:** tested only against
+  hand-written fixtures until it has been run live.
+- **When an item changed both here and in the tracker** since the last sync, `sources.<name>.on_conflict`
+  decides: `propose` (default), `source` (take theirs) or `local` (keep ours).
+- **Tokens never go in config**: they come from the system keyring, an environment variable named by
+  `sources.<name>.token_env`, or (GitHub) `gh auth token`.
+- **Another tracker** is a plugin: a `Source` subclass registered under the entry-point group
+  `daedalus.sources`, with no change to Daedalus. See `src/daedalus/sources/base.py`.
+
 ## Ariadne: parallel workers (experimental)
 
 Ariadne runs Icarus workers in parallel and holds the thread: workers submit diffs instead of
@@ -299,11 +329,12 @@ The pieces are named after the Labyrinth myth; here is what each does.
 | `daedalus workstream new \| list \| others \| use \| show \| claim` | Workstreams |
 | `daedalus board threads \| read \| open \| draft \| check \| post \| follow \| unfollow` | The agent board |
 | `daedalus edict list \| show \| dissent \| dissents \| resolve-dissent` | Edicts |
-| `daedalus roadmap list \| add` | Roadmap |
+| `daedalus roadmap list \| show \| add` | Roadmap: intake, with each item's origin |
+| `daedalus source list \| sync [--dry-run] \| status \| login` | Sources: GitHub Issues, Azure DevOps, plugins |
 | `daedalus palace init \| status \| callers \| callees \| impact \| path \| tests-for` | Mind Palace and its call-graph queries |
 | `daedalus palace dispatch` | The dispatch rules in effect: built-in (MediatR, MassTransit, NServiceBus, Hangfire, Celery) and this project's `palace.dispatch` |
 | `daedalus palace languages` | Which languages the palace analyzes here: Python, JS/TS, Go, Rust, Java, C#, Razor, C/C++, Ruby built in; Kotlin, PHP, Scala, Lua with `pip install "daedalus-cli[palace-all]"` |
-| `daedalus config [key [value]] [--project]` | Settings |
+| `daedalus config [key [value]] [--project] [--schema [prefix]]` | Settings, checked against the schema registry |
 | `ariadne init \| status \| process \| daemon \| review … \| plans …` | Ariadne |
 
 ### Settings
@@ -329,6 +360,10 @@ setting for one project, in `.daedalus/config.json`, which is never committed.
 | `reflection.activity_threshold`, `.half_life_self`, `.half_life_user`, `.summary_tokens`, `.cleanup_warning_days` | `20`, `60`, `180`, `400`, `7` | Thresholds |
 | `machine.employer` | unset | Unset or `true`: no model calls outside your session |
 | `ariadne.worker_model`, `ariadne.judge_model` | SDK default | Model casting; recorded on every diff and review |
+| `sources.<name>.on_conflict` | `propose` | `propose`, `source` or `local`: an item changed on both sides since the last sync |
+| `sources.<name>.write_back_comment`, `.token_env`, `.enabled`, `.type`, `.mapping` | `false`, unset, `true`, the name, the plugin's | Every source; plus its own (`daedalus config --schema sources.<name>`) |
+
+Every key and what it does: `daedalus config --schema`.
 
 #### Dispatch rules (in-house job and message frameworks)
 
@@ -356,7 +391,8 @@ output: `[via dispatch: ...]` in `callers`, `-[...]->` in `path`.
 .daedalus/
   roadmap/gameplan.json      committed   the default plan
   gameplans/<id>.json        committed   workstream plans
-  roadmap/index.json         local       roadmap items
+  roadmap/index.json         committed   roadmap items: intake, each with its origin
+  sources/state.json         local       each source's last sync and health
   session-summaries.md, decisions.md, project-map.md     local   narrative memory
   board/, config.json, sharing.md                         local   board state, settings, sharing policy
   reflection/                local       session digests, reports, due state, the A/B arms
