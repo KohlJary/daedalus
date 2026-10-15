@@ -176,6 +176,15 @@ def test_every_answer_derivable_from_json(tasks):
             assert solver(data, qq) == qq["gold"], (t["id"], qq)
 
 
+def test_pilot_answers_derivable_from_json():
+    """The pilot's own golds (seed 1015), not just the test seed's. Skipped if tasks/1015.jsonl isn't generated."""
+    path = HERE / "tasks" / "1015.jsonl"
+    if not path.exists():
+        pytest.skip("tasks/1015.jsonl not generated")
+    pilot = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
+    test_every_answer_derivable_from_json(pilot)
+
+
 # ---- the other encodings carry the same facts --------------------------------------------------------------
 
 def names_of(t):

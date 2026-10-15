@@ -8,6 +8,7 @@ standard library only (pytest for the tests).
 | `generate.py` | Makes the tasks from a seed: structures, their encodings, questions and gold answers |
 | `run.py` | Sends each (structure, encoding, question) to a model; writes `results/<run>/calls.jsonl` |
 | `score.py` | Rescores a run and writes its report |
+| `measure_tokens.py` | Measures the prompt tokens of compact json and of the bare question, for the cost table (`results/<run>/tokens.jsonl`) |
 | `test_generate.py` | Harness tests: determinism, lint, answers derivable from the json, the encodings carry the same facts, scoring |
 | `oph_lint.py` | The Ophanic lint (`daedalus oph check`), copied verbatim from `daedalus-oph` at b28ca53 |
 
@@ -76,7 +77,8 @@ done.
 ## 3. Score
 
 ```bash
-python score.py results/pilot-qwen3-8b --report REPORT-pilot.md --label PILOT
+python measure_tokens.py --tasks tasks/1015.jsonl --run pilot-qwen3-8b --model qwen3:8b   # once, for the cost table
+python score.py results/pilot-qwen3-8b --report REPORT-pilot.md --label PILOT --notes results/pilot-qwen3-8b/notes.md
 ```
 
 Answers are normalised before scoring: think blocks, markdown and quotes are stripped, case and whitespace are
