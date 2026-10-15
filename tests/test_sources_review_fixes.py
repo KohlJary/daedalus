@@ -228,3 +228,25 @@ def test_dropped_item_write_back_is_recorded_on_the_item(gh, project):
     run("gameplan", "pending", "drop", p["id"])
     assert roadmap.find(index(project), "github-12")["synced"]["write_back"] == "dropped"
     assert gh.writes() == []
+
+
+# ---------- verification pass: a sub-issue whose parent is in another repository ----------
+
+def test_a_cross_repo_parent_is_not_followed_or_confused_with_a_local_issue(gh, project):
+    child = _issue(40, parent_issue_url="https://api.github.com/repos/other-org/other-repo/issues/12")
+    github_routes(gh, issues=[child])
+    out = run("source", "sync")
+    assert out.exit_code == 0, out.output
+    [p] = pending(project)
+    # Treated as an ordinary issue here: not a task under this repo's #12, and no request to other-repo
+    assert p["kind"] == "roadmap-new" and p["item"]["id"] == "github-40"
+    assert not any("/issues/12" in c["url"] for c in gh.calls)
+
+
+def test_a_missing_parent_is_skipped_not_a_source_failure(gh, project):
+    child = _issue(41, parent_issue_url="https://api.github.com/repos/acme/widgets/issues/77")
+    github_routes(gh, issues=[child])
+    gh.on("GET", "/repos/acme/widgets/issues/77", {"message": "Not Found"}, status=404)
+    out = run("source", "sync")
+    assert out.exit_code == 0, out.output
+    assert "waiting for a phase" in run("source", "status").output

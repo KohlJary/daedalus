@@ -55,12 +55,14 @@ class GitHubSource(Source):
     def repo(self) -> Optional[str]:
         if self.settings.get("repo"):
             return self.settings["repo"]
-        try:
-            out = subprocess.run(["git", "remote", "get-url", "origin"], cwd=self.project_dir,
-                                 capture_output=True, text=True, timeout=10)
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-            return None
-        return parse_remote(out.stdout) if out.returncode == 0 else None
+        if not hasattr(self, "_origin_repo"):
+            try:
+                out = subprocess.run(["git", "remote", "get-url", "origin"], cwd=self.project_dir,
+                                     capture_output=True, text=True, timeout=10)
+                self._origin_repo = parse_remote(out.stdout) if out.returncode == 0 else None
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                self._origin_repo = None
+        return self._origin_repo
 
     def is_configured(self) -> bool:
         return self.repo() is not None
@@ -108,13 +110,26 @@ class GitHubSource(Source):
             seen = {str(i["number"]) for i in issues}
         # A sub-issue's parent may not be assigned to you: fetch it, so the sub-issue has an item to hang on
         # (as ADO fetches parents). One level, open parents only.
-        for number in sorted({i["parent_issue_url"].rstrip("/").rsplit("/", 1)[-1] for i in issues
-                              if i.get("parent_issue_url")} - seen):
-            if number.isdigit():
+        # Only parents in this repository: a parent elsewhere (GitHub allows cross-repo sub-issues) isn't ours
+        # to import. A parent that can't be fetched is skipped, not a failure of the whole sync.
+        for number in sorted({n for i in issues if (n := self.local_parent(i)) is not None} - seen):
+            try:
                 parent, _ = http.request("GET", f"{base}/issues/{number}", headers)
-                if isinstance(parent, dict) and parent.get("state") == "open":
-                    issues.append(parent)
+            except SourceError as e:
+                if e.health == "auth-failed":
+                    raise
+                continue
+            if isinstance(parent, dict) and parent.get("state") == "open":
+                issues.append(parent)
         return self.to_remote(issues)
+
+    def local_parent(self, issue: dict[str, Any]) -> Optional[str]:
+        """The parent issue's number when the parent is in this repository, else None."""
+        url = issue.get("parent_issue_url")
+        m = re.search(r"/repos/([^/]+/[^/]+)/issues/(\d+)/?$", url or "")
+        if not m or m.group(1).lower() != (self.repo() or "").lower():
+            return None
+        return m.group(2)
 
     def to_remote(self, issues: list[dict[str, Any]]) -> list[RemoteItem]:
         out: list[RemoteItem] = []
@@ -123,10 +138,10 @@ class GitHubSource(Source):
             if "pull_request" in issue:
                 continue
             number = str(issue["number"])
-            parent_url = issue.get("parent_issue_url")
+            local_parent = self.local_parent(issue)
             milestone = issue.get("milestone")
-            if parent_url:
-                kind, parent = "Sub-issue", parent_url.rstrip("/").rsplit("/", 1)[-1]
+            if local_parent:
+                kind, parent = "Sub-issue", local_parent
             else:
                 kind, parent = "Issue", (f"m{milestone['number']}" if milestone else None)
             if milestone and f"m{milestone['number']}" not in milestones:
