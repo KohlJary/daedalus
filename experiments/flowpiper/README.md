@@ -1,54 +1,86 @@
-# flowpiper: Piper on the beat
+# flowpiper: rap engine experiment
 
-Makes a Piper voice rap on a grid by overriding the phoneme durations inside the VITS model.
-Every syllable's vowel lands within half a frame (about 6 ms) of its target sixteenth.
+Parked here so it isn't lost. It's an experiment, not part of the plugin: nothing in this folder ships with
+`daedalus hydrate`. The idea is that hit-em-up's closing verse could one day be performed over a beat.
+
+**Status:** the duration override, beat synthesis, score playback and MCFlow-borrowed timing are built and
+working. The words are legible-ish, and the delivery is still read-aloud Piper prosody. Write-to-flow
+templates, per-MC beats and abstract flow styles are ideas, not built yet.
+
+`demos/` holds the latest render, a 16-bar battle (Hotfix vs Coverage) with its transcript. The transcript
+lists which real verse each bar's timing came from.
 
 ## How it works
 
-Piper voices are VITS models. Before generating audio, VITS predicts how many frames each phoneme
-lasts (the `w_ceil` node in the ONNX graph). `flowpiper_build.py` makes two copies of a voice:
+- **Rhythm (`flowpiper_build.py`, `flowpiper.py`).** Piper voices are VITS models, which predict how many
+  frames each phoneme lasts (the `w_ceil` node in the ONNX graph) before generating audio. The build script
+  makes two copies of a voice: `*.predict.onnx` also outputs those predicted durations, and `*.flow.onnx`
+  takes durations as an input instead. `flowpiper.py` splits each phrase into syllables, keeps consonants
+  near their natural length (they carry intelligibility), puts every vowel on its target time, and stretches
+  vowels to fill the gaps. One frame is 256 samples, so placement is exact to about 6 ms.
+- **Beat (`beat.py`, `grid.py`).** Synthesized from scratch with numpy: 94 BPM, 62% swing, a Moog-style
+  bass through a resonant ladder filter, a kit with ghost notes, dark keys and a portamento lead. No samples.
+- **Scores (`play.py`, `verse.flow`).** A hand-written score: `<bar>.<step> <rhythm> | <words>`, one
+  character per sixteenth (`X` accented, `x` syllable, `-` hold). The player drags 30 ms behind the beat
+  with a little human looseness, shapes pitch with the WORLD vocoder, and writes a transcript.
+- **Real flow (`battle.py`, `mcflow.py`, `battle.flow`).** Timing borrowed from MCFlow, Condit-Schultz's
+  corpus of transcribed rap verses (3,422 usable bars). For each lyric bar it finds real bars with the same
+  syllable count and the closest stress pattern, preferring a rhyme where ours falls and a gap where our
+  phrases break. Each MC takes all its bars from one rapper, the best overall fit, for a coherent flow. The
+  vocal chain is a light "cupped battle mic" (honk around 1.3 kHz, thinned lows, compression) plus a short
+  plate reverb.
+- **Older auto-flow (`song.py`, `quantize.py`, `verse.txt`).** One syllable per sixteenth, or Piper's
+  natural rhythm quantized to the grid. Kept for comparison; it sounds square.
+- **Helpers.** `audition.py` ranks multi-speaker voices by pitch; `bands.py` prints a mix's energy by band.
 
-- `*.predict.onnx` also outputs those predicted durations, so we know how long consonants naturally are;
-- `*.flow.onnx` replaces the prediction with a `durations` input, so we decide.
-
-`flowpiper.py` splits each line into syllables (onset consonants, vowel, coda), keeps consonants
-near their natural length, puts each vowel on its grid time, and stretches the vowels to fill the
-gaps. One duration frame is 256 samples, so placement is exact up to rounding.
-
-## Run it
+## Setup
 
 ```
-pip install piper-tts onnx onnxruntime numpy soundfile
-python flowpiper_build.py path/to/voice.onnx      # once per voice; voice.onnx.json must sit beside it
-python beat.py                                    # synthesizes beat.wav (94 BPM, F minor, 62% swing, Moog-style bass)
-python play.py                                    # plays the score verse.flow -> hit_em_up_v3.wav + transcript.md
-python song.py quantized                          # older auto-flow over verse.txt (or: straight)
+pip install piper-tts onnx onnxruntime numpy scipy soundfile pyworld
+mkdir voices
+# voices from Piper's GitHub release v0.0.2 (Hugging Face hosts the newer ones):
+curl -L https://github.com/rhasspy/piper/releases/download/v0.0.2/voice-en-us-ryan-high.tar.gz | tar xz -C voices
+curl -L https://github.com/rhasspy/piper/releases/download/v0.0.2/voice-en-us-libritts-high.tar.gz | tar xz -C voices
+python flowpiper_build.py voices/en-us-ryan-high.onnx
+python flowpiper_build.py voices/en-us-libritts-high.onnx
+git clone https://github.com/Computational-Cognitive-Musicology-Lab/MCFlow
 ```
 
-Change the voice path near the top of `play.py`. `verse.flow` is the score: each line is one phrase,
-`<bar>.<step> <rhythm> | <words>`, where the rhythm has one character per sixteenth (`X` accented
-syllable, `x` syllable, `-` hold). The player drags 30 ms behind the beat with a little human looseness,
-lifts pitch on accents and lets each phrase fall at the end (WORLD vocoder), and writes a transcript.
+Paths can be overridden with `FLOWPIPER_VOICE`, `FLOWPIPER_MULTI_VOICE` and `MCFLOW_DIR`.
 
-For the older auto-flow, change the voice path at the top of `song.py`. Edit `verse.txt` (one line per bar, 15 syllables max;
-the last syllable of each line lands on beat 4).
+## Run
 
-## Battles with real flow (MCFlow)
+```
+python beat.py                  # beat.wav (grid.py sets tempo, swing and bar count)
+python battle.py battle.flow    # battle_mcflow.wav + battle_mcflow_transcript.md
+python play.py verse.flow       # single-MC score playback
+```
 
-`battle.py battle.flow` renders a two-MC battle. For each bar it finds bars in the MCFlow corpus
-(Condit-Schultz; github.com/Computational-Cognitive-Musicology-Lab/MCFlow) with the same syllable count
-and the closest stress pattern, preferring a rhyme where ours falls and a gap where our phrases break, and
-inherits their timing, triplets and rests included. Clone MCFlow and point `battle.py` at its `Humdrum`
-folder. Voices are switched in the score with `@ <voice.onnx> <speaker> <pan> <pitch shift>`.
+Set `N_BARS` in `grid.py` to cover the score before rendering the beat. In a score, `@ <voice.onnx>
+<speaker> <pan> <pitch shift>` switches voices; `battle.py` uses only the bars, voices and words, not the
+rhythm strings.
 
-## Limits
+## What we learned
 
-- Rhythm only. VITS has no pitch control, so the delivery is deadpan; stressed syllables and rhymes
-  get a volume lift, not a pitch lift.
-- Syllable splitting is a simple vowel-run rule; diphthongs count as one syllable, and two vowels in
-  a row inside a word may merge.
-- Two flow modes: `straight` gives every syllable one sixteenth; `quantized` (default) starts from
-  Piper's natural rhythm, stretches the line so the rhyme lands on beat 4, and snaps each syllable to
-  the grid, pulling stressed syllables onto beats and eighths (`quantize.py`).
-- Next steps: pitch emphasis with a vocoder pass (WORLD), flow templates beyond straight sixteenths
-  (triplets, rests mid-line), and fine-tuning on recorded rap delivery.
+- Equal sixteenths sound like an 80s novelty rap. Flow is composition: the rhythm has to be written (or
+  borrowed), not computed from the words.
+- Writing matters as much as timing. Bars need imagery and wordplay, and two MCs with opposed positions
+  wrote far better bars than one MC narrating.
+- Per-bar matching repeats itself: one MC got the same 50 Cent bar shape six times. Real verses vary bar to
+  bar, and rhymes move inside the bar, not just at the end (Adams, "On the Metrical Techniques of Flow in Rap
+  Music," Music Theory Online 15.5).
+- Piper's voices carry read-aloud prosody, and some LibriTTS speakers are noisy in the model itself.
+  Attitude needs training on aggressive delivery or a style-controllable voice model.
+
+## Next
+
+1. **Write-to-flow templates.** Take a run of consecutive bars from one real verse (its natural variation,
+   enjambment and moving rhyme slots) and hand the bar writer a template: syllables per bar, stressed slots,
+   and which slots rhyme with which. Real rappers often find the flow first, then write to it. This is the
+   contract for the clash protocol's MCs.
+2. **Per-MC beats**, chosen from each MC's flow source (tempo and feel), with a DJ-style cut at the handoff.
+3. **Abstract flow styles** defined by their patterns (syllable rate, triplets, syncopation, rhyme
+   placement), with artist templates as one way to fill them. MCFlow is Billboard rap from 1979 to 2014, so
+   chopper, horrorcore and drill styles would need hand-seeded templates.
+4. **Pitch and attitude**: a vocoder emphasis pass, and eventually fine-tuning on recorded rap delivery
+   from a consenting voice.
