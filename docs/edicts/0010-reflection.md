@@ -212,21 +212,22 @@ push" is a description the first time and an instruction every time after.
 Where the rules below differ from the shared rules above, these govern.
 
 - **Scope.** Every entry in both models carries a `scope`, which says where
-  it belongs, not who it is about: `home`, `work`, or `anywhere`. (The
-  earlier names `personal` and `any` are accepted as aliases for `home` and
-  `anywhere`; entries are written with the new names.) A project's config
-  marks it `work` or `home` (unset is `work`, matching `machine.employer`).
-  Reflection on a `work` project proposes only `work` or `anywhere` entries.
-  The inhale summary in a `work` project shows no `home` entries unless
-  `reflection.home_at_work` is on, and in a `home` project no `work`
-  entries.
+  it belongs, not who it is about: `private`, `work`, or `anywhere`. (The
+  earlier names `personal` and `any` are accepted as aliases for `private`
+  and `anywhere`; entries are written with the new names.) A project's
+  config marks it `work` or `private` (unset is `work`, matching
+  `machine.employer`). Reflection on a `work` project proposes only `work` or
+  `anywhere` entries. The inhale summary in a `work` project shows no
+  `private` entries unless `reflection.share_private` is on, and in a
+  `private` project no `work` entries.
 - **Most of the relationship is `anywhere`.** Which model an entry is in
   (about the user, or about Daedalus) and its scope are separate. How the
   user and Daedalus work together, what the user values and has said about
   themselves, and Daedalus's stances and aspirations are `anywhere`: they
-  are the point of the models, at home and at work. `home` is for what
-  belongs to home: details of home projects, and anything the user would
-  not want on a work screen. `work` is for what belongs to work. When an
+  are the point of the models, in every project. `private` is for what
+  belongs to the user's private projects and life: details of those
+  projects, and anything the user would not want shown in a work setting.
+  `work` is for what belongs to work. When an
   entry's place is unclear, delphi proposes `anywhere` for relationship
   entries and the scope of the project it was learned in for everything
   else, and says which it chose.
@@ -344,12 +345,12 @@ Where the rules below differ from the shared rules above, these govern.
 
 ### Moving the models between machines
 - The models are per machine, and the same Daedalus should be able to follow
-  the user from home to work. Until there is a shared server (see
+  the user from one machine to another. Until there is a shared server (see
   `docs/design/command-server.md`), the models move by an explicit export
   and import that the user runs. Nothing syncs on its own.
 - `daedalus reflect model export <file>` writes the chosen entries
   (`--model user|self|both`, default both; `--scope`, default `anywhere` and
-  `work`, so `home` entries stay home unless `--scope home` names them), each
+  `work`, so `private` entries stay behind unless `--scope private` names them), each
   with its history records and the tombstones, in schema
   `daedalus.models-export/1`. It first prints exactly what will cross (each
   entry's model, ID, scope and observation, and the counts) and writes
@@ -371,8 +372,8 @@ Where the rules below differ from the shared rules above, these govern.
   changed, with the before and after states, so where each entry came from
   can always be followed.
 - Importing onto a machine marked as an employer's is allowed: the models
-  are the user's. With `reflection.home_at_work` off (the default), imported
-  `home` entries are stored but never shown in work projects. Turning it on
+  are the user's. With `reflection.share_private` off (the default), imported
+  `private` entries are stored but never shown in work projects. Turning it on
   shows them there, and the docs say plainly that the inhale summary then
   becomes part of what the work session sends to its account.
 - The export format is the unit a shared server would sync later: entries
@@ -506,17 +507,17 @@ Where the rules below differ from the shared rules above, these govern.
   copy and nothing else.
 - `doctor` reports undigested sessions inside the cleanup warning window,
   using `cleanupPeriodDays` from settings when present.
-- Scope: reflection on a fixture `work` project rejects a `home` proposal at
-  `reflect check`; the inhale summary in a `work` project omits `home`
-  entries, and in a `home` project omits `work` entries; with
-  `reflection.home_at_work` on, the work summary includes `home` entries
-  (each tested). `personal` and `any` are read as `home` and `anywhere`
+- Scope: reflection on a fixture `work` project rejects a `private` proposal
+  at `reflect check`; the inhale summary in a `work` project omits `private`
+  entries, and in a `private` project omits `work` entries; with
+  `reflection.share_private` on, the work summary includes `private` entries
+  (each tested). `personal` and `any` are read as `private` and `anywhere`
   wherever a scope is read, in model files, proposals and project config,
   and new writes use the new names (tested with a fixture model and project
   config in the old names).
 - Export: the preview lists every entry that will cross and nothing is
-  written before confirmation; the default leaves out `home` entries and
-  `--scope home` includes them; a purge-forgotten entry is never in an
+  written before confirmation; the default leaves out `private` entries and
+  `--scope private` includes them; a purge-forgotten entry is never in an
   export; the file carries each entry's origin, history records and the
   tombstones (each tested).
 - Import: entries with a new origin are added with new local IDs; an entry
@@ -563,7 +564,7 @@ Where the rules below differ from the shared rules above, these govern.
   transcripts between machines at all. Models move only by the user's
   export and import. A shared server is the intended successor, designed
   separately (`docs/design/command-server.md`), not built here.
-- User-defined scopes (beyond `home`, `work` and `anywhere`) are a later
+- User-defined scopes (beyond `private`, `work` and `anywhere`) are a later
   addition. Scope is stored as a name, so adding them won't change the
   model files.
 - No reading of other users' transcripts.
@@ -599,12 +600,13 @@ Where the rules below differ from the shared rules above, these govern.
   dry run found it couldn't say why anything failed or justify a permission proposal. And
   reflection keeps an experiment log of runs, resolutions, arms and model changes, with no free
   text, because it is an unusual feature and its record will be wanted later.
-- 2026-10-14, requested by Kohl: scopes renamed to `home`, `work` and
-  `anywhere` (the old names kept as aliases), because `personal` read as
+- 2026-10-14, requested by Kohl: scopes renamed to `private`, `work` and
+  `anywhere` (the old names kept as aliases; `private` rather than `home` so
+  the names don't assume a home/work divide), because `personal` read as
   "about the person" and blurred which model an entry is in with where it
   belongs; relationship entries are `anywhere` by default, since the
-  relationship is the point of the models; `reflection.home_at_work` (off by
-  default) shows home entries at work; and the models can move between
+  relationship is the point of the models; `reflection.share_private` (off
+  by default) shows private entries in work projects; and the models can move between
   machines by explicit export and import, with origins and history on both
   sides, replacing the non-goal "no syncing". A shared command server is the
   intended successor and is written up separately. User-defined scopes are
