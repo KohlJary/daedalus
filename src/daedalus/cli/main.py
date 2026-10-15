@@ -1103,6 +1103,20 @@ def gameplan_pending_apply(proposal_id: str):
     apply_pending(Path.cwd(), proposal_id)
 
 
+@gameplan_pending.command("undo")
+def gameplan_pending_undo():
+    """Undo the last apply: the plan goes back and its proposals are pending again (within a day, and only if
+    nothing has changed since; never after a write-back reached a tracker)."""
+    from .. import undo
+
+    try:
+        entry = undo.undo(Path.cwd())
+    except ValueError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(1)
+    click.echo(f"Undid the apply of {', '.join(entry['proposals'])} ({entry['at'][:16]}): pending again.")
+
+
 @gameplan_pending.command("drop")
 @click.argument("proposal_id")
 @click.option("--why", default=None, help="Why, in a line: kept with the epitaph of dropped intake")
