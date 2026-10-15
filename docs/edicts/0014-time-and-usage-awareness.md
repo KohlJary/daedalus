@@ -112,34 +112,15 @@ turn and sits early in the context makes every later request a cache miss, at fu
   the status line JSON carries `prompt_cache`. 0010's digests already record it per session, so a
   drop after this edict ships is visible in the next reflection.
 
-### Context usage: when to take a breath
-Context is a breath (CLAUDE.md). Daedalus should be able to see how full it is, and with what, so
-that it exhales at a natural point, not when compaction forces it.
-- **How full.**
-  - `daedalus statusline` records `context_window` (tokens used and the window size) to the same
-    usage file.
-  - The clock line adds `· context 63%` when the figure is fresh.
-  - At `context.warn_percent` (default 70) the line adds `context is filling: finish this thread,
-    then exhale`.
-- **With what.** `daedalus context` reads the session's transcript (`transcript_path`) from the last
-  compaction onward, and estimates its tokens as characters / 4, labelled as an estimate. It
-  groups them by subject:
-  - files read or edited, by path prefix two directories deep (`src/daedalus/sources/`,
-    `docs/edicts/`);
-  - command output, by the command's first word (`pytest`, `git`, `gh`);
-  - subagent reports, by agent (`momus`, `delphi`, `Explore`);
-  - the conversation itself (user and assistant text);
-  - everything else.
+### Context usage: see Edict 0015
+How full the context is, and with what, is Edict 0015's (the context map). It measures both
+exactly from the transcript's per-request usage, nudges at natural breakpoints and when the context
+fills, and feeds the exhale skill.
 
-  It prints the five largest subjects with their share, and the share that hasn't been touched for
-  the last hour of the session (by event timestamps), since that is what an exhale would let go.
-- **At warn, the clock line names the top three subjects:**
-  `context 74%: src/daedalus/sources 31%, momus 18%, conversation 15%`.
-  The breakdown comes from an incremental index. It is cached per session under the cache directory
-  and extended from the last byte read, so the hook never re-reads the whole transcript. A missing
-  or unreadable transcript gives the percentage alone.
-- **The exhale skill uses it.** Before compacting, it runs `daedalus context` and writes the
-  focus note from it: keep the subjects still in play, drop the ones that went quiet.
+What this edict keeps:
+- **`daedalus statusline` may show the context percentage to the user,** from the status line's
+  `context_window`. That's display only. It isn't recorded, and the clock line doesn't carry it.
+- **The clock line carries no context figure,** so that 0015's nudge is the single source.
 
 ### Unattended runs
 - **`autoContinueAtUsageLimit` is the owner's setting.** It lives in Claude Code's user settings,
@@ -157,7 +138,8 @@ These keys register in 0011's schema registry, each with a description:
 - `clock.tool_interval_minutes` and `clock.timezone`
 - `statusline.install`
 - `usage.fresh_minutes`, `usage.warn_percent` and `usage.wrap_percent`
-- `context.warn_percent`
+
+(`context.warn_percent` belongs to Edict 0015.)
 
 `hooks.clock`, `clock.*` and `usage.*` can be overridden per project.
 
@@ -191,13 +173,9 @@ These keys register in 0011's schema registry, each with a description:
   no file read at session start (CLAUDE.md, skills, agents, identity) contains a time, usage or
   context figure. Another test checks that two clock lines a minute apart differ only in their
   values.
-- **Context.**
-  - Given a fixture transcript, `daedalus context` reports the subjects, their shares and the quiet
-    share, as estimates, and a test checks the grouping rules above.
-  - Given fixture status line JSON with `context_window`, the clock line shows the percentage, and
-    at 70% it adds the top three subjects.
-  - Running the hook twice on a growing transcript reads only the new bytes the second time, and a
-    test checks the index offset.
+- **Context.** The clock line never contains a context figure, and a test checks that. With
+  fixture status line JSON carrying `context_window`, `daedalus statusline` shows the percentage
+  and writes no context figure to `usage.json`.
 - **Resuming.** Given a gap that spans a `resets_at` in the usage file, the next line says
   `resumed after the usage reset at <time>`.
 - **doctor.** It hints when `autoContinueAtUsageLimit` is unset or false and `hooks.clock` is on.
@@ -240,3 +218,14 @@ There are also major findings:
 - a committed `statusLine` would override teammates' own.
 
 The trial has proposed amendment text for each. Kohl asked to formalize this later.
+
+## Amendments
+- **2026-10-15:** the "Context usage" section and its acceptance criterion now defer to Edict 0015,
+  and `context.warn_percent` moved there.
+  - **Asked for by:** Kohl, in conversation: "Amend 0014", after 0015 was written to replace this
+    section's breakdown.
+  - **Why:** 0015 measures context exactly from the transcript. This section estimated it as
+    characters / 4, which the readiness review found undercounts by about 2.4 times. Two
+    edicts nudging about the same context would also double the noise.
+  - **What didn't change:** the rest of the readiness findings above are still open.
+
