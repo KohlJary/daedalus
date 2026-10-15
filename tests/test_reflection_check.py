@@ -341,6 +341,7 @@ def test_the_running_session_is_left_out_of_bundles(env, monkeypatch):
     for d in (project / ".daedalus/reflection/sessions").glob("*.json"):
         data = json.loads(d.read_text(encoding="utf-8"))
         data["start"] = data["end"] = "2026-10-14T10:00:00Z"
+        data["event_days"] = {u: "2026-10-14" for u in data.get("event_days", {})}  # any machine timezone
         d.write_text(json.dumps(data), encoding="utf-8")
     bundle = build_bundle(project, "daily", "2026-10-14", {"half_life_self": 60, "half_life_user": 180}, "work", root)
     assert [d["session_id"] for d in bundle["digests"]] == [INTERRUPT_SESSION]
