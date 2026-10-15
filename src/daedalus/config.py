@@ -85,6 +85,8 @@ class HooksConfig:
     session_start: bool = True  # gameplan-first brief at session start
     capture: bool = False       # SessionEnd/PreCompact: propose gameplan updates from commits
     board: bool = True          # UserPromptSubmit: note new posts in followed board threads (throttled)
+    budget_per_hour: int = 6    # edict 0016: at most this many nudge lines per session-hour
+    efficacy_window: int = 20   # a nudge counts as followed if its tool is used within this many events
 
 
 @dataclass

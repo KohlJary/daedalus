@@ -207,6 +207,7 @@ def _remove_command(settings: dict, event: str, command: str) -> None:
 
 # Every hook Daedalus registers: (event, command, the hooks.* config key that turns it on). Several
 # commands may share an event; each is added and removed on its own, and other hooks are never touched.
+# These are the commands from before the hook kit; they are used when `daedalus-hook` isn't installed.
 HOOKS: list[tuple[str, str, str]] = [
     ("SessionStart", SESSION_START_COMMAND, "session_start"),
     ("SessionEnd", CAPTURE_COMMAND, "capture"),
@@ -214,24 +215,47 @@ HOOKS: list[tuple[str, str, str]] = [
     ("UserPromptSubmit", BOARD_COMMAND, "board"),
 ]
 
+# The hook kit (edict 0016): one dispatcher per event, registered when any of its features is on.
+# (event, command, the hooks.* keys of its features, matcher or None for every source/tool)
+KIT_COMMAND = "daedalus-hook"
+KIT_HOOKS: list[tuple[str, str, tuple, Optional[str]]] = [
+    ("SessionStart", f"{KIT_COMMAND} SessionStart", ("session_start",), None),
+    ("UserPromptSubmit", f"{KIT_COMMAND} UserPromptSubmit", ("board",), None),
+    ("SessionEnd", f"{KIT_COMMAND} SessionEnd", ("capture",), None),
+    ("PreCompact", f"{KIT_COMMAND} PreCompact", ("capture",), None),
+]
+
+
+def kit_installed() -> bool:
+    """Whether the `daedalus-hook` console script is on PATH (an install from before 0016 lacks it)."""
+    import shutil
+
+    return shutil.which(KIT_COMMAND) is not None
+
+
+def _table(kit: bool) -> list[tuple[str, str, tuple, Optional[str]]]:
+    if kit:
+        return KIT_HOOKS
+    return [(event, command, (key,), None) for event, command, key in HOOKS]
+
 
 def wanted_hooks(session_start: bool, capture: bool, board: bool = False,
-                 enabled: Optional[dict] = None) -> set[tuple[str, str]]:
+                 enabled: Optional[dict] = None, kit: bool = False) -> set[tuple[str, str]]:
     """{(event, command)} that should be registered. `enabled` maps hooks.* keys to on/off and wins over
     the named flags (it is how a new hook's key reaches here without a new parameter)."""
     flags = {"session_start": session_start, "capture": capture, "board": board, **(enabled or {})}
-    return {(event, command) for event, command, key in HOOKS if flags.get(key)}
+    return {(event, command) for event, command, keys, _ in _table(kit) if any(flags.get(k) for k in keys)}
 
 
-def _label(event: str, command: str) -> str:
+def _label(event: str, command: str, kit: bool = False) -> str:
     """The event's name, or 'event: command' when Daedalus has several commands on that event."""
-    shared = sum(1 for e, _, _ in HOOKS if e == event) > 1
+    shared = sum(1 for e, *_ in _table(kit) if e == event) > 1
     return f"{event}: {command}" if shared else event
 
 
 def register_hooks(
     project_dir: Path, session_start: bool = True, capture: bool = False, dry_run: bool = False,
-    board: bool = False, enabled: Optional[dict] = None,
+    board: bool = False, enabled: Optional[dict] = None, kit: Optional[bool] = None,
 ) -> tuple[list[str], list[str], Optional[str]]:
     """
     Bring the Daedalus hooks in .claude/settings.json in line with config, keeping everything else.
@@ -240,7 +264,12 @@ def register_hooks(
     hooks are never touched). Returns (hooks added, hooks removed, error), each named by its event (and
     command, where Daedalus has several on one event). A settings file that isn't valid JSON or isn't the
     shape Claude Code uses is never rewritten: it is reported instead.
+
+    With the hook kit installed (`kit`, detected when None), the kit's dispatchers are registered and
+    the older per-feature commands are removed; without it, the older commands stay, so a checkout that
+    hasn't been reinstalled keeps working hooks.
     """
+    kit = kit_installed() if kit is None else kit
     path = Path(project_dir) / ".claude" / "settings.json"
     settings: dict = {}
     if path.exists():
@@ -255,18 +284,23 @@ def register_hooks(
     if shape_error:
         return [], [], f"{path}: {shape_error}; hooks not registered"
 
-    wanted = wanted_hooks(session_start, capture, board, enabled)
+    wanted = wanted_hooks(session_start, capture, board, enabled, kit=kit)
     added, removed = [], []
-    for event, command, _ in HOOKS:
+    for event, command, _, matcher in _table(kit):
         present = command in _hook_commands(settings, event)
         if (event, command) in wanted and not present:
-            settings.setdefault("hooks", {}).setdefault(event, []).append(
-                {"hooks": [{"type": "command", "command": command}]}
-            )
-            added.append(_label(event, command))
+            group: dict = {"hooks": [{"type": "command", "command": command}]}
+            if matcher:
+                group = {"matcher": matcher, **group}
+            settings.setdefault("hooks", {}).setdefault(event, []).append(group)
+            added.append(_label(event, command, kit))
         elif (event, command) not in wanted and present:
             _remove_command(settings, event, command)
-            removed.append(_label(event, command))
+            removed.append(_label(event, command, kit))
+    for event, command, _, _ in _table(not kit):  # the other generation's commands are retired
+        if command in _hook_commands(settings, event):
+            _remove_command(settings, event, command)
+            removed.append(_label(event, command, not kit))
 
     if (added or removed) and not dry_run:
         path.parent.mkdir(parents=True, exist_ok=True)

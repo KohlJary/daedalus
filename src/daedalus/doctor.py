@@ -280,8 +280,8 @@ def check_project_map(project_dir: Path) -> list[Finding]:
 def session_start_hook_registered(project_dir: Path) -> bool:
     for name in ("settings.json", "settings.local.json"):
         path = project_dir / ".claude" / name
-        if path.exists() and ("daedalus hook session-start" in path.read_text(encoding="utf-8")
-                              or "session-start.sh" in path.read_text(encoding="utf-8")):
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        if any(c in text for c in ("daedalus hook session-start", "daedalus-hook SessionStart", "session-start.sh")):
             return True
     return False
 
