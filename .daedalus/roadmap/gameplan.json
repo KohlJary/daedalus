@@ -69,6 +69,14 @@
       "roadmapItems": [],
       "edict": "0012",
       "notes": "Edict 0012; reference layout in docs/design/tui/. Sources screen waits on p9-sources (0011). CIRCLE BACK: after the TUI build, decide on a separate edict making Ophanic part of Daedalus (notation skill + width checker, opt-in; not the ophanic parser, which is unreliable as of 2026-10-14). Evidence goes in the dogfooding log in docs/design/tui/README.md."
+    },
+    {
+      "id": "p10-dreaming",
+      "title": "Dreaming: seeds, dream modes, waking pass, dream source, recurring-idea review",
+      "status": "planned",
+      "roadmapItems": [],
+      "notes": "Edict 0013. Builds on 0010's digests/runners and 0011's source seam. Fix the reflection tooling Momus ranked on 2026-10-15 first or alongside (period boundaries, figures coverage, same-observation guard), since dreams draw on the same digests.",
+      "edict": "0013"
     }
   ],
   "activePhase": {
