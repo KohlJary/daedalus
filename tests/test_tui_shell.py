@@ -202,3 +202,29 @@ async def test_resizing_away_from_the_pane_gives_focus_back(tui_project):
         assert app.focused is not app.query_one(ClaudePane) or app.active_tab == "4"
         if app.focused is not app.query_one(ClaudePane):
             assert "every key goes to Claude" not in str(app.query_one(KeyBar).render())
+
+
+async def test_an_unreadable_watched_folder_is_skipped_not_fatal(tui_project):
+    import os
+    import sys
+
+    if sys.platform == "win32" or os.geteuid() == 0:
+        return
+    board = tui_project / ".daedalus" / "board"
+    board.mkdir(exist_ok=True)
+    board.chmod(0)
+    try:
+        app = make_app(tui_project, watch_interval=0.05)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause(0.3)
+            assert app.is_running
+    finally:
+        board.chmod(0o755)
+
+
+async def test_a_wrong_shape_gameplan_shows_empty_not_a_crash(tui_project):
+    (tui_project / ".daedalus/roadmap/gameplan.json").write_text("[]")
+    app = make_app(tui_project)
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+        assert app.is_running and app.state.gameplan == {}

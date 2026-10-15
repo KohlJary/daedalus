@@ -70,8 +70,11 @@ def watched_files(project_dir: Path) -> list[Path]:
                                                "lessons.md", "warnings.md", "config.json")]
     for folder in (d / "roadmap", d / "gameplans", d / "board", root / "docs" / "edicts",
                    root / "docs" / "edicts" / "dissents"):
-        if folder.is_dir():
-            files += [p for p in folder.iterdir() if p.is_file()]
+        try:  # an unreadable folder is skipped, never fatal (Momus V1)
+            if folder.is_dir():
+                files += [p for p in folder.iterdir() if p.is_file()]
+        except OSError:
+            continue
     files += [d / "reflection" / "pending.json", d / "reflection" / "due.json", d / "sources" / "state.json",
               d / "dreams" / "due.json", root / "docs" / "status.md"]
     gitdir = root / ".git"
@@ -84,8 +87,11 @@ def watched_files(project_dir: Path) -> list[Path]:
             return files
     files.append(gitdir / "HEAD")
     heads = common / "refs" / "heads"
-    if heads.is_dir():
-        files += [p for p in heads.rglob("*") if p.is_file()]  # nested refs too (feat/*, fix/*)
+    try:
+        if heads.is_dir():
+            files += [p for p in heads.rglob("*") if p.is_file()]  # nested refs too (feat/*, fix/*)
+    except OSError:
+        pass
     files.append(common / "packed-refs")
     return files
 

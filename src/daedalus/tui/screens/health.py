@@ -40,6 +40,14 @@ def _init(project_dir: Path) -> None:
 
 
 # The only commands the TUI runs: command -> library function
+# What each runnable fix writes, said in its confirm (Momus: the modal under-described hydrate)
+WRITES = {
+    "daedalus hydrate": "it rewrites the managed section of CLAUDE.md, replaces .claude/agents/ and .claude/skills/ with "
+                        "the shipped versions, and updates hooks and permission rules in .claude/settings.json.",
+    "daedalus init": "it creates any missing .daedalus/ files, adds .gitignore rules, installs agents, skills and hooks, "
+                     "and injects the CLAUDE.md section. Existing memory files are kept.",
+}
+
 RUNNABLE: dict[str, Callable[[Path], None]] = {"daedalus hydrate": _hydrate, "daedalus init": _init}
 
 # Which finding each runnable command fixes. A finding not listed here has no run action.
@@ -239,7 +247,8 @@ class HealthScreen(Screen):
         self.query_one(KeyBar).show_modal()
         self.app.push_screen(ConfirmModal(f"Run `{command}`?",
                                           f"For: {e.name}\nIn: {self.project_dir}\n\n"
-                                          f"This writes files the way `{command}` does from the command line."),
+                                          f"This writes files the way `{command}` does from the command line: "
+                                          + WRITES.get(command, "") ),
                              confirmed)
 
     def on_worker_state_changed(self, event) -> None:

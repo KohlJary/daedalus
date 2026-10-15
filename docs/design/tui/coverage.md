@@ -26,7 +26,7 @@ Config, Sources, Reflection (due, reports, user model, self model,
 experiment), and the plugin menu (`m`). Every panel has an Explain card on
 `?`. The marks below are what that build shows, not what the diagrams draw.
 
-## CLI (78 leaf commands, `daedalus` 0.2.0)
+## CLI (92 leaf commands, `daedalus` 0.2.0 plus edicts 0011-0013)
 
 | Group | ● | ◐ | → | ○ | – |
 |-------|---|---|---|---|---|
@@ -42,11 +42,14 @@ experiment), and the plugin menu (`m`). Every panel has an Explain card on
 | config | config | | | | |
 | source | list, status | | sync | | login |
 | reflect | due, digest, runner, log export, pending apply, pending drop, model history, model edit, model delete, model forget, model stable | arm | bundle, check, render, done, pending import, model aspire, log correct | | tick, inhale |
+| dream | | | start, prompt, turn, write, done, bundle, keep, review bundle, review record | seeds, due, show, log, review show | |
 | digest (Wonderland runs) | | | | digest | |
 | init, hook, tui | | | | | init, hook board/capture/session-start, tui |
-| **Total** | **30** | **3** | **31** | **5** | **9** |
+| **Total** | **30** | **3** | **40** | **10** | **9** |
 
 Notes on the marks:
+- `dream` (edict 0013, merged after the TUI was designed): the steps /dream drives are → (Claude runs them);
+  seeing a dream, its seeds, what's due and the experiment is ○: no Dream screen yet. A later edict's job.
 - `init` stays –: it's setup, though Health can run it as an allowlisted fix.
 - `source sync` is →: `sources.oph` draws `r sync now`, but syncing isn't one
   of edict 0012's v1 writes, so the Sources screen hands it to Claude.
@@ -80,9 +83,9 @@ Notes on the marks:
 
 | | ● | ◐ | ○ | Direct coverage (● / ●+◐) |
 |---|---|---|---|---|
-| CLI (38 in scope) | 30 | 3 | 5 | 79% / 87% |
+| CLI (43 in scope) | 30 | 3 | 10 | 70% / 77% |
 | Beyond CLI (11 in scope) | 5 | 2 | 4 | 45% / 64% |
-| **All (49 in scope)** | **35** | **5** | **9** | **71% / 82%** |
+| **All (54 in scope)** | **35** | **5** | **14** | **65% / 74%** |
 
 ## Legibility
 
@@ -121,6 +124,7 @@ how many concepts have an Explain card in `glossary.md`.
 | 2026-10-14 | 39 | 32 | 53% / 72% | 14 | Config screen: layers, edit modal, secrets in the keyring |
 | 2026-10-14 | 48 | 46 (incl. #38, #39) | 67% / 83% | 21 | Reflection screen; RF and AR kinds in NeedsYou |
 | 2026-10-15 | 48 | 49 | 71% / 82% | 25 | What edict 0012 v1 ships (not just designs): reflection and source commands counted, AR kind not built, plugin menu, A/B experiment and TUI plugin cards |
+| 2026-10-15 | 48 | 54 | 65% / 74% | 25 | Edict 0013 (dreaming) merged before the TUI: 14 `dream` commands, 9 driven through Claude (→), 5 not visible (○): no Dream screen in v1 |
 
 ## Refreshing the CLI inventory
 

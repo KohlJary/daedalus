@@ -68,7 +68,8 @@ def header(project_dir: Path) -> dict:
     branch = _git(project_dir, "rev-parse", "--abbrev-ref", "HEAD") or ""
     phase = task = None
     try:
-        active = gp.load_gameplan(project_dir).get("activePhase") or {}
+        loaded = gp.load_gameplan(project_dir)
+        active = (loaded.get("activePhase") if isinstance(loaded, dict) else None) or {}
         phase = active.get("id")
         nt = _next_task(active) if active else None
         task = f"{nt['id']} {nt.get('title', '')}" if nt else None
@@ -94,7 +95,7 @@ def is_first_run(project_dir: Path) -> bool:
     project_dir = Path(project_dir)
     try:
         data = gp.load_gameplan(project_dir)
-        if data.get("phases") or data.get("activePhase"):
+        if isinstance(data, dict) and (data.get("phases") or data.get("activePhase")):
             return False
     except gp.GameplanError:
         pass
@@ -213,9 +214,10 @@ def gameplan(project_dir: Path, workstream: Optional[str] = None) -> dict:
     from ..cli import gameplan as gp
 
     try:
-        return gp.load_gameplan(project_dir, workstream)
-    except gp.GameplanError:
+        data = gp.load_gameplan(project_dir, workstream)
+    except (gp.GameplanError, UnicodeDecodeError, OSError):
         return {}
+    return data if isinstance(data, dict) else {}  # a hand-broken file ([] or null) shows as empty, not a crash
 
 
 def workstreams(project_dir: Path) -> list[dict]:
