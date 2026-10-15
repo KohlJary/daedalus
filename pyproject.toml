@@ -40,6 +40,8 @@ dependencies = [
     "tree-sitter-c>=0.23",
     "tree-sitter-cpp>=0.23",
     "tree-sitter-ruby>=0.23",
+    # Source credentials live in the system keyring, never in config (edict 0011); imported only when used
+    "keyring>=24",
 ]
 
 [project.optional-dependencies]
@@ -57,6 +59,11 @@ icarus-worker = "daedalus.worker.harness:main"
 ariadne = "daedalus.ariadne.orchestrator:main"
 ariadne-bus = "daedalus.ariadne.diff_bus:main"
 context-estimator = "daedalus.tools.context_estimator:main"
+
+# Sources (edict 0011): first-party ones register the same way a third-party plugin would
+[project.entry-points."daedalus.sources"]
+github = "daedalus.sources.github:GitHubSource"
+ado = "daedalus.sources.ado:AdoSource"
 
 [project.urls]
 Homepage = "https://github.com/KohlJary/daedalus"

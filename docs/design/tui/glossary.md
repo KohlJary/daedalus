@@ -15,17 +15,22 @@ doesn't have to dig through git.
 Intake: the work that's been asked for, from anywhere, whether that's an idea,
 a bug, or an item imported from ADO or Jira. The gameplan is what we're doing
 about it: phases pull roadmap items in and break them into tasks.
-*Lives in* `.daedalus/roadmap/`. *CLI:* `daedalus roadmap list`
+Each item says where it came from: a source, or local.
+*Lives in* `.daedalus/roadmap/index.json` (committed). *CLI:* `daedalus roadmap list`,
+`daedalus roadmap show <id>`
 
-## Source (planned)
+## Source
 A plugin that connects an outside tracker to Daedalus. ADO and GitHub Issues
-ship with Daedalus; others, like Jira, can be added as plugins. It turns outside items into pending proposals, and it can propose
-updating the outside item when the work is done. Like every outward-facing
-change, that update asks first.
+ship with Daedalus; others, like Jira, can be added as plugins. A sync turns
+outside items into pending proposals, and finishing the work proposes updating
+the outside item. Like every outward-facing change, that update asks first.
+*Lives in* `sources.<name>` in config; tokens in the system keyring. *CLI:*
+`daedalus source list`, `daedalus source sync --dry-run`, `daedalus source status`
 
 ## Pending proposal
-A suggested gameplan update, for example "T-e5 looks done". It is left by a
-hook or by a reconstruction from git. Hooks never edit the gameplan
+A suggested gameplan or roadmap update, for example "T-e5 looks done" or "a new
+issue arrived from GitHub". It is left by a hook, a reconstruction from git, or
+a source's sync. Hooks never edit the gameplan
 themselves; a person applies or drops each proposal.
 *CLI:* `daedalus gameplan pending`
 

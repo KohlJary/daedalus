@@ -9,6 +9,8 @@ Commands:
   palace    Mind Palace operations
 """
 
+import json
+
 import click
 from pathlib import Path
 
@@ -65,19 +67,29 @@ def hydrate(agents: bool, template: bool, skills: bool, hooks: bool, dry_run: bo
 @main.command("config")
 @click.argument("key", required=False)
 @click.argument("value", required=False)
-@click.option("--project", is_flag=True, help="Template settings for this project (.daedalus/config.json)")
-def config_cmd(key: str, value: str, project: bool):
-    """View or set configuration.
+@click.option("--project", is_flag=True, help="Settings for this project (.daedalus/config.json)")
+@click.option("--schema", "schema", is_flag=True,
+              help="List settings with their type, default and description (KEY filters by prefix)")
+def config_cmd(key: str, value: str, project: bool, schema: bool):
+    """View or set configuration. Values are checked against the config schema registry.
 
     Examples:
       daedalus config                    # Show all config
       daedalus config user.name          # Show specific key
       daedalus config user.name "Kohl"   # Set value
+      daedalus config --schema reflection                # What each setting does
+      daedalus config sources.github.on_conflict local   # A source's setting (edict 0011)
       daedalus config --project                          # Template settings in effect here
       daedalus config --project git.authorship user      # Override for this project
       daedalus config --project sections.squash false
     """
     import json
+
+    from .. import config_schema
+
+    if schema:
+        _print_schema(key or "")
+        return
 
     if project:
         from ..config import get_project_settings, get_template_settings, set_project_value
@@ -88,6 +100,14 @@ def config_cmd(key: str, value: str, project: bool):
                 settings[group] = get_project_settings(Path.cwd(), group)
             if key is None:
                 click.echo(json.dumps(settings, indent=2))
+            elif key.startswith("sources."):
+                from ..config import load_project_overrides
+
+                node = load_project_overrides(Path.cwd())
+                for part in key.split("."):
+                    node = node.get(part) if isinstance(node, dict) else None
+                click.echo("(not set for this project)" if node is None else
+                           (json.dumps(node) if isinstance(node, (dict, list)) else str(node)))
             else:
                 group, _, name = key.partition(".")
                 val = settings.get(group, {}).get(name)
@@ -95,7 +115,15 @@ def config_cmd(key: str, value: str, project: bool):
         elif set_project_value(Path.cwd(), key, value):
             click.echo(f"Set {key} = {value} for this project (.daedalus/config.json)")
         else:
-            click.echo(f"Unknown template setting or invalid value: {key} = {value}", err=True)
+            from ..config import PROJECT_SETTING_GROUPS, load_project_overrides, source_type
+
+            if key.split(".")[0] not in PROJECT_SETTING_GROUPS + ("sources",):
+                click.echo(f"{key} can't be set per project, only globally (without --project).", err=True)
+            else:
+                stype = source_type(load_config().sources, load_project_overrides(Path.cwd()).get("sources", {}), key)
+                _, error = config_schema.check(key, value, stype)
+                click.echo(f"Not set: {error or 'invalid value'}", err=True)
+            raise SystemExit(1)
         return
 
     config = load_config()
@@ -111,8 +139,12 @@ def config_cmd(key: str, value: str, project: bool):
         click.echo(val if val else "(not set)")
     else:
         # Set value
-        from ..config import setting_refusal
+        from ..config import setting_refusal, source_type
 
+        _, error = config_schema.check(key, value, source_type(config.sources, key))
+        if error:
+            click.echo(f"Not set: {error}", err=True)
+            raise SystemExit(1)
         refusal = setting_refusal(config, key, value)
         if refusal:
             click.echo(refusal, err=True)
@@ -122,6 +154,32 @@ def config_cmd(key: str, value: str, project: bool):
             click.echo(f"Set {key} = {value}")
         else:
             click.echo(f"Unknown config key: {key}", err=True)
+            raise SystemExit(1)
+
+
+def _print_schema(prefix: str):
+    from .. import config_schema
+
+    settings = dict(config_schema.core_settings())
+    if prefix.startswith("sources."):
+        name = prefix.split(".")[1]
+        from ..config import load_project_overrides, source_type
+
+        stype = source_type(load_config().sources, load_project_overrides(Path.cwd()).get("sources", {}),
+                            f"sources.{name}.x")
+        try:
+            settings = config_schema.source_settings(name, stype)
+        except KeyError as e:
+            click.echo(str(e).strip("'\""), err=True)
+            raise SystemExit(1)
+    for key, s in sorted(settings.items()):
+        if not key.startswith(prefix):
+            continue
+        choices = f" (one of: {', '.join(s.choices)})" if s.choices else ""
+        default = "unset" if s.default is None else json.dumps(s.default) if not isinstance(s.default, str) else s.default
+        where = "global or project" if s.project else "global"
+        click.echo(f"{key}  [{s.type}, default {default}, {where}]{choices}")
+        click.echo(f"    {s.description}")
 
 
 @main.group("hook")
@@ -814,6 +872,15 @@ def roadmap_list(status: str, assigned: str):
     list_roadmap_items(Path.cwd(), status=status, assigned_to=assigned)
 
 
+@roadmap.command("show")
+@click.argument("item_id")
+def roadmap_show(item_id: str):
+    """Show an item (origin, sync baseline), the phases that list it, and its tasks."""
+    from .commands import show_roadmap_item
+
+    show_roadmap_item(Path.cwd(), item_id)
+
+
 @roadmap.command("add")
 @click.argument("title")
 @click.option("--description", "-d", help="Item description")
@@ -999,8 +1066,10 @@ def gameplan_pending_drop(proposal_id: str):
 
 
 from .reflect import reflect as _reflect  # noqa: E402
+from .source import source as _source  # noqa: E402
 
 main.add_command(_reflect)
+main.add_command(_source)
 
 
 if __name__ == "__main__":

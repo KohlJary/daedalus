@@ -90,6 +90,8 @@ def test_judge_model_reaches_options_and_the_result(tmp_path, fake_judge_sdk, mo
 
 def test_review_show_displays_both_models(tmp_path, fake_judge_sdk, monkeypatch, capsys):
     from daedalus.ariadne import orchestrator as orch_mod
+    # The orchestrator CLI makes a roadmap Tracker in the working directory; keep it out of the checkout
+    monkeypatch.chdir(tmp_path)
     set_models(judge="m-judge")
     bus = AriadneBus(root=tmp_path / "ab")
     bus.initialize()

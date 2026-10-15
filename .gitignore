@@ -43,5 +43,6 @@ Thumbs.db
 !.daedalus/roadmap/
 .daedalus/roadmap/*
 !.daedalus/roadmap/gameplan.json
+!.daedalus/roadmap/index.json
 !.daedalus/gameplans/
 .daedalus/gameplans/*.pending.json

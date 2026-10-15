@@ -1,0 +1,75 @@
+{
+  "_synthetic": "SYNTHETIC: written by hand to the documented API shapes, not captured from a live service. Only the fields Daedalus reads are filled in; the rest of each object is trimmed.",
+  "_docs": [
+    "https://docs.github.com/en/rest/users/users#get-the-authenticated-user",
+    "https://docs.github.com/en/rest/issues/issues#list-repository-issues",
+    "https://docs.github.com/en/rest/issues/sub-issues",
+    "https://docs.github.com/en/rest/issues/issues#update-an-issue",
+    "https://docs.github.com/en/rest/issues/comments#create-an-issue-comment"
+  ],
+  "user": {"login": "octo-owner", "id": 1, "type": "User"},
+  "issues_open": [
+    {
+      "id": 9001, "number": 12, "state": "open", "state_reason": null,
+      "title": "Sync settings across devices",
+      "body": "Users want their settings on every device.",
+      "html_url": "https://github.com/acme/widgets/issues/12",
+      "updated_at": "2026-10-10T12:00:00Z",
+      "labels": [{"id": 1, "name": "enhancement"}],
+      "assignees": [{"login": "octo-owner"}],
+      "milestone": {
+        "id": 501, "number": 1, "state": "open", "title": "v1.0",
+        "description": "First release", "html_url": "https://github.com/acme/widgets/milestone/1",
+        "updated_at": "2026-10-01T09:00:00Z"
+      },
+      "parent_issue_url": null,
+      "sub_issues_summary": {"total": 1, "completed": 0, "percent_completed": 0}
+    },
+    {
+      "id": 9002, "number": 13, "state": "open", "state_reason": null,
+      "title": "Crash when the cache is empty",
+      "body": "Stack trace attached.",
+      "html_url": "https://github.com/acme/widgets/issues/13",
+      "updated_at": "2026-10-11T08:30:00Z",
+      "labels": [{"id": 2, "name": "bug"}],
+      "assignees": [{"login": "octo-owner"}],
+      "milestone": null,
+      "parent_issue_url": null,
+      "sub_issues_summary": {"total": 0, "completed": 0, "percent_completed": 0}
+    },
+    {
+      "id": 9003, "number": 14, "state": "open", "state_reason": null,
+      "title": "Add the settings sync endpoint",
+      "body": "",
+      "html_url": "https://github.com/acme/widgets/issues/14",
+      "updated_at": "2026-10-11T09:00:00Z",
+      "labels": [],
+      "assignees": [{"login": "octo-owner"}],
+      "milestone": {
+        "id": 501, "number": 1, "state": "open", "title": "v1.0",
+        "description": "First release", "html_url": "https://github.com/acme/widgets/milestone/1",
+        "updated_at": "2026-10-01T09:00:00Z"
+      },
+      "parent_issue_url": "https://api.github.com/repos/acme/widgets/issues/12",
+      "sub_issues_summary": {"total": 0, "completed": 0, "percent_completed": 0}
+    },
+    {
+      "id": 9004, "number": 15, "state": "open", "state_reason": null,
+      "title": "Settings sync (PR)",
+      "body": "Implements #12",
+      "html_url": "https://github.com/acme/widgets/pull/15",
+      "updated_at": "2026-10-12T10:00:00Z",
+      "labels": [],
+      "assignees": [{"login": "octo-owner"}],
+      "milestone": null,
+      "parent_issue_url": null,
+      "pull_request": {
+        "url": "https://api.github.com/repos/acme/widgets/pulls/15",
+        "html_url": "https://github.com/acme/widgets/pull/15",
+        "diff_url": "https://github.com/acme/widgets/pull/15.diff",
+        "patch_url": "https://github.com/acme/widgets/pull/15.patch",
+        "merged_at": null
+      }
+    }
+  ]
+}

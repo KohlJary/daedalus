@@ -1,0 +1,80 @@
+{
+  "_synthetic": "SYNTHETIC: written by hand to the documented Azure DevOps REST 7.1 shapes, not captured from a live service. Only the fields Daedalus reads are filled in; the rest of each object is trimmed. The ADO source is unverified until someone runs it live.",
+  "_docs": [
+    "https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/wiql/query-by-wiql?view=azure-devops-rest-7.1",
+    "https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/work-items/list?view=azure-devops-rest-7.1",
+    "https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/work-items/update?view=azure-devops-rest-7.1",
+    "https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/comments/add-comment?view=azure-devops-rest-7.1"
+  ],
+  "wiql": {
+    "queryType": "flat",
+    "queryResultType": "workItem",
+    "asOf": "2026-10-14T20:49:34.617Z",
+    "columns": [{"referenceName": "System.Id", "name": "ID", "url": "https://dev.azure.com/contoso/_apis/wit/fields/System.Id"}],
+    "workItems": [
+      {"id": 101, "url": "https://dev.azure.com/contoso/_apis/wit/workItems/101"},
+      {"id": 102, "url": "https://dev.azure.com/contoso/_apis/wit/workItems/102"},
+      {"id": 103, "url": "https://dev.azure.com/contoso/_apis/wit/workItems/103"}
+    ]
+  },
+  "workitems_assigned": {
+    "count": 3,
+    "value": [
+      {
+        "id": 101, "rev": 4,
+        "fields": {
+          "System.Id": 101, "System.WorkItemType": "User Story", "System.State": "Active",
+          "System.Title": "Export reports as CSV", "System.Description": "<div>Finance needs CSV.</div>",
+          "System.ChangedDate": "2026-10-12T15:00:00Z"
+        },
+        "relations": [
+          {"rel": "System.LinkTypes.Hierarchy-Reverse", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/100", "attributes": {"isLocked": false}},
+          {"rel": "System.LinkTypes.Hierarchy-Forward", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/103", "attributes": {"isLocked": false}}
+        ],
+        "_links": {"html": {"href": "https://dev.azure.com/contoso/Reports/_workitems/edit/101"}},
+        "url": "https://dev.azure.com/contoso/_apis/wit/workItems/101"
+      },
+      {
+        "id": 102, "rev": 2,
+        "fields": {
+          "System.Id": 102, "System.WorkItemType": "Bug", "System.State": "New",
+          "System.Title": "Totals off by one cent", "System.Description": "Rounding.",
+          "System.ChangedDate": "2026-10-13T10:00:00Z", "System.Tags": "rounding; finance"
+        },
+        "relations": [],
+        "_links": {"html": {"href": "https://dev.azure.com/contoso/Reports/_workitems/edit/102"}},
+        "url": "https://dev.azure.com/contoso/_apis/wit/workItems/102"
+      },
+      {
+        "id": 103, "rev": 1,
+        "fields": {
+          "System.Id": 103, "System.WorkItemType": "Task", "System.State": "To Do",
+          "System.Title": "Write the CSV serializer", "System.ChangedDate": "2026-10-12T16:00:00Z"
+        },
+        "relations": [
+          {"rel": "System.LinkTypes.Hierarchy-Reverse", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/101", "attributes": {"isLocked": false}}
+        ],
+        "_links": {"html": {"href": "https://dev.azure.com/contoso/Reports/_workitems/edit/103"}},
+        "url": "https://dev.azure.com/contoso/_apis/wit/workItems/103"
+      }
+    ]
+  },
+  "workitems_parents": {
+    "count": 1,
+    "value": [
+      {
+        "id": 100, "rev": 7,
+        "fields": {
+          "System.Id": 100, "System.WorkItemType": "Feature", "System.State": "Active",
+          "System.Title": "Reporting exports", "System.Description": "",
+          "System.ChangedDate": "2026-10-01T09:00:00Z"
+        },
+        "relations": [
+          {"rel": "System.LinkTypes.Hierarchy-Forward", "url": "https://dev.azure.com/contoso/_apis/wit/workItems/101", "attributes": {"isLocked": false}}
+        ],
+        "_links": {"html": {"href": "https://dev.azure.com/contoso/Reports/_workitems/edit/100"}},
+        "url": "https://dev.azure.com/contoso/_apis/wit/workItems/100"
+      }
+    ]
+  }
+}

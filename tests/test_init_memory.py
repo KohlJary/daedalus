@@ -50,7 +50,7 @@ def test_ignored_gameplan_gets_unignored_and_rest_stays_local(tmp_path, monkeypa
     assert not ignored(tmp_path, ".daedalus/gameplans/kohl.json")
     assert ignored(tmp_path, ".daedalus/gameplans/kohl.pending.json")
     assert ignored(tmp_path, ".daedalus/session-summaries.md")
-    assert ignored(tmp_path, ".daedalus/roadmap/index.json")
+    assert not ignored(tmp_path, ".daedalus/roadmap/index.json")  # committed intake (edict 0011)
 
     before = (tmp_path / ".gitignore").read_text()
     init(tmp_path, monkeypatch)
@@ -76,7 +76,7 @@ def test_fresh_repo_without_gitignore_keeps_memory_local(tmp_path, monkeypatch):
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     tracked = subprocess.run(["git", "ls-files", ".daedalus"], cwd=tmp_path, capture_output=True,
                              text=True).stdout.split()
-    assert tracked == [".daedalus/roadmap/gameplan.json"]
+    assert tracked == [".daedalus/roadmap/gameplan.json", ".daedalus/roadmap/index.json"]  # edict 0011
     assert not ignored(tmp_path, ".daedalus/gameplans/alice.json")
 
 
