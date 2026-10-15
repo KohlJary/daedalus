@@ -73,7 +73,7 @@
     {
       "id": "p10-dreaming",
       "title": "Dreaming: seeds, dream modes, waking pass, dream source, recurring-idea review",
-      "status": "planned",
+      "status": "done",
       "roadmapItems": [],
       "notes": "Edict 0013. Builds on 0010's digests/runners and 0011's source seam. Fix the reflection tooling Momus ranked on 2026-10-15 first or alongside (period boundaries, figures coverage, same-observation guard), since dreams draw on the same digests.",
       "edict": "0013"

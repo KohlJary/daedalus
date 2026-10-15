@@ -1,5 +1,5 @@
 # Edict 0013: Dreaming
-Status: accepted
+Status: done
 Depends on: Edict 0010 (digests, what is due, runners, the models, aspirations); Edict 0011 (the
 source seam and its proposals); Edict 0006 (confidence labels)
 
