@@ -211,12 +211,25 @@ describes, and reading it changes how that thing behaves: "I check before I
 push" is a description the first time and an instruction every time after.
 Where the rules below differ from the shared rules above, these govern.
 
-- **Scope.** Every entry in both models carries a `scope`: `personal`,
-  `work`, or `any`. A project's config marks it `work` or `personal`
-  (unset is `work`, matching `machine.employer`). Reflection on a `work`
-  project proposes only `work` or `any` entries. The inhale summary in a
-  `work` project shows no `personal` entries, and in a `personal` project
-  no `work` entries.
+- **Scope.** Every entry in both models carries a `scope`, which says where
+  it belongs, not who it is about: `home`, `work`, or `anywhere`. (The
+  earlier names `personal` and `any` are accepted as aliases for `home` and
+  `anywhere`; entries are written with the new names.) A project's config
+  marks it `work` or `home` (unset is `work`, matching `machine.employer`).
+  Reflection on a `work` project proposes only `work` or `anywhere` entries.
+  The inhale summary in a `work` project shows no `home` entries unless
+  `reflection.home_at_work` is on, and in a `home` project no `work`
+  entries.
+- **Most of the relationship is `anywhere`.** Which model an entry is in
+  (about the user, or about Daedalus) and its scope are separate. How the
+  user and Daedalus work together, what the user values and has said about
+  themselves, and Daedalus's stances and aspirations are `anywhere`: they
+  are the point of the models, at home and at work. `home` is for what
+  belongs to home: details of home projects, and anything the user would
+  not want on a work screen. `work` is for what belongs to work. When an
+  entry's place is unclear, delphi proposes `anywhere` for relationship
+  entries and the scope of the project it was learned in for everything
+  else, and says which it chose.
 - **What the user model may hold.** Only what the user said or plainly did
   (`shown`), and working preferences inferred from repeated behavior
   (`inferred`, with at least three sessions cited). Never inferences about
@@ -319,7 +332,8 @@ Where the rules below differ from the shared rules above, these govern.
 - Reflection reports never tell a session which arm it is in.
 
 ### Data
-- Digests, reports, due state and the models never leave the machine.
+- Digests, reports and due state never leave the machine. The models leave
+  it only through an explicit export (below).
   `.daedalus/reflection/` is gitignored by `daedalus init` and `hydrate`.
 - `daedalus doctor` warns when undigested sessions are within 7 days
   (configurable) of Claude Code's cleanup. It reads `cleanupPeriodDays`
@@ -327,6 +341,43 @@ Where the rules below differ from the shared rules above, these govern.
   a transcript by its file modification time.
 - Thresholds, the half-life, the retry window and the cleanup warning window
   live in config with the defaults above.
+
+### Moving the models between machines
+- The models are per machine, and the same Daedalus should be able to follow
+  the user from home to work. Until there is a shared server (see
+  `docs/design/command-server.md`), the models move by an explicit export
+  and import that the user runs. Nothing syncs on its own.
+- `daedalus reflect model export <file>` writes the chosen entries
+  (`--model user|self|both`, default both; `--scope`, default `anywhere` and
+  `work`, so `home` entries stay home unless `--scope home` names them), each
+  with its history records and the tombstones, in schema
+  `daedalus.models-export/1`. It first prints exactly what will cross (each
+  entry's model, ID, scope and observation, and the counts) and writes
+  nothing until the user confirms (`--yes` for scripts). Entries forgotten
+  with `purge` are never exported; tombstones carry only their hash, so a
+  forgotten observation is refused on the other machine too.
+- Every entry carries an `origin`: the machine it was first written on
+  (`machine.name`, default the host name) and its ID there. IDs are local, so
+  an imported entry gets a new local ID and keeps its origin.
+- `daedalus reflect model import <file>` shows the same preview, then merges:
+  - an entry whose origin is new is added;
+  - an entry whose origin is already here is updated when the export's
+    version changed later than the local one; otherwise the local version is
+    kept and the skipped change is recorded;
+  - tombstones are added, and any local entry matching one is removed.
+  Importing the same file twice changes nothing the second time.
+- Both machines record the move: the exporting machine appends an `export`
+  record to its history, and the importing one an `import` record per entry
+  changed, with the before and after states, so where each entry came from
+  can always be followed.
+- Importing onto a machine marked as an employer's is allowed: the models
+  are the user's. With `reflection.home_at_work` off (the default), imported
+  `home` entries are stored but never shown in work projects. Turning it on
+  shows them there, and the docs say plainly that the inhale summary then
+  becomes part of what the work session sends to its account.
+- The export format is the unit a shared server would sync later: entries
+  with origins, history and tombstones. It is versioned so the server can
+  read it.
 
 ### Experiment log
 - Reflection is an experiment, and is kept as one: every run and its outcome is recorded so it
@@ -455,9 +506,26 @@ Where the rules below differ from the shared rules above, these govern.
   copy and nothing else.
 - `doctor` reports undigested sessions inside the cleanup warning window,
   using `cleanupPeriodDays` from settings when present.
-- Scope: reflection on a fixture `work` project rejects a `personal`
-  proposal at `reflect check`; the inhale summary in a `work` project omits
-  `personal` entries, and the reverse (tested).
+- Scope: reflection on a fixture `work` project rejects a `home` proposal at
+  `reflect check`; the inhale summary in a `work` project omits `home`
+  entries, and in a `home` project omits `work` entries; with
+  `reflection.home_at_work` on, the work summary includes `home` entries
+  (each tested). `personal` and `any` are read as `home` and `anywhere`
+  wherever a scope is read, in model files, proposals and project config,
+  and new writes use the new names (tested with a fixture model and project
+  config in the old names).
+- Export: the preview lists every entry that will cross and nothing is
+  written before confirmation; the default leaves out `home` entries and
+  `--scope home` includes them; a purge-forgotten entry is never in an
+  export; the file carries each entry's origin, history records and the
+  tombstones (each tested).
+- Import: entries with a new origin are added with new local IDs; an entry
+  updated on the exporting machine is updated here, and a locally newer one
+  is kept with the skipped change recorded; tombstones arrive and refuse the
+  same observation on this machine; importing the same file twice changes
+  nothing; both machines' histories record the move, and the history is
+  still append-only (each tested, with two fixture "machines" as two model
+  directories).
 - `reflect check` rejects a user-model proposal labelled `inferred` that is
   not a working preference or cites fewer than three sessions; a self
   `interpretation` that cites no `behavior` entry; and a `stance` that
@@ -491,7 +559,13 @@ Where the rules below differ from the shared rules above, these govern.
 - No automatic application of proposals, at any confidence.
 - No cloud scheduling: Claude Code's `/schedule` runs remotely and cannot
   read local transcripts.
-- No syncing of models or digests between machines.
+- No automatic syncing of models, and no moving digests, reports or
+  transcripts between machines at all. Models move only by the user's
+  export and import. A shared server is the intended successor, designed
+  separately (`docs/design/command-server.md`), not built here.
+- User-defined scopes (beyond `home`, `work` and `anywhere`) are a later
+  addition. Scope is stored as a name, so adding them won't change the
+  model files.
 - No reading of other users' transcripts.
 - No changes to the template's Context as Breath wording, which is Kohl's.
 - The benchmark for whether reflection works is designed separately, not in
@@ -525,3 +599,13 @@ Where the rules below differ from the shared rules above, these govern.
   dry run found it couldn't say why anything failed or justify a permission proposal. And
   reflection keeps an experiment log of runs, resolutions, arms and model changes, with no free
   text, because it is an unusual feature and its record will be wanted later.
+- 2026-10-14, requested by Kohl: scopes renamed to `home`, `work` and
+  `anywhere` (the old names kept as aliases), because `personal` read as
+  "about the person" and blurred which model an entry is in with where it
+  belongs; relationship entries are `anywhere` by default, since the
+  relationship is the point of the models; `reflection.home_at_work` (off by
+  default) shows home entries at work; and the models can move between
+  machines by explicit export and import, with origins and history on both
+  sides, replacing the non-goal "no syncing". A shared command server is the
+  intended successor and is written up separately. User-defined scopes are
+  noted for later.
