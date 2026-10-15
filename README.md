@@ -110,6 +110,7 @@ reports, each under a stable name:
 | `edict-not-in-gameplan` / `edict-bad-status` / `edict-duplicate-number` | Edict bookkeeping (projects using edicts) |
 | `project-map-missing-packages` / `empty-file-read-by-hook` | Memory files that never kept up |
 | `board-ask-rule-missing` | The board is in use but posts wouldn't ask the owner first |
+| `palace-dispatch-invalid` | A `palace.dispatch` rule in `.daedalus/config.json` can't be read, so it's skipped |
 
 It exits non-zero when it finds anything, so it can run in CI. It also hints (without failing) when this
 machine's daedalus-cli is out of step with the checkout it was installed from (`install-stale`) or lacks
@@ -300,6 +301,7 @@ The pieces are named after the Labyrinth myth; here is what each does.
 | `daedalus edict list \| show \| dissent \| dissents \| resolve-dissent` | Edicts |
 | `daedalus roadmap list \| add` | Roadmap |
 | `daedalus palace init \| status \| callers \| callees \| impact \| path \| tests-for` | Mind Palace and its call-graph queries |
+| `daedalus palace dispatch` | The dispatch rules in effect: built-in (MediatR, MassTransit, NServiceBus, Hangfire, Celery) and this project's `palace.dispatch` |
 | `daedalus palace languages` | Which languages the palace analyzes here: Python, JS/TS, Go, Rust, Java, C#, Razor, C/C++, Ruby built in; Kotlin, PHP, Scala, Lua with `pip install "daedalus-cli[palace-all]"` |
 | `daedalus config [key [value]] [--project]` | Settings |
 | `ariadne init \| status \| process \| daemon \| review … \| plans …` | Ariadne |
@@ -327,6 +329,26 @@ setting for one project, in `.daedalus/config.json`, which is never committed.
 | `reflection.activity_threshold`, `.half_life_self`, `.half_life_user`, `.summary_tokens`, `.cleanup_warning_days` | `20`, `60`, `180`, `400`, `7` | Thresholds |
 | `machine.employer` | unset | Unset or `true`: no model calls outside your session |
 | `ariadne.worker_model`, `ariadne.judge_model` | SDK default | Model casting; recorded on every diff and review |
+
+#### Dispatch rules (in-house job and message frameworks)
+
+The palace follows message buses, Hangfire and Celery on its own (see `daedalus palace dispatch`). For
+your own queue, describe the hop in `.daedalus/dispatch.json`, committed so the team shares it:
+
+```json
+[
+  {"publish": "JobQueue.Publish", "to": "enclosing:IJobHandler.CreateInstance"},
+  {"factory": "IJobHandler.CreateInstance", "entry": "JobInstance.Run", "label": "job runner"}
+]
+```
+
+- `publish` + `to: "enclosing:Iface.Method"`: a call to `JobQueue.Publish` reaches `CreateInstance` on the
+  caller's own class. `to: "Type.Method"` reaches `Method` on every class implementing `Type`.
+- `factory` + `entry`: `CreateInstance` reaches `Run` on every class it constructs that derives from
+  `JobInstance`.
+
+Dispatch edges count like calls (so `impact --tests` sees through the queue) and are marked in the
+output: `[via dispatch: ...]` in `callers`, `-[...]->` in `path`.
 
 ### What lives where
 

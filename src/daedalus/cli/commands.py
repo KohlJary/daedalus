@@ -225,6 +225,12 @@ GITIGNORE_WORKSTREAMS_BLOCK = """
 """
 
 
+GITIGNORE_DISPATCH_BLOCK = """
+# Daedalus: the palace's dispatch rules are shared with the team (issue #47)
+!.daedalus/dispatch.json
+"""
+
+
 def _ensure_gameplan_tracked(project_dir: Path):
     """If git ignores the default gameplan or workstream plans, append negations to .gitignore."""
     import subprocess
@@ -237,7 +243,8 @@ def _ensure_gameplan_tracked(project_dir: Path):
             return False
 
     checks = [(".daedalus/roadmap/gameplan.json", GITIGNORE_WORKSTREAMS_BLOCK, "the gameplan"),
-              (".daedalus/gameplans/plan.json", GITIGNORE_WORKSTREAMS_BLOCK, "workstream plans")]
+              (".daedalus/gameplans/plan.json", GITIGNORE_WORKSTREAMS_BLOCK, "workstream plans"),
+              (".daedalus/dispatch.json", GITIGNORE_DISPATCH_BLOCK, "the palace's dispatch rules")]
     gitignore = project_dir / ".gitignore"
     in_repo = subprocess.run(["git", "rev-parse"], cwd=project_dir, capture_output=True).returncode == 0
     # A project that has never committed anything under .daedalus/ (a fresh setup) gets the full

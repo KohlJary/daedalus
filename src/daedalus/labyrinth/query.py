@@ -28,6 +28,7 @@ file's tests usually live) come from each language's support class.
 """
 
 import json
+import logging
 import posixpath
 import re
 import subprocess
@@ -199,7 +200,8 @@ def build_query_graph(project_root: Path, max_candidates: int = 10) -> QueryGrap
                     framework_labels[(node_id, target)] = "framework: " + (
                         "override" if re.search(r"\boverride\b", raw[target].get("signature", "")) else "lifecycle")
 
-    labels = {**framework_labels, **_dispatch_edges(raw, resolved, resolver)}
+    labels = {**framework_labels, **_dispatch_edges(raw, resolved, resolver),
+              **_config_dispatch(raw, resolved, project_root)}
 
     graph = CallGraph()
     for node_id, node in raw.items():
@@ -641,6 +643,124 @@ def _dispatch_edges(raw: Dict[str, dict], resolved: Dict[str, Set[str]], resolve
                     for task in _celery_tasks(node, qualifier, raw, resolver):
                         resolved[node_id].add(task)
                         labels[(node_id, task)] = f"Celery {call}"
+    return labels
+
+
+def dispatch_rules(project_root: Path) -> List[dict]:
+    """In-house dispatch rules from the project's .daedalus/config.json, under palace.dispatch:
+
+        {"publish": "JobQueue.Publish", "to": "enclosing:IJobHandler.CreateInstance"}
+            a call to JobQueue.Publish reaches CreateInstance on the caller's own class (which implements
+            IJobHandler); "to": "Type.Method" instead reaches Method on every class implementing Type.
+        {"factory": "IJobHandler.CreateInstance", "entry": "JobInstance.Run"}
+            a CreateInstance (on a class implementing IJobHandler) reaches Run on every class it constructs
+            that derives from JobInstance.
+
+    Rules shared with the team live in .daedalus/dispatch.json (committed: a list of rules, or
+    {"dispatch": [...]}); .daedalus/config.json's palace.dispatch adds local ones. Each may carry a
+    "label" for the output. Malformed rules are skipped with a warning."""
+    return [r for r in all_dispatch_rules(project_root) if _rule_ok(r, warn=True)]
+
+
+def all_dispatch_rules(project_root: Path) -> List:
+    """Every configured rule as written, valid or not: the shared file's, then the local config's."""
+    from ..config import load_project_overrides
+    rules: List = []
+    shared = Path(project_root) / ".daedalus" / "dispatch.json"
+    if shared.is_file():
+        try:
+            data = json.loads(shared.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = None
+        data = data.get("dispatch") if isinstance(data, dict) else data
+        rules += data if isinstance(data, list) else [{"invalid_file": str(shared)}]
+    local = (load_project_overrides(Path(project_root)).get("palace") or {}).get("dispatch") or []
+    rules += local if isinstance(local, list) else [{"invalid": "palace.dispatch is not a list"}]
+    return rules
+
+
+def _rule_ok(rule, warn: bool = False) -> bool:
+    ok = isinstance(rule, dict) and (
+        (_dotted(rule.get("publish")) and isinstance(rule.get("to"), str) and _dotted(rule["to"].split(":", 1)[-1]))
+        or (_dotted(rule.get("factory")) and _dotted(rule.get("entry"))))
+    if not ok and warn:
+        logging.getLogger(__name__).warning(f"palace.dispatch: skipping malformed rule {rule!r}")
+    return bool(ok)
+
+
+def _dotted(value) -> bool:
+    return isinstance(value, str) and "." in value and all(value.split("."))
+
+
+def _config_dispatch(raw: Dict[str, dict], resolved: Dict[str, Set[str]], project_root: Path) -> Dict[Tuple[str, str], str]:
+    """Edges from the project's palace.dispatch rules (see dispatch_rules)."""
+    rules = dispatch_rules(project_root)
+    if not rules:
+        return {}
+    classes: Dict[str, List[str]] = {}
+    parents: Dict[str, Set[str]] = {}
+    for node_id, node in raw.items():
+        if node["type"] == "class":
+            classes.setdefault(node["simple_name"], []).append(node_id)
+            parents.setdefault(node["simple_name"], set()).update(b.split(".")[-1] for b in node.get("bases", ()))
+
+    def is_a(name: str, base: str) -> bool:
+        seen, todo = set(), [name]
+        while todo:
+            current = todo.pop()
+            if current == base:
+                return True
+            if current not in seen:
+                seen.add(current)
+                todo.extend(parents.get(current, ()))
+        return False
+
+    def owner(node_id: str) -> Optional[str]:
+        """The class a method belongs to."""
+        parent = node_id.rsplit(".", 1)[0]
+        return parent if raw.get(parent, {}).get("type") == "class" else None
+
+    labels: Dict[Tuple[str, str], str] = {}
+    for rule in rules:
+        if "publish" in rule:
+            type_name, method = rule["publish"].rsplit(".", 1)
+            spec = rule["to"]
+            label = rule.get("label") or f"{rule['publish']} (palace.dispatch)"
+            for node_id, node in raw.items():
+                sites = [q for q, call in node.get("call_sites", ()) if call == method]
+                types = node.get("receiver_types", {})
+                if not any(q == type_name or is_a(types.get(q, "").split(".")[-1], type_name) for q in sites):
+                    continue
+                if spec.startswith("enclosing:"):
+                    iface, target_method = spec.split(":", 1)[1].rsplit(".", 1)
+                    cls = owner(node_id) if node["type"] != "class" else node_id
+                    targets = [f"{cls}.{target_method}"] if cls and is_a(raw[cls]["simple_name"], iface) else []
+                else:
+                    target_type, target_method = spec.rsplit(".", 1)
+                    targets = [f"{c}.{target_method}" for name in classes if is_a(name, target_type)
+                               for c in classes[name]]
+                for target in targets:
+                    if target in raw:
+                        resolved[node_id].add(target)
+                        labels[(node_id, target)] = label
+        else:
+            iface, factory_method = rule["factory"].rsplit(".", 1)
+            base, entry_method = rule["entry"].rsplit(".", 1)
+            label = rule.get("label") or f"{rule['factory']} -> {rule['entry']} (palace.dispatch)"
+            for name, ids in classes.items():
+                if not is_a(name, iface):
+                    continue
+                for cls in ids:
+                    factory = f"{cls}.{factory_method}"
+                    if factory not in raw:
+                        continue
+                    built = [t for t in resolved.get(factory, ()) if raw[t]["type"] == "class"
+                             and is_a(raw[t]["simple_name"], base)]
+                    for made in built:
+                        entry = f"{made}.{entry_method}"
+                        if entry in raw:
+                            resolved[factory].add(entry)
+                            labels[(factory, entry)] = label
     return labels
 
 
