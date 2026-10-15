@@ -174,3 +174,21 @@ def test_disabling_capture_removes_only_daedalus_entries(tmp_path):
     hooks = settings(tmp_path)["hooks"]
     assert "SessionEnd" not in hooks
     assert [h["command"] for g in hooks["PreCompact"] for h in g["hooks"]] == ["echo mine"]
+
+
+def test_several_daedalus_commands_can_share_an_event(tmp_path, monkeypatch):
+    """T-e28: registration was {event: command}, so a second hook on UserPromptSubmit (0014's clock)
+    would have displaced the board hook."""
+    from daedalus import hooks
+
+    monkeypatch.setattr(hooks, "HOOKS", hooks.HOOKS + [("UserPromptSubmit", "daedalus hook clock", "clock")])
+    added, _, err = register_hooks(tmp_path, enabled={"session_start": True, "board": True, "clock": True})
+    assert err is None
+    assert "UserPromptSubmit: daedalus hook board" in added and "UserPromptSubmit: daedalus hook clock" in added
+    cmds = [h["command"] for g in settings(tmp_path)["hooks"]["UserPromptSubmit"] for h in g["hooks"]]
+    assert cmds == ["daedalus hook board", "daedalus hook clock"]
+    _, removed, _ = register_hooks(tmp_path, enabled={"session_start": True, "board": True, "clock": False})
+    assert removed == ["UserPromptSubmit: daedalus hook clock"]
+    cmds = [h["command"] for g in settings(tmp_path)["hooks"]["UserPromptSubmit"] for h in g["hooks"]]
+    assert cmds == ["daedalus hook board"]
+    assert register_hooks(tmp_path, enabled={"session_start": True, "board": True, "clock": False}) == ([], [], None)
