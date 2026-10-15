@@ -725,7 +725,9 @@ class Cartographer:
                 if target_id in nodes:
                     node["calls"].append(target_id)
                     nodes[target_id]["called_by"].append(node_id)
-                    edges.append({"source": node_id, "target": target_id, "type": "calls"})
+                    label = getattr(query_graph, "edge_labels", {}).get((node_id, target_id))
+                    edges.append({"source": node_id, "target": target_id, "type": "dispatch" if label and not
+                                  label.startswith("framework") else "calls", **({"via": label} if label else {})})
             node["complexity"] = len(node["calls"])  # simple proxy
 
         # Calculate additional stats

@@ -126,6 +126,8 @@ def _collect_nodes(project_root: Path, imports: Optional[Dict[str, dict]] = None
                             "call_sites": [tuple(site) for site in el.call_sites],
                             "receiver_types": dict(el.receiver_types), "bases": list(el.bases),
                             "extension_method": el.extension_method, "element_types": dict(el.element_types),
+                            "decorators": list(el.decorators), "generic_bases": list(el.generic_bases),
+                            "messages": [tuple(m) for m in el.messages], "dispatch_calls": dict(el.dispatch_calls),
                             "docstring": (el.docstring or "")[:200], "calls": list(el.calls)}
     return raw
 
@@ -179,6 +181,7 @@ def build_query_graph(project_root: Path, max_candidates: int = 10) -> QueryGrap
                 else:
                     skipped[call.split(".")[-1]] = len(candidates)
         resolved[node_id] = targets
+    framework_labels: Dict[Tuple[str, str], str] = {}
     for node_id, node in raw.items():  # Foo() carries on into its constructor (Foo.__init__, Foo.constructor, ...)
         if node["type"] == "class":
             language = _language(node["file"])
@@ -190,7 +193,13 @@ def build_query_graph(project_root: Path, max_candidates: int = 10) -> QueryGrap
             # the class names (MonoBehaviour's Update, ComponentBase's OnInitializedAsync, IDisposable's
             # Dispose). Python classes already carry their methods' calls.
             if language is not None and language.name in ("C#", "Razor"):
-                resolved[node_id] |= _framework_called(node_id, node, raw)
+                called = _framework_called(node_id, node, raw)
+                resolved[node_id] |= called
+                for target in called:
+                    framework_labels[(node_id, target)] = "framework: " + (
+                        "override" if re.search(r"\boverride\b", raw[target].get("signature", "")) else "lifecycle")
+
+    labels = {**framework_labels, **_dispatch_edges(raw, resolved, resolver)}
 
     graph = CallGraph()
     for node_id, node in raw.items():
@@ -203,6 +212,9 @@ def build_query_graph(project_root: Path, max_candidates: int = 10) -> QueryGrap
     graph.project = project_root.name
     graph.end_lines = {nid: n.get("end_line") for nid, n in raw.items()}  # type: ignore[attr-defined]
     graph.raw_calls = {nid: list(n.get("calls", [])) for nid, n in raw.items()}  # type: ignore[attr-defined]
+    # Edges a framework makes rather than a direct call: (caller, callee) -> "MediatR Send", "Hangfire Enqueue",
+    # "Celery delay", "framework: override" (issue #47). They count like any edge; output marks them.
+    graph.edge_labels = {k: v for k, v in labels.items() if k[1] in graph.nodes.get(k[0], GraphNode.from_dict({})).calls}  # type: ignore[attr-defined]
     return QueryGraph(graph=graph, ambiguous_links=ambiguous, skipped=skipped)
 
 
@@ -412,6 +424,8 @@ class ImportResolver:
             return self._resolve_cs_receiver(node, qualifier, call)
         if qualifier.startswith(("lambda:", "mockobj:")):
             return self._resolve_cs_element(node, qualifier, call)
+        if qualifier.startswith("lambdatype:"):  # Enqueue<IInvoiceMailer>(m => m.SendOverdue())
+            return self._resolve_cs_type(node, qualifier.split(":", 1)[1], call)
         if qualifier in node.get("receiver_types", {}):  # a parameter, local, field or property
             return self._resolve_cs_receiver(node, qualifier, call)
         hits = {f"{t}.{call}" for t in self._cs_types(node["file"], qualifier) if f"{t}.{call}" in self.raw}
@@ -579,6 +593,69 @@ class ImportResolver:
             else:
                 decided |= result
         return decided, undecided
+
+
+# Message handlers: generic interface -> the methods the bus calls with a message of the type argument
+HANDLER_INTERFACES = {
+    "IRequestHandler": ("Handle",), "INotificationHandler": ("Handle",), "IStreamRequestHandler": ("Handle",),  # MediatR
+    "IConsumer": ("Consume",),                                                                                  # MassTransit
+    "IHandleMessages": ("Handle",), "IHandleTimeouts": ("Timeout",),                                            # NServiceBus
+    "IEventHandler": ("Handle", "HandleAsync"), "ICommandHandler": ("Handle", "HandleAsync"),
+    "IMessageHandler": ("Handle", "HandleAsync"), "IIntegrationEventHandler": ("Handle", "HandleAsync"),
+}
+BUS_NAMES = {"Send": "Send", "SendAsync": "Send", "Publish": "Publish", "PublishAsync": "Publish",
+             "SendLocal": "SendLocal", "CreateStream": "CreateStream", "Request": "Request",
+             "Schedule": "Schedule", "SchedulePublish": "Schedule", "ScheduleSend": "Schedule"}
+CELERY_CALLS = {"delay", "apply_async", "s", "si", "signature", "apply"}
+
+
+def _dispatch_edges(raw: Dict[str, dict], resolved: Dict[str, Set[str]], resolver: "ImportResolver") -> Dict[Tuple[str, str], str]:
+    """Edges across framework dispatch (issue #47), added to `resolved`; returns their labels.
+
+    - Message buses (MediatR, MassTransit, NServiceBus, ...): a method that sends or publishes a ShipOrder
+      reaches the Handle/Consume of every class implementing a handler interface for ShipOrder.
+    - Hangfire: calls inside an Enqueue/Schedule lambda are already edges; they're labelled as dispatch.
+    - Celery: task.delay(...) / apply_async / .s() reaches the @task function.
+    """
+    labels: Dict[Tuple[str, str], str] = {}
+    handlers: Dict[str, List[Tuple[str, str]]] = {}  # message type -> [(handler method id, interface)]
+    for node_id, node in raw.items():
+        for entry in node.get("generic_bases", ()):
+            interface, _, message = entry.partition(":")
+            for method in HANDLER_INTERFACES.get(interface, ()):
+                for candidate in (f"{node_id}.{method}", f"{node_id}.{method}Async"):
+                    if candidate in raw:
+                        handlers.setdefault(message, []).append((candidate, interface))
+    for node_id, node in raw.items():
+        for method, message in node.get("messages", ()):
+            for handler, interface in handlers.get(message, ()):
+                resolved[node_id].add(handler)
+                labels[(node_id, handler)] = f"{BUS_NAMES.get(method, method)} {message} -> {interface}"
+        for name, label in node.get("dispatch_calls", {}).items():
+            for target in resolved.get(node_id, ()):
+                if raw[target]["simple_name"] == name:
+                    labels[(node_id, target)] = label
+        if node["file"].endswith(PYTHON_EXTS):
+            for qualifier, call in node.get("call_sites", ()):
+                if call in CELERY_CALLS and qualifier not in ("", "?", "self"):
+                    for task in _celery_tasks(node, qualifier, raw, resolver):
+                        resolved[node_id].add(task)
+                        labels[(node_id, task)] = f"Celery {call}"
+    return labels
+
+
+def _celery_tasks(node: dict, qualifier: str, raw: Dict[str, dict], resolver: "ImportResolver") -> List[str]:
+    """The task function `qualifier` names in `qualifier.delay(...)`: imported, or defined in the same module,
+    and decorated as a task (@app.task, @shared_task, @celery.task(...))."""
+    candidates: Set[str] = set()
+    local = f"{node['module']}.{qualifier}"
+    if local in raw:
+        candidates.add(local)
+    binding = resolver.imports.get(node["file"], {}).get(qualifier)
+    if binding and binding[1] is not None:
+        candidates |= resolver.symbol(binding[0], binding[1], qualifier, node["file"]) or set()
+    return sorted(c for c in candidates if c in raw and any(
+        re.search(r"(^|\.)(shared_task|task)\b", d) for d in raw[c].get("decorators", ())))
 
 
 # C# framework bases and the methods they call on a subclass, by name (Unity messages aren't overrides)

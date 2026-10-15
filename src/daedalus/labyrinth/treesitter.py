@@ -382,10 +382,13 @@ def extract_elements(support: TreeSitterSupport, source: bytes, rel: str, tree=N
         el.is_test = _is_test(support, d, is_test_file) if callable_ else False
         if not callable_:
             el.bases = _bases(d.node)
+            el.generic_bases = _generic_bases(d.node)
         if support.grammar.typed_receivers:
             el.receiver_types = _cs_receiver_types(d.node, container.node if container else None, callable_,
                                                    el.element_types)
             el.extension_method = callable_ and _is_extension(d.node)
+            if callable_:
+                el.messages, el.dispatch_calls = _cs_dispatch_facts(d.node, el.receiver_types)
         elements.append(el)
         spans.append((d.node.start_byte, d.node.end_byte, el))
 
@@ -546,6 +549,12 @@ def _lambda_context(ident) -> Optional[str]:
                     return None
                 receiver = _receiver_name(fn.child_by_field_name("expression"))
                 method = fn.child_by_field_name("name")
+                if method is not None and method.type == "generic_name":  # Enqueue<IInvoiceMailer>(m => ...)
+                    targs = next((c for c in method.named_children if c.type == "type_argument_list"), None)
+                    if targs is not None and len(targs.named_children) == 1:
+                        type_name = _simple_type(targs.named_children[0])
+                        if type_name:
+                            return f"lambdatype:{type_name}"
                 if receiver and method is not None:
                     return f"lambda:{receiver}:{_text(method).split('<')[0]}"
                 return None
@@ -708,6 +717,62 @@ def _bases(class_node) -> List[str]:
                 if name and name not in out:
                     out.append(name)
     return out
+
+
+def _generic_bases(class_node) -> List[str]:
+    """"IRequestHandler:ShipOrder" for each generic base with a type argument (the first argument)."""
+    out: List[str] = []
+    for child in class_node.named_children:
+        if child.type in BASE_CLAUSES:
+            for item in _walk(child):
+                if item.type == "generic_name":
+                    name = _text(next((c for c in item.named_children if c.type == "identifier"), None))
+                    args = next((c for c in item.named_children if c.type == "type_argument_list"), None)
+                    first = _simple_type(args.named_children[0]) if args is not None and args.named_children else None
+                    if name and first:
+                        out.append(f"{name}:{first}")
+    return out
+
+
+# Message buses: the method sends or publishes its argument's type (MediatR, MassTransit, NServiceBus, ...)
+PUBLISH_METHODS = {"Send", "SendAsync", "Publish", "PublishAsync", "SendLocal", "CreateStream", "Request",
+                   "Schedule", "SchedulePublish", "ScheduleSend"}
+# Hangfire: the lambda's calls run later, in a job (BackgroundJob.Enqueue(() => mailer.Send(...)))
+JOB_METHODS = {"Enqueue", "Schedule", "AddOrUpdate", "ContinueJobWith", "Requeue"}
+
+
+def _cs_dispatch_facts(def_node, receiver_types: Dict[str, str]) -> Tuple[List[Tuple[str, str]], Dict[str, str]]:
+    """What a C# method publishes (Send(new ShipOrder(...)), Publish<OrderShipped>(...), Send(cmd) with cmd
+    typed) and which of its calls a job framework runs later (inside an Enqueue/Schedule lambda)."""
+    messages: List[Tuple[str, str]] = []
+    dispatch: Dict[str, str] = {}
+    for inv in (n for n in _walk(def_node) if n.type == "invocation_expression"):
+        fn = inv.child_by_field_name("function")
+        method = _method_name(fn)
+        args = inv.child_by_field_name("arguments")
+        first = next((a.named_children[0] for a in args.named_children if a.type == "argument" and a.named_children), None) \
+            if args is not None else None
+        if method in PUBLISH_METHODS:
+            type_name = None
+            name_node = fn.child_by_field_name("name") if fn is not None and fn.type == "member_access_expression" else fn
+            if name_node is not None and name_node.type == "generic_name":  # Publish<OrderShipped>(new { ... })
+                targs = next((c for c in name_node.named_children if c.type == "type_argument_list"), None)
+                if targs is not None and targs.named_children:
+                    type_name = _simple_type(targs.named_children[0])
+            if type_name is None and first is not None:
+                if first.type == "object_creation_expression":
+                    type_name = _simple_type(first.child_by_field_name("type"))
+                elif first.type == "identifier":
+                    type_name = receiver_types.get(_text(first))
+            if type_name:
+                messages.append((method, type_name))
+        if method in JOB_METHODS and args is not None:
+            for lam in (n for n in _walk(args) if n.type == "lambda_expression"):
+                for call in (n for n in _walk(lam) if n.type == "invocation_expression"):
+                    name = _method_name(call.child_by_field_name("function"))
+                    if name:
+                        dispatch.setdefault(name, f"Hangfire {method}")
+    return messages, dispatch
 
 
 def _declare(types: Dict[str, Optional[str]], name: str, type_name: Optional[str]) -> None:

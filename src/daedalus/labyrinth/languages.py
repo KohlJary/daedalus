@@ -56,6 +56,14 @@ class CodeElement:
     # Names holding something whose type parameter lambdas receive: "mock:IStore" for Mock<IStore>,
     # "seq:Order" for List<Order> or Order[] (C#)
     element_types: Dict[str, str] = field(default_factory=dict)
+    # Dispatch facts (issue #47). decorators: Python decorators as written (`app.task`). generic_bases:
+    # "IRequestHandler:ShipOrder" for a class implementing IRequestHandler<ShipOrder>. messages: (method, type)
+    # for each Send/Publish of a message object. dispatch_calls: call name -> label, for calls a framework
+    # runs later (inside a Hangfire Enqueue lambda).
+    decorators: List[str] = field(default_factory=list)
+    generic_bases: List[str] = field(default_factory=list)
+    messages: List[Tuple[str, str]] = field(default_factory=list)
+    dispatch_calls: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         # Derive simple_name from name if not set
@@ -363,6 +371,7 @@ class PythonSupport(LanguageSupport):
             end_line=node.end_lineno,
             member_calls=member_calls,
             call_sites=call_sites,
+            decorators=[ast.unparse(d) for d in node.decorator_list],
         )
 
     def _extract_class(self, node: ast.ClassDef, file_path: str, source: str) -> CodeElement:
