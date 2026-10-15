@@ -612,7 +612,7 @@ def test_doctor_says_when_the_registered_session_start_hook_never_ran(tmp_path):
     ("git commit -m 'a && daedalus gameplan pending now'", [["git", "commit", "-m", "a && daedalus gameplan pending now"]]),
     ('DAEDALUS_MOMUS_SKIP="two words" gh pr merge 5', [["gh", "pr", "merge", "5"]]),
     ("echo hi\ndaedalus board read t", [["echo", "hi"], ["daedalus", "board", "read", "t"]]),
-    ("cat > f <<'EOF'\ndaedalus board read t\nEOF\necho done", [["cat", ">", "f", "<<EOF"], ["echo", "done"]]),
+    ("cat > f <<'EOF'\ndaedalus board read t\nEOF\necho done", [["cat", ">", "f", "<<"], ["echo", "done"]]),
 ])
 def test_shell_commands(line, expected):
     assert commands(line) == expected
@@ -649,6 +649,26 @@ from daedalus_hookkit.shell import parse  # noqa: E402
     ("echo `gh pr merge 13`", [["13"]]),
     ("gh pr merge 14 && gh pr merge 15", [["14"], ["15"]]),
     ("echo 'gh pr merge 1'; git commit -m \"gh pr merge 2\"", []),
+    # Momus's final pass (trial 2026-10-15-hook-kit.md): each of these let an uncovered merge through
+    ("echo $((1+2)); gh pr merge 7", [["7"]]),
+    ("((i++)); gh pr merge 7", [["7"]]),
+    ("cat <<<x\ngh pr merge 7", [["7"]]),
+    ("read a <<<\"$v\"\ngh pr merge 7", [["7"]]),
+    ("ls # it's\ngh pr merge 7", [["7"]]),
+    ("cat <<END-X\nx\nEND-X\ngh pr merge 7", [["7"]]),
+    ("bash -lc 'gh pr merge 7'", [["7"]]),
+    ("sh -ec 'gh pr merge 7'", [["7"]]),
+    ("env -i gh pr merge 7", [["7"]]),
+    ("env -u X gh pr merge 7", [["7"]]),
+    ("nice -n 5 gh pr merge 7", [["7"]]),
+    ("2>/dev/null gh pr merge 7", [["7"]]),
+    ("bash << EOF\ngh pr merge 7\nEOF", [["7"]]),
+    ("bash <<< 'gh pr merge 7'", [["7"]]),
+    ("echo 'gh pr merge 7' | bash", [["7"]]),
+    ("f() { gh pr merge 7; }; f", [["7"]]),
+    ("cat <<EOF\n$(gh pr merge 7)\nEOF", [["7"]]),
+    ("cat <<'EOF'\n$(gh pr merge 7)\nEOF", []),
+    ("echo '<<'; cat <<A\ngh pr merge 7\nA", []),
     ("cat <<'EOF'\ngh pr merge 3\nEOF", []),
 ])
 def test_every_merge_a_line_runs_is_seen(line, merges):
@@ -661,9 +681,26 @@ def test_assignments_belong_to_their_own_command():
                                                     ("5", {"DAEDALUS_MOMUS_SKIP": "a b"}), ("6", {})]
 
 
+def test_heredoc_bodies_attach_by_position_not_by_order_of_use():
+    cmds = parse("cat <<'A'\nx\nA\ngit commit -m \"$(cat <<'B'\nT-e22\nB\n)\"")
+    commit = [c for c in cmds if c.words[0] == "git"][0]
+    assert commit.substs["SUBST0"][0].heredocs == ["T-e22"]
+    assert [c.heredocs for c in cmds if c.words[0] == "cat" and c not in commit.substs["SUBST0"]] == [["x"]]
+    cmds = parse("git commit -F - <<'EOF'\nT-h1 msg\nEOF\ngh pr create --body \"$(cat <<'EOF'\nPR body\nEOF\n)\"")
+    assert [c.heredocs for c in cmds if c.words[:2] == ["git", "commit"]] == [["T-h1 msg"]]
+
+
+@pytest.mark.parametrize("value", ["false", "0", "no", "OFF", False, 0, None])
+def test_off_strings_turn_a_switch_off(tmp_path, value):
+    p = project(tmp_path)
+    (p / ".daedalus/config.json").write_text(json.dumps({"hooks": {"board": value}}))
+    assert kit_settings.Settings(p).enabled("board") is False
+
+
 def test_heredoc_bodies_attach_to_their_command_and_substitution():
     cmds = parse("cat <<'A'\nT-e99\nA\ngit commit -F - <<'B'\nT-e22\nB")
     assert [(c.words[0], c.heredocs) for c in cmds] == [("cat", ["T-e99"]), ("git", ["T-e22"])]
+    assert parse("git commit -F - <<'B'\nT\nB")[0].words == ["git", "commit", "-F", "-", "<<"]
     commit = [c for c in parse("git commit -m \"$(cat <<'EOF'\nT-e22: fix\nEOF\n)\"") if c.words[0] == "git"][0]
     assert commit.words[3] == "SUBST0" and commit.substs["SUBST0"][0].heredocs == ["T-e22: fix"]
 
