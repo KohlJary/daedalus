@@ -1,5 +1,5 @@
 """
-`daedalus oph check`: a deterministic lint for Ophanic diagrams as drawn (edict 0016).
+`daedalus oph check`: a deterministic lint for Ophanic diagrams as drawn (edict 0017).
 
 A diagram is a run of consecutive lines that start with a box-drawing character. It is found:
 - in an `.oph` file, under an `@variant` line;
@@ -44,10 +44,14 @@ STYLE = {**{c: "light" for c in "─│┌┐└┘├┤┬┴┼╭╮╰╯"}
 BOX_START = set("┌└├│╭╰┏┗┣┃╔╚╠║")
 OPPOSITE = {U: D, D: U, L: R, R: L}
 HORIZONTAL = set("─━═")
+MAX_WIDTH = 100
+# An edge written inside a box ("─▶ █E10 █E11") is text for joining purposes, as are listed edges
+EDGE_TOKEN = re.compile(r"(?<![─━═┌└├┬┴┼│])─+▶(?=\s)")
 VERTICAL = set("│┃║├┤┣┫╠╣")
 STEP = {U: (-1, 0), D: (1, 0), L: (0, -1), R: (0, 1)}
 SLUG = re.compile(r"█[A-Z]\d{1,4}")
 LEGEND = re.compile(r"^\s*(█[A-Z]\d{1,4})\s*:")
+LISTED = re.compile(r"^\s*(█[A-Z]\d{1,4}) ─▶ (█[A-Z]\d{1,4})")
 COMPONENT = re.compile(r"◆([A-Z][A-Za-z0-9]*)")
 
 
@@ -93,7 +97,7 @@ def diagrams(text: str, markdown: bool = False) -> list[Diagram]:
                 i += 1
             after = []
             j = i
-            while j < len(lines) and (lines[j].startswith("note:") or LEGEND.match(lines[j])
+            while j < len(lines) and (lines[j].startswith("note:") or LEGEND.match(lines[j]) or LISTED.match(lines[j])
                                       or (lines[j].startswith(" ") and after and lines[j].strip())):
                 after.append(lines[j])
                 j += 1
@@ -104,6 +108,7 @@ def diagrams(text: str, markdown: bool = False) -> list[Diagram]:
 
 
 def _cells(rows: list[str]) -> list[list[str]]:
+    rows = [EDGE_TOKEN.sub(lambda m: " " * len(m.group(0)), r) for r in rows]
     grid = [list(r) for r in rows]
     # A slug inside an edge (─█R11─▶) is part of the line: treat its characters as ─ for joining
     for r, row in enumerate(rows):
@@ -120,6 +125,8 @@ def _cells(rows: list[str]) -> list[list[str]]:
 def check_diagram(path: str, d: Diagram, components: set[str], sections: set[str]) -> list[Problem]:
     out: list[Problem] = []
     widths = {width(r.rstrip()) for r in d.rows}
+    if max(widths, default=0) > MAX_WIDTH:
+        out.append(Problem(path, d.start, "width", f"the diagram is {max(widths)} wide; at most {MAX_WIDTH}"))
     if len(widths) > 1:
         common = max(widths, key=lambda w: sum(1 for r in d.rows if width(r.rstrip()) == w))
         for k, r in enumerate(d.rows):
@@ -168,7 +175,7 @@ def check_diagram(path: str, d: Diagram, components: set[str], sections: set[str
     for name in sorted(set(COMPONENT.findall(text))):
         if name not in sections and name not in components:
             out.append(Problem(path, d.start, "components", f"◆{name} has no ## ◆{name} section and isn't a known component"))
-    used = set(SLUG.findall(text))
+    used = set(SLUG.findall(text)) | {s for line in d.after if (m := LISTED.match(line)) for s in m.groups()}
     legend = {m.group(1) for line in d.after if (m := LEGEND.match(line))}
     for s in sorted(used - legend):
         out.append(Problem(path, d.start, "slugs", f"{s} is used in the diagram but has no legend line"))
@@ -177,9 +184,20 @@ def check_diagram(path: str, d: Diagram, components: set[str], sections: set[str
     return out
 
 
-def check_text(path: str, text: str, components: Optional[set[str]] = None) -> list[Problem]:
+def definitions(text: str) -> set[str]:
+    """What an .oph file defines: its `## ◆Name` sections, and its title when it draws a screen."""
+    names = set(re.findall(r"^## ◆([A-Z][A-Za-z0-9]*)", text, re.M))
+    lines = text.splitlines()
+    top = text.split("\n## ", 1)[0]
+    if lines and lines[0].startswith("# ") and re.search(r"^@[a-z]", top, re.M):
+        names.add(lines[0][2:].strip())
+    return names
+
+
+def check_text(path: str, text: str, components: Optional[set[str]] = None,
+               siblings: Optional[set[str]] = None, strict: bool = False) -> list[Problem]:
     markdown = path.endswith(".md")
-    sections = set(re.findall(r"^## ◆([A-Z][A-Za-z0-9]*)", text, re.M))
+    sections = set() if strict else definitions(text) | (siblings or set())
     out: list[Problem] = []
     for d in diagrams(text, markdown=markdown):
         out += check_diagram(path, d, components or set(), sections)
@@ -194,14 +212,28 @@ def components_from_package(package_dir: Path) -> set[str]:
     return found
 
 
-def check_paths(paths: Iterable[Path], components: Optional[set[str]] = None) -> list[Problem]:
+def check_paths(paths: Iterable[Path], components: Optional[set[str]] = None, strict: bool = False) -> list[Problem]:
+    """Lint every .oph file and ```oph block under the paths. With `strict`, every ◆Name must be a known component
+    (a class), not just a section: how the TUI checks that each drawn component exists in code (edict 0012)."""
     out: list[Problem] = []
+    known = set(components or set())
+    known |= {n[:-len("Screen")] for n in known if n.endswith("Screen")}
     for p in paths:
         p = Path(p)
         files = sorted(p.rglob("*.oph")) + sorted(p.rglob("*.md")) if p.is_dir() else [p]
+        sibling_defs: dict[Path, set[str]] = {}
+        for f in files:
+            if f.parent not in sibling_defs:
+                sibling_defs[f.parent] = set()
+                for g in f.parent.glob("*.oph"):
+                    try:
+                        sibling_defs[f.parent] |= definitions(g.read_text(encoding="utf-8"))
+                    except (OSError, UnicodeDecodeError):
+                        pass
         for f in files:
             try:
-                out += check_text(str(f), f.read_text(encoding="utf-8"), components)
+                out += check_text(str(f), f.read_text(encoding="utf-8"), known,
+                                  set() if strict else sibling_defs[f.parent], strict=strict)
             except (OSError, UnicodeDecodeError) as e:
                 out.append(Problem(str(f), 0, "read", str(e)))
     return out

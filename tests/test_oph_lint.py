@@ -1,4 +1,4 @@
-"""`daedalus oph check` (edict 0016): each lint fires on a broken fixture and not on a clean one."""
+"""`daedalus oph check` (edict 0017): each lint fires on a broken fixture and not on a clean one."""
 
 from pathlib import Path
 

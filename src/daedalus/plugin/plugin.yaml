@@ -67,5 +67,7 @@ skills:
     description: Rebuild a period the gameplan never recorded, from git (gather, mnemosyne, check, Momus)
   - name: reflect
     description: Run a due reflection over session logs (bundle, delphi, check, Momus); never applies proposals
+  - name: ophanic
+    description: Draw structure as Ophanic diagrams (layouts first; relationships as maps); lint with daedalus oph check
   - name: dream
     description: Dream (edict 0013) - seeds, a dream generated before it is judged, a cold waking pass; picks reach the plan only as proposals

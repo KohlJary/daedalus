@@ -228,3 +228,21 @@ def mark_done(repo: Path, number: str) -> Path:
         raise EdictError(f"Edict {edict.number} is {edict.status or '(no status)'}, not accepted")
     edict.path.write_text(STATUS_LINE.sub("Status: done", edict.text, count=1), encoding="utf-8")
     return edict.path
+
+
+def depends_on(edict: Edict) -> tuple[list[str], list[str]]:
+    """(edict numbers this edict depends on, everything else its `Depends on:` block names), edict 0017.
+
+    The block runs from `Depends on:` to the first blank line. Each four-digit number is an edge to that edict
+    (its own number excluded); anything else (a branch, a task ID, "none") is listed as external."""
+    m = re.search(r"^Depends on:(.*?)(?:\n\s*\n|\Z)", edict.text, re.M | re.S)
+    if not m:
+        return [], []
+    block = " ".join(m.group(1).split())
+    numbers = sorted({n for n in re.findall(r"(?<!\d)(\d{4})(?!\d)", block) if n != edict.number})
+    # A part that names an edict is about that edict (its gloss is not a dependency); the rest is external
+    unglossed = re.sub(r"\([^)]*\)", "", block)  # parenthetical glosses describe; they don't depend
+    parts = [p.strip(" ,;.") for p in unglossed.split(";")]
+    external = [p for p in parts if p and not re.search(r"(?<!\d)\d{4}(?!\d)", p)
+                and not p.lower().startswith("none")]
+    return numbers, external

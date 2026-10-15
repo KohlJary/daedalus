@@ -147,6 +147,13 @@ class DreamConfig:
 
 
 @dataclass
+class OphConfig:
+    """Ophanic (edict 0017)."""
+    # Components a ◆Name may refer to, for doctor's lint of docs/design: class names, or package dirs to scan
+    components: list = field(default_factory=list)
+
+
+@dataclass
 class TuiConfig:
     """The Daedalus TUI (edict 0012)."""
     prs: str = "local"       # local: branches ahead of main; gh: the GitHub CLI
@@ -176,7 +183,7 @@ TRISTATE_SETTINGS = ("machine.employer",)
 TEMPLATE_SETTING_GROUPS = ("git", "sections", "edicts")
 
 # Groups a project may override in .daedalus/config.json
-PROJECT_SETTING_GROUPS = TEMPLATE_SETTING_GROUPS + ("doctor", "hooks", "reconstruct", "board", "reflection", "tui", "dream")
+PROJECT_SETTING_GROUPS = TEMPLATE_SETTING_GROUPS + ("doctor", "hooks", "reconstruct", "board", "reflection", "tui", "dream", "oph")
 
 
 @dataclass
@@ -195,6 +202,7 @@ class DaedalusConfig:
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
     machine: MachineConfig = field(default_factory=MachineConfig)
     tui: TuiConfig = field(default_factory=TuiConfig)
+    oph: OphConfig = field(default_factory=OphConfig)
     dream: DreamConfig = field(default_factory=DreamConfig)
     # Sources (edict 0011): {name: {key: value}}, free-form here and validated by config_schema
     sources: dict = field(default_factory=dict)
@@ -280,6 +288,7 @@ def load_config() -> DaedalusConfig:
             reflection=ReflectionConfig(**data.get("reflection", {})),
             machine=MachineConfig(**data.get("machine", {})),
             tui=TuiConfig(**data.get("tui", {})),
+            oph=OphConfig(**data.get("oph", {})),
             dream=DreamConfig(**data.get("dream", {})),
             sources=data["sources"] if isinstance(data.get("sources"), dict) else {},
         )
@@ -307,6 +316,7 @@ def save_config(config: DaedalusConfig) -> None:
         "reflection": asdict(config.reflection),
         "machine": asdict(config.machine),
         "tui": asdict(config.tui),
+        "oph": asdict(config.oph),
         "dream": asdict(config.dream),
     }
     if config.sources:

@@ -637,7 +637,28 @@ def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Fi
     findings += check_project_map(project_dir)
     findings += check_empty_templates_read(project_dir, settings["stale_task_days"], today=today)
     findings += check_sources(project_dir, plans)
+    findings += check_design_diagrams(project_dir)
     return findings, hints
+
+
+def check_design_diagrams(project_dir: Path) -> list[Finding]:
+    """Design diagrams under docs/design that don't pass `daedalus oph check` (edict 0017)."""
+    design = Path(project_dir) / "docs" / "design"
+    if not design.is_dir():
+        return []
+    from .ophanic.lint import check_paths, components_from_package
+
+    known: set[str] = set()
+    for c in get_project_settings(project_dir, "oph").get("components") or []:
+        p = Path(project_dir) / c
+        known |= components_from_package(p) if p.is_dir() else {c}
+    problems = check_paths([design], known)
+    if not problems:
+        return []
+    first = problems[0]
+    return [Finding("design-diagram-invalid",
+                    f"{len(problems)} problem(s) in design diagrams, e.g. {first.path}:{first.line}: {first.message}. "
+                    "Run `daedalus oph check docs/design`.")]
 
 
 # ---------- sources (edict 0011) ----------
