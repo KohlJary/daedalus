@@ -91,8 +91,8 @@
     {
       "id": "dream-2026-10-15.p4",
       "title": "The state-of-the-project page",
-      "description": "Built in PR #57 (open, for Kohl's review): `daedalus page`.\n\nFrom a dream (speculative): `daedalus dream show 2026-10-15`.\n\n**The state-of-the-project page** (from i33). The TUI's goal is legibility for someone who wasn't there, but that someone has to install it first. A published, read-only page generated at exhale would do half the TUI's job for zero install: the active phase, the edicts and their status, what needs whom, and the last session in plain words. *What would make it real:* the exhale skill gains a step that renders the gameplan and edicts to one HTML page from the same library functions the TUI uses (one source of truth, edict 0012's rule), and republishes it to a stable URL. Kohl decides whether it's shared.",
-      "status": "review",
+      "description": "Built: PR #57 (merged): `daedalus page`.\n\nFrom a dream (speculative): `daedalus dream show 2026-10-15`.\n\n**The state-of-the-project page** (from i33). The TUI's goal is legibility for someone who wasn't there, but that someone has to install it first. A published, read-only page generated at exhale would do half the TUI's job for zero install: the active phase, the edicts and their status, what needs whom, and the last session in plain words. *What would make it real:* the exhale skill gains a step that renders the gameplan and edicts to one HTML page from the same library functions the TUI uses (one source of truth, edict 0012's rule), and republishes it to a stable URL. Kohl decides whether it's shared.",
+      "status": "done",
       "priority": "P2",
       "item_type": "idea",
       "created_at": "2026-10-15T06:22:45Z",
@@ -108,13 +108,13 @@
         },
         "remote_updated": ""
       },
-      "status_changed_at": "2026-10-15T02:22:56"
+      "status_changed_at": "2026-10-15T02:26:53"
     },
     {
       "id": "dream-2026-10-15.p5",
       "title": "The roadmap remembers why things died",
-      "description": "Built in PR #58 (open, for Kohl's review): epitaphs.\n\nFrom a dream (speculative): `daedalus dream show 2026-10-15`.\n\n**The roadmap remembers why things died** (from i14). Tonight I made a dropped update move the baseline, so it doesn't come back. That's right for the sync, but it erases the signal that someone keeps asking for something. *What would make it real:* an `epitaph` on dropped and closed-unbuilt items, and a doctor hint when the same external id or a near-duplicate title is dropped a third time. It's small, and it's the kind of pattern only a system that keeps everything can notice.",
-      "status": "review",
+      "description": "Built: PR #58 (merged): epitaphs.\n\nFrom a dream (speculative): `daedalus dream show 2026-10-15`.\n\n**The roadmap remembers why things died** (from i14). Tonight I made a dropped update move the baseline, so it doesn't come back. That's right for the sync, but it erases the signal that someone keeps asking for something. *What would make it real:* an `epitaph` on dropped and closed-unbuilt items, and a doctor hint when the same external id or a near-duplicate title is dropped a third time. It's small, and it's the kind of pattern only a system that keeps everything can notice.",
+      "status": "done",
       "priority": "P2",
       "item_type": "idea",
       "created_at": "2026-10-15T06:22:45Z",
@@ -130,18 +130,18 @@
         },
         "remote_updated": ""
       },
-      "status_changed_at": "2026-10-15T02:22:56"
+      "status_changed_at": "2026-10-15T02:26:53"
     },
     {
       "id": "dream-2026-10-15.i25",
       "title": "Undo an applied proposal",
-      "status": "review",
+      "status": "done",
       "priority": "P2",
       "item_type": "idea",
       "created_at": "2026-10-15T02:22:56",
       "created_by": "daedalus",
-      "status_changed_at": "2026-10-15T02:22:56",
-      "description": "From the first dream (`daedalus dream show 2026-10-15`), idea 25: not one of the waking picks, built on the night shift. Built in PR #62 (open, for Kohl's review): `daedalus gameplan pending undo`.",
+      "status_changed_at": "2026-10-15T02:26:53",
+      "description": "From the first dream (`daedalus dream show 2026-10-15`), idea 25: not one of the waking picks, built on the night shift. Built: PR #62 (merged): `daedalus gameplan pending undo`.",
       "origin": {
         "source": "local"
       }
