@@ -630,7 +630,7 @@ class NeedsYouScreen(Screen):
         source, prompt = send_prompt(item, self.shell.state)
         from ..sendform import needs_snapshot
 
-        self.shell.ask_to_send(source, prompt, "needs", lambda: needs_snapshot(self.items))
+        self.shell.ask_to_send(source, prompt, "needs", lambda form: needs_snapshot(self.items, form=form))
 
     def _no_write(self, item) -> str:
         return {"PR": "Merging happens on GitHub, not here. s hands it to Claude.",

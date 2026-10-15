@@ -293,13 +293,13 @@ class HealthScreen(Screen):
     def action_send(self) -> None:
         source, prompt = self.send_target()
         state = getattr(self.app, "state", None)
-        self.app.ask_to_send(source, prompt, "health", lambda: self.snapshot(state))
+        self.app.ask_to_send(source, prompt, "health", lambda form: self.snapshot(state, form))
 
-    def snapshot(self, state: Any = None) -> str:
+    def snapshot(self, state: Any = None, form: str = "ophanic") -> str:
         from ..sendform import health_snapshot
 
         if state is not None and hasattr(state, "findings"):
-            return health_snapshot(state.findings, state.hints)
+            return health_snapshot(state.findings, state.hints, form=form)
         from ..state import health
 
-        return health_snapshot(*health(self.project_dir))
+        return health_snapshot(*health(self.project_dir), form=form)

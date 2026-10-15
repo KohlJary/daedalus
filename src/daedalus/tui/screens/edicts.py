@@ -262,4 +262,4 @@ class EdictsScreen(Screen):
         from ..sendform import edicts_snapshot
 
         source, prompt = self.send_target()
-        self.app.ask_to_send(source, prompt, "edicts", lambda: edicts_snapshot(self.rows, self.project_dir))
+        self.app.ask_to_send(source, prompt, "edicts", lambda form: edicts_snapshot(self.rows, self.project_dir, form=form))

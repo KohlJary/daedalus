@@ -91,27 +91,46 @@ esc returns to the shell from any expanded screen.
 
 What `s` hands Claude is set by `tui.send_form` (dream pick p2; the send-form A/B edict 0017 deferred):
 
-- `prose` (the default): the prompt the screen builds, byte for byte as before. Nothing changes unless you opt in.
-- `ophanic`: the same prompt, then the focused panel's state as an Ophanic snapshot in an ```` ```oph ```` fence.
-  Gameplan (each tab: plan, workstreams, roadmap), Needs you, Health, Edicts and Board have snapshots
-  (`src/daedalus/tui/sendform.py`); other screens send prose.
-- `ab`: each send draws one of the two in code, from a seed and a counter in `.daedalus/tui/send-ab.json`. The
-  counter moves only when a send is pasted, so cancelling and sending again can't re-roll the draw. Send to Claude
-  says which form it drew.
+- `prose` (the default): the prompt the screen builds, byte for byte as before, and nothing is written to disk.
+  Nothing changes unless you opt in.
+- `text`: the prompt, then the focused panel's state as plain text lines in a ```` ```text ```` fence.
+- `ophanic`: the prompt, then the same state as an Ophanic diagram in an ```` ```oph ```` fence.
+- `ab`: each send draws `text` or `ophanic` in code, from a seed and a counter in `.daedalus/tui/send-ab.json`.
+
+Gameplan (each tab: plan, workstreams, roadmap), Needs you, Health, Edicts and Board have snapshots
+(`src/daedalus/tui/sendform.py`). Other screens send prose.
+
+**Same facts, different form.** `text` and `ophanic` are rendered from one spec per panel: the same graph, slugs,
+labels, marks, details, links, counts and notes. A test checks that every node's id and label and every count
+appear in both. That is why `ab` draws between them and not between `prose` and `ophanic`. The ophanic arm would
+also carry the panel's state, which prose doesn't, so a difference couldn't be credited to form. Edict 0017's
+amendment 6 calls the comparison arm "the panel's own text (`panel_text()`)". No such function existed, and
+`text` is that arm. One difference remains: a diagram cuts labels longer than its box with `…`, and the text form
+cuts nothing. Snapshots draw one box per row (full width) to keep cutting rare. Ids come first in each line (a
+board thread's id and author come before its title) so they survive. The diagram says so in its reading notes.
+
+**The arm is hidden until the paste.** Under `ab`, Send to Claude shows only the prompt and a note that a snapshot
+will be added. The arm is drawn when you paste, and the snapshot is appended then. You see it in Claude's prompt
+before you press enter. Cancelling draws nothing, so a send can't be re-rolled by cancelling. The seed sits in a
+local file: this guards against accidental steering, not against an owner who reads it.
 
 Momus's perception pilot (PR #69) found that a small model misread containment and read proportions off box widths.
 So every snapshot opens with how to read it (a `·` line inside a box belongs to that box, and nothing else does),
 spells out its marks, says that sizes and positions mean nothing, and states its counts as numbers. Every snapshot
 passes `daedalus oph check` at 100 and 60 columns (tests/test_tui_send_form.py).
 
-Each pasted send appends one line to `.daedalus/tui/sends.jsonl` (local: the folder carries its own `.gitignore`):
-the time, the panel, the form, a hash of the prompt, the snapshot's size, the A/B draw, and whether you edited the
-text first. Never the content. `daedalus tui sends` counts sends per form and per panel.
+Each pasted send under `text`, `ophanic` or `ab` appends one line to `.daedalus/tui/sends.jsonl`. It stays local:
+the folder carries its own `.gitignore`. A line holds the time, the panel, the form, a hash of the prompt, the
+snapshot's size, the A/B draw, and whether you edited the text first. It never holds the content. Plain prose
+isn't an arm, so it logs nothing. `daedalus tui sends` counts sends per form and per panel.
 
-**Not built yet: judging it.** Whether Claude's next action was better after a diagram than after prose needs
-reflection's session digests: joining each send to the session that received it, and to what happened next. That is
-the next step (edict 0017's criterion that the draw is "recorded in the session's reflection digest"). Until then
-the log only says what was sent.
+**Kohl to decide:**
+- **Scope.** Amendment 6 says v1 covers only the Gameplan panel; this covers five. It is opt-in and off by
+  default. The alternatives are to gate the other four behind `ab` only, or to drop them.
+- **The criterion isn't met.** Edict 0017's acceptance criterion says the draw is "recorded in the session's
+  reflection digest". That isn't built. Until each send is joined to the session that received it, and to what
+  Claude did next, the A/B answers nothing: the log only says what was sent. That join, through reflection's
+  digests, is the next step.
 
 ## Extensibility: sources and plugins
 

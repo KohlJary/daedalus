@@ -306,20 +306,19 @@ class DaedalusShell(App, inherit_bindings=False):
         self.ask_to_send(source, prompt, panel, snapshot)
 
     def ask_to_send(self, source: str, prompt: str, panel: Optional[str] = None,
-                    snapshot: Optional[Callable[[], Optional[str]]] = None) -> None:
-        """Open Send to Claude. `panel` names the panel for the send log; `snapshot` draws its state for the
-        ophanic form (tui.send_form), and is only called when that form is chosen."""
+                    snapshot: Optional[Callable[[str], Optional[str]]] = None) -> None:
+        """Open Send to Claude. `panel` names the panel for the send log; `snapshot(form)` draws its state as
+        text or as a diagram (tui.send_form), and is only called when one of those is chosen."""
         from . import sendform
 
         setting = self.settings.get("send_form", "prose")
-        sent = sendform.build(self.project_dir, setting, prompt, snapshot)
+        pre = sendform.preview(setting, prompt, snapshot)
 
         def done(text: Optional[str]) -> None:
             if text:
                 try:
-                    sendform.record(self.project_dir, panel or "other", prompt, sent,
-                                    edited=text != sent["text"].rstrip("\n"))
-                except Exception:  # the log must never stop a send
+                    text = sendform.finish(self.project_dir, setting, pre, text, panel or "other", prompt, snapshot)
+                except Exception:  # the form and its log must never stop a send
                     pass
                 while len(self.screen_stack) > 1:  # back to the shell from an expanded screen, to show Claude
                     self.pop_screen()
@@ -331,22 +330,22 @@ class DaedalusShell(App, inherit_bindings=False):
                     self.pop_screen()
                 self.action_focus_claude()
         self.query_one(KeyBar).show_modal()
-        self.push_screen(SendToClaude(source, sent["text"], sendform.setting_note(setting, sent)), done)
+        self.push_screen(SendToClaude(source, pre["shown"], sendform.setting_note(setting)), done)
 
     def action_theme(self) -> None:
         self.theme = "textual-light" if self.theme != "textual-light" else "textual-dark"
 
 
-def panel_snapshot(panel: str, state: AppState) -> tuple[str, Optional[Callable[[], str]]]:
-    """(panel name for the send log, a function drawing its snapshot) for a home-screen panel."""
+def panel_snapshot(panel: str, state: AppState) -> tuple[str, Optional[Callable[[str], str]]]:
+    """(panel name for the send log, a function drawing its snapshot in a form) for a home-screen panel."""
     from . import sendform
 
     if panel == "needs":
-        return "needs", lambda: sendform.needs_snapshot(state.needs)
+        return "needs", lambda form: sendform.needs_snapshot(state.needs, form=form)
     if panel == "gameplan":
-        return "gameplan", lambda: sendform.plan_snapshot(state.gameplan)
+        return "gameplan", lambda form: sendform.plan_snapshot(state.gameplan, form=form)
     if panel == "health":
-        return "health", lambda: sendform.health_snapshot(state.findings, state.hints)
+        return "health", lambda form: sendform.health_snapshot(state.findings, state.hints, form=form)
     return panel or "other", None
 
 

@@ -159,7 +159,7 @@ class TuiConfig:
     prs: str = "local"       # local: branches ahead of main; gh: the GitHub CLI
     escape: str = "ctrl+]"   # returns focus from the Claude pane to the dashboard
     backend: str = "auto"    # how the Claude pane hosts its session: auto (tmux if installed) | tmux | pty
-    send_form: str = "prose"  # what `s` sends: prose | ophanic (the panel as a diagram too) | ab (drawn per send)
+    send_form: str = "prose"  # what `s` sends: prose | text | ophanic (the panel's state too) | ab (text vs ophanic)
 
 
 # Allowed values for string settings (the registry in config_schema.py reads these)
@@ -168,7 +168,7 @@ SETTING_CHOICES = {
     "ariadne.autonomy": ("supervised", "hybrid", "full"),
     "tui.prs": ("local", "gh"),
     "tui.backend": ("auto", "tmux", "pty"),
-    "tui.send_form": ("prose", "ophanic", "ab"),
+    "tui.send_form": ("prose", "text", "ophanic", "ab"),
     # Chords Claude Code doesn't use: anything else could leave the pane with no way out (Momus F8)
     "tui.escape": ("ctrl+]", "ctrl+\\", "ctrl+^", "ctrl+_"),
     "dream.mode": ("list", "narrative", "plain", "ab"),
