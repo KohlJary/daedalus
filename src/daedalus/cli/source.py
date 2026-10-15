@@ -38,6 +38,9 @@ def source_list():
         click.echo(f"  {name:10} {cls.title} ({', '.join(notes)})")
     for name, error in sources.broken().items():
         click.echo(f"  {name:10} failed to load: {error}")
+    if not sources.installed() and not sources.broken():
+        click.echo("  none: the install's metadata registers no sources. It's probably stale (an editable install "
+                   "made before sources existed). Run `daedalus doctor` for how to reinstall.")
     configured = configured_source_names(project_dir)
     active = sources.active(project_dir)
     names = configured + [n for n in active if n not in configured]
