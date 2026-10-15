@@ -261,6 +261,10 @@ def _split(text: str) -> list:
             continue
         if not words:
             piped = next_piped
+        if "<<<" in tok and tok != "<<<":  # bash<<<'x' and <<<'x': the herestring is its own word
+            head, _, rest = tok.partition("<<<")
+            words += [w for w in (head, "<<<", rest) if w]
+            continue
         words.append(tok)
     return out
 

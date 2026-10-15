@@ -664,6 +664,8 @@ from daedalus_hookkit.shell import parse  # noqa: E402
     ("2>/dev/null gh pr merge 7", [["7"]]),
     ("bash << EOF\ngh pr merge 7\nEOF", [["7"]]),
     ("bash <<< 'gh pr merge 7'", [["7"]]),
+    ("bash <<<'gh pr merge 7'", [["7"]]),
+    ("bash<<<\"gh pr merge 7\"", [["7"]]),
     ("echo 'gh pr merge 7' | bash", [["7"]]),
     ("f() { gh pr merge 7; }; f", [["7"]]),
     ("cat <<EOF\n$(gh pr merge 7)\nEOF", [["7"]]),
