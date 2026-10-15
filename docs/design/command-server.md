@@ -9,7 +9,7 @@ This is that successor, written up so it can be argued with.
 
 Daedalus's durable state is scattered, and the user is the glue.
 
-- **The models are per machine.** Home and work each grow their own picture of Kohl and of
+- **The models are per machine.** Each machine grows its own picture of Kohl and of
   Daedalus. Export and import (0010) close the gap by hand.
 - **Per-repo memory** (`.daedalus/`) is good for project facts. It is the wrong home for who
   Daedalus is, or for what it has learned about Kohl, because those cross every project.
@@ -48,7 +48,7 @@ Kohl*. It never holds raw material from sessions.
 ## Why it matters
 
 1. **One Daedalus.** The relationship is the point of the models (0010). With one copy, what
-   Daedalus learns at home is there at work the next morning, scoped by the same rules. Without
+   Daedalus learns on one machine is there on the next, scoped by the same rules. Without
    it, there are two Daedaluses that drift apart.
 2. **Claude in chat becomes a participant, not a reader.** Chat could draft an edict, ask the
    Code session for its objections, and read the dissent, without Kohl carrying anything. The
@@ -67,8 +67,8 @@ Kohl*. It never holds raw material from sessions.
 Concrete scenarios, roughly in the order they'd arrive:
 
 - **Morning at work.** `/inhale` on the work laptop pulls the models. The summary shows the
-  `anywhere` and `work` entries learned at home last night. A home entry stays home unless
-  `home_at_work` is on.
+  `anywhere` and `work` entries learned on the home machine last night. A `private` entry
+  stays out of work projects unless `share_private` is on.
 - **Monthly reflection across machines.** The monthly run consolidates the models from both
   machines' evidence, and its Evolution section covers the whole month, not half of it.
 - **Edicts from chat, objections back.** Claude in chat posts a draft edict. The Code session
@@ -108,8 +108,8 @@ unit of sync, so export/import and the server speak the same language from day o
 ### Scopes become access control
 
 Each device gets a token that says which scopes it may receive: the work laptop `work` and
-`anywhere` (plus `home` if `home_at_work` is on), the home machine everything. The server
-filters by token, so a home entry never reaches a device that shouldn't hold it, rather than
+`anywhere` (plus `private` if `share_private` is on), Kohl's own machine everything. The server
+filters by token, so a private entry never reaches a device that shouldn't hold it, rather than
 being held there and merely not shown. User-defined scopes (noted in 0010 for later) slot in
 here naturally: a scope is a name, and a token is a set of names.
 
@@ -151,7 +151,7 @@ needs it.
 - **What reaches a work machine** is decided by its token, not by trust in the client.
 - **Anything a session reads from the server goes through that session's account.** On an
   employer's account, that includes whatever the summary shows. That's the same caution as
-  `home_at_work`, and the docs should say it plainly.
+  `share_private`, and the docs should say it plainly.
 - **The server never holds transcripts, digests or code**, so a breach exposes the models and
   the log, not sessions or employer work. The models are still sensitive; encrypt at rest and
   back them up encrypted.
