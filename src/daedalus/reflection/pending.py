@@ -241,7 +241,7 @@ def _apply_permission(project_dir: Path, spec: dict) -> None:
 
 def forget_queued(project_dir: Path, entry: dict) -> int:
     """After `forget`, drop this project's queued proposals about the forgotten entry."""
-    text = m.normalise(entry.get("observation", ""))
+    text = m.forget_key(entry.get("observation", ""))
     path = pending_path(project_dir)
     if not path.exists():
         return 0
@@ -252,7 +252,7 @@ def forget_queued(project_dir: Path, entry: dict) -> int:
             change = p.get("model") or {}
             return change.get("model") == "user" and (
                 change.get("id") == entry.get("id")
-                or (text and m.normalise((change.get("entry") or {}).get("observation", "")) == text))
+                or (text and m.forget_key((change.get("entry") or {}).get("observation", "")) == text))
 
         kept = [p for p in proposals if not about(p)]
         _save(project_dir, kept)

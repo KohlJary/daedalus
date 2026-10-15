@@ -200,8 +200,15 @@ def _record_hand_edit(root: Optional[Path], model: str, before: dict, after: dic
             record(root, model, entry_id, "user-delete", entry, None, by="user", note="deleted by hand")
 
 
+def forget_key(text: str) -> str:
+    """The loose form forgetting matches on: words only, no punctuation or symbols. Deliberately looser than
+    `normalise` (a forgotten observation stays forgotten however it's punctuated), and unchanged since tombstones
+    were first written, so old tombstones keep matching (Momus, reflection-leaks review)."""
+    return re.sub(r"\W+", " ", (text or "").lower()).strip()
+
+
 def _text_hash(text: str) -> str:
-    return _hash(normalise(text))
+    return _hash(forget_key(text))
 
 
 def _tombstone(entry: dict, reason: str) -> dict:
@@ -231,7 +238,7 @@ def find(data: dict, entry_id: str) -> Optional[dict]:
 
 
 def is_tombstoned(data: dict, entry_id: Optional[str] = None, observation: Optional[str] = None) -> bool:
-    digest = _text_hash(observation) if normalise(observation or "") else None
+    digest = _text_hash(observation) if forget_key(observation or "") else None
     return any((entry_id and t.get("id") == entry_id) or (digest and t.get("observation_hash") == digest)
                for t in data.get("tombstones", []))
 

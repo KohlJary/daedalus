@@ -64,7 +64,7 @@ SPELLED = {"two": 2, "twice": 2, "three": 3, "thrice": 3, "four": 4, "five": 5, 
            "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90, "hundred": 100}
 # Numbers that sit next to a symbol the plain pattern skips: ratios (4/109), ranges (10-20), units (3x, 12KB)
 RATIO = re.compile(r"(?<![\w./])(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)(?![\w./])")
-RANGE = re.compile(r"(?<![\w.-])(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)(?![\w.-])")
+RANGE = re.compile(r"(?<![\w.-])(\d+)\s*[-–]\s*(\d+)(?![\w.-])")  # integers only: 3.10-3.12 is versions
 UNIT = re.compile(r"(?<![\w.-])(\d+(?:\.\d+)?)(x|kb|mb|gb|k|ms|s|m|h)\b", re.IGNORECASE)
 SPELLED_RE = re.compile(r"\b(" + "|".join(SPELLED) + r")\b", re.IGNORECASE)
 
@@ -220,6 +220,11 @@ def check_report(project_dir: Path, report: dict, models_root: Optional[Path] = 
                 continue
             if not _same(actual, fig.get("value")):
                 err(f"{where}: figure says {fig.get('value')} for {ref}, the digest says {actual}")
+            days = set((digests[session].get("event_days") or {}).values())
+            if period and days and not all(period[0] <= d <= period[1] for d in days) \
+                    and ref.split(".")[0] not in WHOLE_SESSION_OK:
+                err(f"{where}: figure cites {ref}, a whole-session total, but session {session} also ran outside the "
+                    f"{level} period; count the period's events instead (the bundle's in_period)")
 
     # A dream is never evidence (edict 0013): the report may not cite or lean on one anywhere
     import json as _json
