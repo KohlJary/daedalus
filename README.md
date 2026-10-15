@@ -193,6 +193,31 @@ By default nothing runs outside your session: the next `/inhale` says what is du
 yet available), but only on a machine you have marked `machine.employer false`. See
 [docs/reflection.md](docs/reflection.md) for the formats and timer examples.
 
+### Dreaming: speculation, kept out of the plan until you say
+
+Reflection replays the record; a **dream** recombines it. After a reflection run (or whenever you ask:
+`/dream`, or `/dream about the TUI`), Daedalus starts from a few seeds it chooses by readiness (stalled
+tasks, waiting backlog, open questions, the last reflection's findings), dreams wide without judging, and
+then a separate agent that didn't dream reads it back and picks three to five ideas worth building.
+
+```bash
+daedalus config --project dream.enabled true   # dreaming is off until a project turns it on
+daedalus dream show                       # the latest dream, its waking pass, its picks
+daedalus source sync dream                # picks (and recurring themes) as roadmap proposals
+daedalus dream review bundle              # monthly: ideas that keep coming back across dreams
+daedalus dream log                        # the experiment: per mode, picks applied and built
+```
+
+- **A dream is never evidence.** Reflection can't cite one, the user and self models never take an entry
+  from one, and the inhale brief shows only one line saying a dream is due or waiting.
+- **The only way into the plan is the `dream` source:** picks come in as `idea` items you apply or drop. A
+  theme that recurs in three dreams with different starting seeds, and that nothing planned covers, comes in
+  as P1, labelled `recurring (n dreams)`.
+- **It's an experiment.** Each dream is drawn in code as `list` (a wide numbered list), `narrative` (a
+  dreamer and a narrating labyrinth), or `plain` (the same seeds with no dream frame at all), so whether
+  the dream framing matters gets measured rather than assumed. Dreams stay local in `.daedalus/dreams/`;
+  `daedalus dream keep <id>` copies one to `docs/dreams/` (it never overwrites a file there without `--force`). [The first one](docs/dreams/2026-10-15.md).
+
 ## Working with others
 
 ### Workstreams
@@ -350,6 +375,7 @@ The pieces are named after the Labyrinth myth; here is what each does.
 | `daedalus edict list \| show \| dissent \| dissents \| resolve-dissent` | Edicts |
 | `daedalus roadmap list \| show \| add` | Roadmap: intake, with each item's origin |
 | `daedalus source list \| sync [--dry-run] \| status \| login` | Sources: GitHub Issues, Azure DevOps, plugins |
+| `daedalus dream seeds \| start \| prompt \| turn \| write \| done \| due \| show \| keep \| bundle \| log \| review …` | Dreaming (the /dream skill drives these) |
 | `daedalus palace init \| status \| callers \| callees \| impact \| path \| tests-for` | Mind Palace and its call-graph queries |
 | `daedalus palace dispatch` | The dispatch rules in effect: built-in (MediatR, MassTransit, NServiceBus, Hangfire, Celery) and this project's `palace.dispatch` |
 | `daedalus palace languages` | Which languages the palace analyzes here: Python, JS/TS, Go, Rust, Java, C#, Razor, C/C++, Ruby built in; Kotlin, PHP, Scala, Lua with `pip install "daedalus-cli[palace-all]"` |
@@ -414,6 +440,7 @@ output: `[via dispatch: ...]` in `callers`, `-[...]->` in `path`.
   gameplans/<id>.json        committed   workstream plans
   roadmap/index.json         committed   roadmap items: intake, each with its origin
   sources/state.json         local       each source's last sync and health
+  dreams/                    local       dreams, their seeds and waking passes, themes, the dream log
   session-summaries.md, decisions.md, project-map.md     local   narrative memory
   board/, config.json, sharing.md                         local   board state, settings, sharing policy
   reflection/                local       session digests, reports, due state, the A/B arms

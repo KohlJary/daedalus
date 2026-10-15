@@ -195,6 +195,25 @@ def check_report(project_dir: Path, report: dict, models_root: Optional[Path] = 
             if not _same(actual, fig.get("value")):
                 err(f"{where}: figure says {fig.get('value')} for {ref}, the digest says {actual}")
 
+    # A dream is never evidence (edict 0013): the report may not cite or lean on one anywhere
+    import json as _json
+
+    dream_items = set()
+    try:
+        from .. import roadmap as _rm
+
+        dream_items = {i["id"] for i in _rm.load_index(project_dir).get("items", [])
+                       if _rm.origin(i)["source"] == "dream"}
+    except Exception:
+        pass
+    blob = _json.dumps({k: report.get(k) for k in ("summary", "findings", "proposals")}, ensure_ascii=False)
+    hit = m.DREAM_REFERENCE.search(blob)
+    if hit:
+        err(f"the report refers to a dream ({hit.group(0)}); a dream is never evidence (edict 0013)")
+    for item_id in sorted(dream_items):
+        if re.search(rf"(?<![\w-]){re.escape(item_id)}(?![\w-])", blob):
+            err(f"the report cites {item_id}, a roadmap item that came from a dream; a dream is never evidence")
+
     user = m.load("user", models_root)
     self_ = m.load("self", models_root)
     behaviors_in_report = set()

@@ -10,6 +10,24 @@ from typing import Optional
 import click
 
 
+def _dream_enabled(project_dir: Path) -> bool:
+    from ..config import get_project_settings
+
+    return bool(get_project_settings(project_dir, "dream").get("enabled"))
+
+
+def _dream_built(project_dir: Path, period: str) -> int:
+    """Dream-origin roadmap items that reached done in a month: counted by code, never by delphi (0013)."""
+    from .. import roadmap as rm
+
+    try:
+        items = rm.load_index(project_dir).get("items", [])
+    except rm.RoadmapError:
+        return 0
+    return sum(1 for i in items if rm.origin(i)["source"] == "dream" and i.get("status") == "done"
+               and str(i.get("status_changed_at", "")).startswith(period))
+
+
 def _settings(project_dir: Path) -> dict:
     from ..config import get_project_settings
 
@@ -119,6 +137,11 @@ def reflect_done(level, period, report_file, tokens, delphi_model, momus_model, 
     if level == "monthly":
         explog.record_model_changes(project, period, start, end)
     click.echo(f"Recorded the {level} reflection for {period}, and logged the run.")
+    if _dream_enabled(project):
+        from ..dreams.store import refresh_due
+
+        if refresh_due(project, enabled=True)["due"]:
+            click.echo("A dream is now due (edict 0013): run /dream, or defer.")
 
 
 @reflect.group("log", invoke_without_command=True)
@@ -231,7 +254,10 @@ def reflect_render(report: str, bundle_file: Optional[str]):
                    f"({verdicts_path(Path(report)).name}); every proposal is reviewed before it is shown.", err=True)
         raise SystemExit(1)
     md = Path(report).with_suffix(".md")
-    atomic_write_text(md, render_report(data, verdicts))
+    text = render_report(data, verdicts)
+    if data.get("level") == "monthly" and _dream_enabled(project):
+        text += f"\nDream-origin items built this month: {_dream_built(project, str(data.get('period')))} (counted by code).\n"
+    atomic_write_text(md, text)
     click.echo(f"Report: {md}")
 
 

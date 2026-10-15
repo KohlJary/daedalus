@@ -50,6 +50,10 @@ class RemoteItem:
     parent: Optional[str] = None    # the parent's external id
     updated: str = ""               # the tracker's last-changed time
     labels: list = field(default_factory=list)
+    # A dropped item comes back only when the plugin says so (edict 0013: a recurring dream theme)
+    reproposable: bool = False
+    # How many times the item has recurred, for plugins that count it (recorded with a drop)
+    recurrences: Optional[int] = None
 
 
 class Source:
@@ -116,6 +120,16 @@ class Source:
         """The owned fields as this item would have them."""
         all_fields = {"title": remote.title, "description": remote.description or "", "status": self.status_for(remote)}
         return {k: all_fields[k] for k in self.mapping()["owned"] if k in all_fields}
+
+    def priority(self, remote: RemoteItem) -> str:
+        """The priority a new roadmap item from this source gets."""
+        return "P2"
+
+    def on_proposed(self, proposals: list[dict]) -> None:
+        """Called after a sync adds proposals (not in a dry run). For plugins that keep their own records."""
+
+    def on_resolved(self, proposal: dict, outcome: str) -> None:
+        """Called when the owner applies or drops one of this source's proposals."""
 
     def health_when_ok(self) -> str:
         return "ok" if self.verified else "unverified"

@@ -1079,9 +1079,11 @@ def tui_cmd():
 
 from .reflect import reflect as _reflect  # noqa: E402
 from .source import source as _source  # noqa: E402
+from .dream import dream as _dream  # noqa: E402
 
 main.add_command(_reflect)
 main.add_command(_source)
+main.add_command(_dream)
 
 
 if __name__ == "__main__":

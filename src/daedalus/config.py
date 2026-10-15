@@ -133,6 +133,20 @@ class MachineConfig:
 
 
 @dataclass
+class DreamConfig:
+    """Dreaming (edict 0013). Off unless a project turns it on."""
+    enabled: bool = False
+    mode: str = "ab"            # list | narrative | plain | ab (drawn in code)
+    seeds: int = 5
+    turns: int = 4              # narrative mode: turns each for the Labyrinth and the dreamer
+    max_tokens: int = 60000     # a dream that would pass this stops and is recorded as truncated
+    temperature: Optional[str] = None          # no runner can set one yet; logged as unset
+    waking_temperature: Optional[str] = None
+    review_min: int = 4         # dreams since the last review before a review is due
+    recur_min: int = 3          # dreams (with different top seeds) before a theme is elevated
+
+
+@dataclass
 class TuiConfig:
     """The Daedalus TUI (edict 0012)."""
     prs: str = "local"       # local: branches ahead of main; gh: the GitHub CLI
@@ -146,6 +160,7 @@ SETTING_CHOICES = {
     "ariadne.autonomy": ("supervised", "hybrid", "full"),
     "tui.prs": ("local", "gh"),
     "tui.backend": ("auto", "tmux", "pty"),
+    "dream.mode": ("list", "narrative", "plain", "ab"),
     "reflection.runner": ("inhale", "local", "headless"),
     "reflection.model_summary": ("off", "on", "ab"),
     "reflection.forget": ("purge", "retain"),
@@ -159,7 +174,7 @@ TRISTATE_SETTINGS = ("machine.employer",)
 TEMPLATE_SETTING_GROUPS = ("git", "sections", "edicts")
 
 # Groups a project may override in .daedalus/config.json
-PROJECT_SETTING_GROUPS = TEMPLATE_SETTING_GROUPS + ("doctor", "hooks", "reconstruct", "board", "reflection", "tui")
+PROJECT_SETTING_GROUPS = TEMPLATE_SETTING_GROUPS + ("doctor", "hooks", "reconstruct", "board", "reflection", "tui", "dream")
 
 
 @dataclass
@@ -178,6 +193,7 @@ class DaedalusConfig:
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
     machine: MachineConfig = field(default_factory=MachineConfig)
     tui: TuiConfig = field(default_factory=TuiConfig)
+    dream: DreamConfig = field(default_factory=DreamConfig)
     # Sources (edict 0011): {name: {key: value}}, free-form here and validated by config_schema
     sources: dict = field(default_factory=dict)
 
@@ -262,6 +278,7 @@ def load_config() -> DaedalusConfig:
             reflection=ReflectionConfig(**data.get("reflection", {})),
             machine=MachineConfig(**data.get("machine", {})),
             tui=TuiConfig(**data.get("tui", {})),
+            dream=DreamConfig(**data.get("dream", {})),
             sources=data["sources"] if isinstance(data.get("sources"), dict) else {},
         )
     except (json.JSONDecodeError, TypeError, KeyError):
@@ -288,6 +305,7 @@ def save_config(config: DaedalusConfig) -> None:
         "reflection": asdict(config.reflection),
         "machine": asdict(config.machine),
         "tui": asdict(config.tui),
+        "dream": asdict(config.dream),
     }
     if config.sources:
         data["sources"] = config.sources
