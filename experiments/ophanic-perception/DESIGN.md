@@ -154,3 +154,5 @@ most conservative, and it is marked **proposed — Kohl to confirm**.*
   fresh seeds, never 1015 or 99001.
 - **A9. H6 (construction).** It is not built, so it is marked **not run** here; it is not part of the
   confirmatory run until it is built and reviewed.
+
+Harness implements the proposed options as of f869c22; Kohl's confirmation still pending.

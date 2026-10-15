@@ -328,7 +328,7 @@ def review_checks(rows: list[dict], encs: list[str], tokens: list[dict]) -> list
             for t in TYPE_ORDER:
                 for e in arms:
                     cells = [ratios(t, e, base, enc_only) for base in comps]
-                    body.append([t, e] + [f"{v:.2f}×" if v is not None else "—" for v in cells])
+                    body.append([tl(t), e] + [f"{v:.2f}×" if v is not None else "—" for v in cells])
             tok_models = ", ".join(sorted({r["model"] for r in tokens})) or "?"
             out += [f"**{'Encoding only' if enc_only else 'Whole prompt'}** ({tok_models} tokenizer)", ""]
             out += table(["structure", "encoding"] + [f"× {c}" for c in comps], body)

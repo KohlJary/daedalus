@@ -54,6 +54,7 @@ Generation is deterministic: each structure draws from `random.Random("<seed>:<t
 fails loudly (`HarnessBug`) if a clean diagram fails the lint, a row isn't the diagram's width, or a noise variant
 doesn't lint as exactly one width and one joins problem. The tasks files aren't committed: regenerate them.
 `tasks/1015.jsonl` (the pilot) has sha256 `ebe363660187bccd6749bcfd999efa8a0977ab2bd5424cf34a5ae7f33a39524a`.
+`tasks/5016.jsonl` (pilot 2: `--seed 5016 --per-cell 3`, harness 2) has sha256 `185e2651b8cc6726d736b87c4c8a8c0b85bfd24199882dd31ef089dbc68ac4d9`.
 
 **Seeds.** Never reuse a seed between a pilot and a confirmatory run.
 
