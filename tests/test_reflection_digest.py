@@ -36,7 +36,9 @@ def test_real_session_counts_match_the_hand_count():
     assert d["tools"]["Write"] == {"calls": 1, "failures": 1}  # "File has not been read yet"
     assert d["tokens"] == {"input": 54, "output": 34218, "cache_read": 8529855, "cache_creation": 50586,
                            "messages": 25}
-    assert d["counts"]["approved_at_prompt"] == 5  # source "user_temporary": approved at a prompt
+    # source "user_temporary" on 5 results: 1 Read approved at a prompt, and 4 AskUserQuestion answers,
+    # which approve nothing (Momus, first real run, 2026-10-15)
+    assert d["counts"]["approved_at_prompt"] == 1
     assert d["models"] == ["claude-opus-5-5"]
     assert d["claude_code_versions"] == ["2.1.296"]
 

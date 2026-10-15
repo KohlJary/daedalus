@@ -248,7 +248,11 @@ def test_nothing_changes_before_apply_and_drop_discards(env):
     applied, _ = pq.apply(project, "Q1", root)
     assert (project / "CLAUDE.md").read_text(encoding="utf-8").strip() == "Run doctor after the gameplan exists."
     assert pq.load_pending(project) == []
-    path2 = write_report(project, report(period="2026-W43", proposals=[file_proposal(project, digests)]), {"R1": "shown"})
+    # A second report on the same week (a re-run), so its citations stay inside its period
+    second = report(proposals=[file_proposal(project, digests)])
+    path2 = project / ".daedalus" / "reflection" / "reports" / "weekly-2026-W42-rerun.json"
+    path2.write_text(json.dumps(second), encoding="utf-8")
+    pq.verdicts_path(path2).write_text(json.dumps({"R1": "shown"}), encoding="utf-8")
     pq.import_report(project, path2, root)
     pq.drop(project, "Q2")
     assert pq.load_pending(project) == []
@@ -337,6 +341,7 @@ def test_the_running_session_is_left_out_of_bundles(env, monkeypatch):
     for d in (project / ".daedalus/reflection/sessions").glob("*.json"):
         data = json.loads(d.read_text(encoding="utf-8"))
         data["start"] = data["end"] = "2026-10-14T10:00:00Z"
+        data["event_days"] = {u: "2026-10-14" for u in data.get("event_days", {})}  # any machine timezone
         d.write_text(json.dumps(data), encoding="utf-8")
     bundle = build_bundle(project, "daily", "2026-10-14", {"half_life_self": 60, "half_life_user": 180}, "work", root)
     assert [d["session_id"] for d in bundle["digests"]] == [INTERRUPT_SESSION]

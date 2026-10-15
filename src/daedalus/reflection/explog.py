@@ -29,7 +29,10 @@ FIELDS = {
                    "outcome", "days_waited"},
     "arm": {"record", "at", "session", "mode", "arm"},
     "model_changes": {"record", "at", "period", "counts"},
+    # Append-only, so a mistake in a run record is corrected by a later record, never by editing it
+    "correction": {"record", "at", "level", "period", "field", "value"},
 }
+CORRECTABLE = ("models.delphi", "models.momus", "tokens", "check_iterations")
 
 
 class LogError(Exception):
@@ -161,10 +164,51 @@ def record_model_changes(project_dir: Path, period: str, start: date, end: date,
     return append(project_dir, {"record": "model_changes", "period": period, "counts": dict(counts)})
 
 
+def record_correction(project_dir: Path, level: str, period: str, field: str, value: Any) -> dict:
+    """Correct one field of an earlier run record. The run record stays; readers apply the latest correction."""
+    if field not in CORRECTABLE:
+        raise LogError(f"Only {', '.join(CORRECTABLE)} can be corrected")
+    runs = [r for r in load(project_dir) if r.get("record") == "run" and r.get("level") == level and r.get("period") == period]
+    if not runs:
+        raise LogError(f"No {level} run for {period} in the log")
+    if field in ("tokens", "check_iterations"):
+        value = int(value)
+        if not 0 <= value < 10 ** 9:
+            raise LogError(f"{field} must be between 0 and 10^9")
+    elif not str(value).strip():
+        raise LogError("a model ID can't be empty")
+    return append(project_dir, {"record": "correction", "level": level, "period": period, "field": field,
+                                "value": value})
+
+
+def corrected(records: list[dict]) -> list[dict]:
+    """The run records with later corrections applied (the file itself is never rewritten)."""
+    import copy
+
+    out = copy.deepcopy(records)
+    latest: dict = {}  # (level, period) -> the newest run *before* this point in the file
+    for rec in out:
+        key = (rec.get("level"), rec.get("period"))
+        if rec.get("record") == "run":
+            latest[key] = rec
+            continue
+        if rec.get("record") != "correction":
+            continue
+        c, run = rec, latest.get(key)
+        if run is None:
+            continue
+        if c["field"].startswith("models."):
+            run.setdefault("models", {})[c["field"].split(".", 1)[1]] = c["value"]
+        else:
+            run[c["field"]] = c["value"]
+    return out
+
+
 # ---------- reading it back ----------
 
 
 def summary(records: list[dict]) -> list[str]:
+    records = corrected(records)
     runs = [r for r in records if r.get("record") == "run"]
     res = [r for r in records if r.get("record") == "resolution"]
     arms = [r for r in records if r.get("record") == "arm"]
@@ -172,6 +216,9 @@ def summary(records: list[dict]) -> list[str]:
     spent = [r["tokens"] for r in runs if isinstance(r.get("tokens"), int)]
     if spent:
         lines.append(f"Tokens per run: mean {sum(spent) // len(spent)}, total {sum(spent)} ({len(spent)} runs reported)")
+    models = Counter(f"{k} {v}" for r in runs for k, v in sorted((r.get("models") or {}).items()) if v)
+    if models:
+        lines.append("Models: " + ", ".join(f"{k} ({n})" for k, n in sorted(models.items())))
     proposed = [p for r in runs for p in r.get("proposals", [])]
     verdicts = Counter(p.get("verdict") for p in proposed)
     if proposed:

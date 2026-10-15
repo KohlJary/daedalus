@@ -84,15 +84,33 @@ class Due:
         return text
 
 
+def session_days(digest: dict, tz: Optional[tzinfo] = None) -> dict[date, int]:
+    """{day: tool calls that day} for every local day a session has events on. A session can run for
+    days; each day's reflection covers that day's part of it. Digests from before event_days
+    (schema 1) belong to the day they ended, with all their calls."""
+    days = digest.get("event_days") or {}
+    calls = [c.get("uuid") for c in digest.get("calls") or []]
+    if days and calls:
+        out: dict[date, int] = {}
+        for uuid in calls:
+            if uuid in days:
+                d = date.fromisoformat(days[uuid])
+                out[d] = out.get(d, 0) + 1
+        if out:
+            return out
+    day = session_day(digest, tz)
+    return {day: int(digest.get("tool_calls") or 0)} if day else {}
+
+
 def compute_due(digests: list[dict], state: dict, today: date, threshold: int,
                 tz: Optional[tzinfo] = None) -> list[Due]:
     """Due reflections, highest level first. Only completed periods (ending before today) count."""
     covered = {level: _parse(state.get("covered_through", {}).get(level)) for level in LEVELS}
     by_day: dict[date, list[dict]] = {}
     for d in digests:
-        day = session_day(d, tz)
-        if day is not None and day < today:
-            by_day.setdefault(day, []).append(d)
+        for day, calls in session_days(d, tz).items():
+            if day < today:
+                by_day.setdefault(day, []).append({**d, "tool_calls": calls})
 
     taken: set[date] = set()  # days already inside a higher level's due run
 
@@ -113,7 +131,7 @@ def compute_due(digests: list[dict], state: dict, today: date, threshold: int,
             if not sessions:
                 continue
             absorbs = _absorbed(level, start, end, by_day, covered, threshold)
-            result.append(Due(level, name, start, end, sorted(d["session_id"] for d in sessions),
+            result.append(Due(level, name, start, end, sorted({d["session_id"] for d in sessions}),
                               sum(int(d.get("tool_calls") or 0) for d in sessions), absorbs))
             taken.update(day for day in by_day if start <= day <= end)
     for day in sorted(by_day):
