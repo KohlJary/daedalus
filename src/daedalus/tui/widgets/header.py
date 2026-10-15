@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from rich.text import Text
 from textual.widgets import Static
 
 
@@ -30,4 +31,4 @@ class Header(Static):
         left = f"{h.get('project', '')}  {h.get('branch', '')}  {plan}"
         width = max((self.size.width or self.app.size.width) - 2, 40)
         gap = max(2, width - len(left) - len(right))
-        self.update(left[: max(10, width - len(right) - 2)] + " " * gap + right)
+        self.update(Text(left[: max(10, width - len(right) - 2)] + " " * gap + right))  # branch names are not markup

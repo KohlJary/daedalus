@@ -152,17 +152,17 @@ class StoryScreen(Screen):
         self.texts: dict[str, Optional[str]] = {}
 
     def compose(self):
-        yield Static("Story", id="story-title")
+        yield Static("Story", id="story-title", markup=False)
         yield Static("", id="story-tabs")
         with VerticalScroll(id="story-doc"):
             yield Static("", id="story-updated", markup=False)
             yield Markdown("", id="story-doc-body")
         with Horizontal(id="story-split"):
-            yield OptionList(id="story-list")
+            yield OptionList(id="story-list", markup=False)
             with Vertical(id="story-right"):
                 with VerticalScroll(id="story-detail"):
                     yield Markdown("", id="story-detail-body")
-                yield Static("", id="story-keys")
+                yield Static("", id="story-keys", markup=False)
         yield KeyBar()
 
     def on_mount(self) -> None:
@@ -275,7 +275,7 @@ class StoryScreen(Screen):
         entry = self._selected()
         ids = task_ids(entry) if entry is not None and self.tab == "sessions" else []
         if not ids:
-            self.notify("No task IDs in this entry.")
+            self.notify("No task IDs in this entry.", markup=False)
             return
-        self.notify(f"Tasks in this entry: {', '.join(ids)}")
+        self.notify(f"Tasks in this entry: {', '.join(ids)}", markup=False)
         self.shell.open_screen("gameplan")

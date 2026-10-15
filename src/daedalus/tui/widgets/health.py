@@ -17,7 +17,7 @@ class Health(Panel):
     """
 
     def compose(self):
-        yield Static("", id="health-body")
+        yield Static("", id="health-body", markup=False)
 
     def refresh_state(self, state) -> None:
         findings = state.findings

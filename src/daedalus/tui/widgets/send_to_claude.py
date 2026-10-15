@@ -23,7 +23,7 @@ class SendToClaude(ModalScreen):
     def compose(self):
         with Vertical():
             yield Static("[b]Send to Claude[/b]")
-            yield Static(f"From: {self.source}")
+            yield Static(f"From: {self.source}", markup=False)
             yield TextArea(self.prompt, id="prompt", read_only=True)
             yield Static("e edit · enter paste into prompt · esc cancel", id="send-keys")
 

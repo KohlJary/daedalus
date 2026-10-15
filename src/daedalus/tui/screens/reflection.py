@@ -32,6 +32,7 @@ from textual.widgets import Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 from ..widgets import ExplainCard, KeyBar
+from ..widgets.confirm import ConfirmModal  # noqa: F401  (the shared one; tests import it from here)
 
 TABS = ("due", "reports", "user", "self", "experiment")
 TAB_LABELS = {"due": "Due", "reports": "Reports", "user": "User model", "self": "Self model",
@@ -239,33 +240,6 @@ def history_text(model: str, entry_id: str) -> str:
 
 # ---------- modals ----------
 
-class ConfirmModal(ModalScreen):
-    """A yes/no for a destructive write: enter (or y) confirms, esc (or n) cancels."""
-
-    BINDINGS = [("escape", "no", "cancel"), ("n", "no", "cancel"), ("enter", "yes", "confirm"), ("y", "yes", "confirm")]
-    DEFAULT_CSS = """
-    ConfirmModal { align: center middle; }
-    ConfirmModal > Vertical { width: 64; height: auto; border: round $warning; background: $surface; padding: 1 2; }
-    ConfirmModal #confirm-keys { color: $text-muted; }
-    """
-
-    def __init__(self, title: str, body: str):
-        super().__init__()
-        self.title_text, self.body = title, body
-
-    def compose(self):
-        with Vertical():
-            yield Static(f"⚠ {self.title_text}", id="confirm-title", markup=False)
-            yield Static(self.body, id="confirm-body", markup=False)
-            yield Static("\nenter confirm · esc cancel", id="confirm-keys")
-
-    def action_yes(self) -> None:
-        self.dismiss(True)
-
-    def action_no(self) -> None:
-        self.dismiss(False)
-
-
 class EditEntry(ModalScreen):
     """Edit a model entry's observation, confidence, scope and category. Returns only what changed."""
 
@@ -437,7 +411,7 @@ class ReflectionScreen(Screen):
         elif self.tab in ("user", "self"):
             self.rows, error = model_rows(self.tab, self.settings)
             if error:
-                self.app.notify(error, severity="error")
+                self.app.notify(error, severity="error", markup=False)
         else:
             self.rows = []
         listing = self.query_one(OptionList)
@@ -608,7 +582,7 @@ class ReflectionScreen(Screen):
         if row is None:
             return
         if row["entry"].get("kind") == "aspiration":
-            self.app.notify("An aspiration is Daedalus's own words: you can delete it, not edit it.")
+            self.app.notify("An aspiration is Daedalus's own words: you can delete it, not edit it.", markup=False)
             return
         self.app.push_screen(EditEntry(self.tab, row["entry"]), lambda changes: self._edit(row, changes))
 
@@ -620,9 +594,9 @@ class ReflectionScreen(Screen):
         try:
             m.user_edit(self.tab, row["key"], changes)
         except m.ModelError as e:
-            self.app.notify(str(e), severity="error")
+            self.app.notify(str(e), severity="error", markup=False)
             return
-        self.app.notify(f"Edited {row['key']}.")
+        self.app.notify(f"Edited {row['key']}.", markup=False)
         self._load()
 
     def _export(self, dest: Optional[str]) -> None:
@@ -636,9 +610,9 @@ class ReflectionScreen(Screen):
         try:
             out = explog.export(self.project_dir, path)
         except OSError as e:
-            self.app.notify(f"Couldn't export: {e}", severity="error")
+            self.app.notify(f"Couldn't export: {e}", severity="error", markup=False)
             return
-        self.app.notify(f"Exported {len(explog.load(self.project_dir))} records to {out}")
+        self.app.notify(f"Exported {len(explog.load(self.project_dir))} records to {out}", markup=False)
 
     def action_stable(self) -> None:
         from ...reflection import models as m
@@ -647,15 +621,15 @@ class ReflectionScreen(Screen):
         if row is None:
             return
         if row["entry"].get("kind") == "aspiration":
-            self.app.notify("An aspiration is Daedalus's own: it never decays, and you can only delete it.")
+            self.app.notify("An aspiration is Daedalus's own: it never decays, and you can only delete it.", markup=False)
             return
         on = not row["entry"].get("stable")
         try:
             m.set_stable(self.tab, row["key"], on)
         except m.ModelError as e:
-            self.app.notify(str(e), severity="error")
+            self.app.notify(str(e), severity="error", markup=False)
             return
-        self.app.notify(f"{row['key']}: stable {'on' if on else 'off'}.")
+        self.app.notify(f"{row['key']}: stable {'on' if on else 'off'}.", markup=False)
         self._load()
 
     def action_forget(self) -> None:
@@ -663,7 +637,7 @@ class ReflectionScreen(Screen):
         if row is None:
             return
         if self.tab != "user":
-            self.app.notify("Only the user model has forget; a self entry can be deleted, or disputed with a dissent.")
+            self.app.notify("Only the user model has forget; a self entry can be deleted, or disputed with a dissent.", markup=False)
             return
         from ...config import load_config
 
@@ -680,11 +654,11 @@ class ReflectionScreen(Screen):
         try:
             entry = m.forget(row["key"], mode)
         except m.ModelError as e:
-            self.app.notify(str(e), severity="error")
+            self.app.notify(str(e), severity="error", markup=False)
             return
         dropped = forget_queued(self.project_dir, entry)
         self.app.notify(f"Forgot {row['key']} ({mode})." + (f" Dropped {dropped} queued proposal(s) about it."
-                                                             if dropped else ""))
+                                                             if dropped else ""), markup=False)
         self._load()
 
     def action_delete(self) -> None:
@@ -701,7 +675,7 @@ class ReflectionScreen(Screen):
         try:
             m.delete(self.tab, row["key"])
         except m.ModelError as e:
-            self.app.notify(str(e), severity="error")
+            self.app.notify(str(e), severity="error", markup=False)
             return
-        self.app.notify(f"Deleted {row['key']}.")
+        self.app.notify(f"Deleted {row['key']}.", markup=False)
         self._load()

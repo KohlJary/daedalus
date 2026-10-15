@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from rich.text import Text
 from textual.widgets import Static
 
 
@@ -16,5 +17,5 @@ class LastSession(Static):
 
     def refresh_state(self, state) -> None:
         text = state.last_session
-        self.update(f"Last session: {text}" if text else
-                    "No session notes yet: /exhale writes one at the end of a session (.daedalus/session-summaries.md)")
+        self.update(Text(f"Last session: {text}" if text else
+                         "No session notes yet: /exhale writes one at the end of a session (.daedalus/session-summaries.md)"))

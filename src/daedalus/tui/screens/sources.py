@@ -127,10 +127,10 @@ class SourcesScreen(Screen):
         self.sources: list[dict[str, Any]] = []
 
     def compose(self):
-        yield Static("Sources", id="sources-title")
+        yield Static("Sources", id="sources-title", markup=False)
         yield Static(EMPTY, id="sources-empty", markup=False)
         with Horizontal(id="sources-body"):
-            yield OptionList(id="sources-list")
+            yield OptionList(id="sources-list", markup=False)
             with Vertical(id="sources-right"):
                 with VerticalScroll(id="sources-detail"):
                     yield Static("", id="sources-detail-body", markup=False)

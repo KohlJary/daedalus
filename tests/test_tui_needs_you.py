@@ -302,11 +302,11 @@ async def test_a_plugin_kind_renders_its_own_detail(busy, monkeypatch):
         def needs_you(self, project_dir):
             return [st.NeedItem("AR", "w2", "diff from worker 2", None, {"package": "T-e23"})]
 
-        def render_detail(self, item, project_dir):
+        def detail(self, item, project_dir):
             return f"Ariadne · package {item.detail['package']} · not verified"
 
-        def detail_keys(self, item):
-            return "a approve-ish · s ask Claude"
+        def actions(self, item):
+            return [("a", "approve-ish"), ("s", "can't claim s")]
 
         def run_action(self, project_dir, item, key):
             self.calls.append(key)
@@ -319,6 +319,14 @@ async def test_a_plugin_kind_renders_its_own_detail(busy, monkeypatch):
         screen = await open_needs(app, pilot)
         assert "AR 1" in str(screen.query_one("#needs-filter").render())
         await select(screen, pilot, "AR")
-        assert "package T-e23 · not verified" in detail(screen) and "approve-ish" in detail(screen)
+        assert "package T-e23 · not verified" in detail(screen) and "a approve-ish" in detail(screen)
+        assert "can't claim" not in detail(screen)  # s stays send-to-Claude
+        await pilot.press("x")  # not declared: says so, never reaches the plugin
+        await pilot.pause()
+        assert not isinstance(app.screen, ConfirmModal) and plugin.calls == []
         await pilot.press("a")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmModal) and plugin.calls == []
+        await pilot.press("y")
+        await pilot.pause()
         assert plugin.calls == ["a"]

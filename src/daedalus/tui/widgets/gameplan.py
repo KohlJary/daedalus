@@ -26,8 +26,8 @@ class Gameplan(Panel):
     """
 
     def compose(self):
-        yield Static("Gameplan", classes="title", id="plan-title")
-        yield Static("", id="plan-body")
+        yield Static("Gameplan", classes="title", id="plan-title", markup=False)
+        yield Static("", id="plan-body", markup=False)
 
     def refresh_state(self, state) -> None:
         active = (state.gameplan or {}).get("activePhase") or {}

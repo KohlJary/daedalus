@@ -35,13 +35,13 @@ class PluginMenu(Screen):
         self.entries = menu_entries()
 
     def compose(self):
-        yield Static("Plugins · esc back", id="plugins-title")
+        yield Static("Plugins · esc back", id="plugins-title", markup=False)
         with Vertical(id="plugins-body"):
             if self.entries:
                 yield OptionList(*[Option(f"{label}  ({name})", id=str(i))
-                                   for i, (name, label, _) in enumerate(self.entries)], id="plugins-list")
+                                   for i, (name, label, _) in enumerate(self.entries)], id="plugins-list", markup=False)
             else:
-                yield Static(EMPTY, id="plugins-empty")
+                yield Static(EMPTY, id="plugins-empty", markup=False)
         yield KeyBar()
 
     def on_mount(self) -> None:
@@ -71,6 +71,6 @@ class PluginMenu(Screen):
         try:
             screen = cls(self.app)
         except Exception as e:  # a broken plugin screen never takes the TUI down
-            self.app.notify(f"{name}: couldn't open {label} ({e})", severity="error")
+            self.app.notify(f"{name}: couldn't open {label} ({e})", severity="error", markup=False)
             return
         self.app.push_screen(screen)
