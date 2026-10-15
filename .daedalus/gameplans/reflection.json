@@ -100,10 +100,11 @@
       {
         "id": "T-r10",
         "title": "Scopes: private/work/anywhere with aliases; relationship entries default anywhere; share_private",
-        "status": "pending",
+        "status": "done",
         "details": "Amendments e812792, 725f971. Aliases personal->private, any->anywhere wherever a scope is read (model files, proposals, project config); new writes use the new names. Project configs set to 'personal' on 2026-10-14 rely on the alias.",
-        "updated": "2026-10-14",
-        "edict": "0010"
+        "updated": "2026-10-15",
+        "edict": "0010",
+        "resolution": "PR #54 (merged e826c7e): fixes from the first real reflection run; Momus reviewed twice (trials 2026-10-15-reflection-tooling-fixes.md). Known leaks left: ratios/word numbers, d: whole-session totals in a daily, event_days in the digesting machine's zone, symbol-blind normalise."
       },
       {
         "id": "T-r11",
@@ -112,6 +113,60 @@
         "details": "Amendment e812792. machine.name for origin; preview before any write; default export leaves out private; idempotent import. Format daedalus.models-export/1 is the future server's sync unit (docs/design/command-server.md, PR #45).",
         "updated": "2026-10-14",
         "edict": "0010"
+      },
+      {
+        "id": "T-r12",
+        "title": "Reflection periods: cut events by day (or label multi-day sessions honestly)",
+        "status": "done",
+        "details": "Momus 2026-10-15 (trial 2026-10-15-reflection-daily-2026-10-14.md), issue 1: digests are whole sessions (30h+), so a 'daily' cited 20 of 31 events from the day before, and daily/weekly re-cite the same sessions for the same behaviors.",
+        "updated": "2026-10-15",
+        "edict": "0010",
+        "resolution": "PR #54 (merged e826c7e): fixes from the first real reflection run; Momus reviewed twice (trials 2026-10-15-reflection-tooling-fixes.md). Known leaks left: ratios/word numbers, d: whole-session totals in a daily, event_days in the digesting machine's zone, symbol-blind normalise."
+      },
+      {
+        "id": "T-r13",
+        "title": "reflect check: every digest-derived number needs a figures entry",
+        "status": "done",
+        "details": "Momus issue 2: check validates only figures the author lists; bare numerals pass. Weekly W42 now fails check with 12 errors because live-session digests changed after it was written: also decide how reports on still-running sessions go stale.",
+        "updated": "2026-10-15",
+        "edict": "0010",
+        "resolution": "PR #54 (merged e826c7e): fixes from the first real reflection run; Momus reviewed twice (trials 2026-10-15-reflection-tooling-fixes.md). Known leaks left: ratios/word numbers, d: whole-session totals in a daily, event_days in the digesting machine's zone, symbol-blind normalise."
+      },
+      {
+        "id": "T-r14",
+        "title": "Same-observation guard at check/apply",
+        "status": "done",
+        "details": "Momus issue 3: models.py:252 only guards duplicate IDs; daily-2026-10-14 R1 duplicates weekly-W42 R2. Reject or merge an add whose observation matches an existing/pending one.",
+        "updated": "2026-10-15",
+        "edict": "0010",
+        "resolution": "PR #54 (merged e826c7e): fixes from the first real reflection run; Momus reviewed twice (trials 2026-10-15-reflection-tooling-fixes.md). Known leaks left: ratios/word numbers, d: whole-session totals in a daily, event_days in the digesting machine's zone, symbol-blind normalise."
+      },
+      {
+        "id": "T-r15",
+        "title": "approved_at_prompt: exclude AskUserQuestion answers",
+        "status": "done",
+        "details": "Momus issue 4: answered AskUserQuestion prompts count as permission approvals; Reads with permissionDecision user_temporary are genuine and stay.",
+        "updated": "2026-10-15",
+        "edict": "0010",
+        "resolution": "PR #54 (merged e826c7e): fixes from the first real reflection run; Momus reviewed twice (trials 2026-10-15-reflection-tooling-fixes.md). Known leaks left: ratios/word numbers, d: whole-session totals in a daily, event_days in the digesting machine's zone, symbol-blind normalise."
+      },
+      {
+        "id": "T-r16",
+        "title": "Spec/code drift: delphi.md says delphi writes .md (render does); unused imports in reflect check",
+        "status": "done",
+        "details": "Momus issue 5 (scopes are T-r10). Also delphi.md says model: sonnet but the first run ran on opus via general-purpose; install delphi with hydrate.",
+        "updated": "2026-10-15",
+        "edict": "0010",
+        "resolution": "PR #54 (merged e826c7e): fixes from the first real reflection run; Momus reviewed twice (trials 2026-10-15-reflection-tooling-fixes.md). Known leaks left: ratios/word numbers, d: whole-session totals in a daily, event_days in the digesting machine's zone, symbol-blind normalise."
+      },
+      {
+        "id": "T-r17",
+        "title": "reflect done: a way to record a correction to a logged run",
+        "status": "done",
+        "details": "First run (2026-10-15) logged momus model as claude-opus-5-5; the momus agent runs sonnet. The log is append-only, so add a correction record kind rather than editing.",
+        "updated": "2026-10-15",
+        "edict": "0010",
+        "resolution": "PR #54 (merged e826c7e): fixes from the first real reflection run; Momus reviewed twice (trials 2026-10-15-reflection-tooling-fixes.md). Known leaks left: ratios/word numbers, d: whole-session totals in a daily, event_days in the digesting machine's zone, symbol-blind normalise."
       }
     ],
     "deferred": [],

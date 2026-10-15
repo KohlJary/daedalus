@@ -278,6 +278,21 @@
         "status": "pending",
         "details": "Issue #47 (Kohl, 2026-10-15): the call graph stops at framework dispatch, so handlers show 0 callers and impact --tests misses everything upstream of a queue. Built-in rules for MediatR/MassTransit/NServiceBus (message type -> handler), Hangfire (lambda targets), Celery (task.delay -> @task); in-house rules from palace.dispatch config. Dispatch edges are labelled in callers/path/impact output. Stacked on #44 (receiver types).",
         "updated": "2026-10-14"
+      },
+      {
+        "id": "T-e27",
+        "title": "doctor/source list: detect a stale or foreign install (old 'daedalus' dist, missing entry points)",
+        "status": "pending",
+        "details": "On Kohl's machine the live install is a Dec 2025 user-site editable named 'daedalus' 0.1.0: deps never refreshed (tree-sitter, keyring) and no daedalus.sources entry points, so 'source list' shows no plugins. doctor's install check looks up 'daedalus-cli' and misses it. source list should say why it found no plugins. Fix for Kohl: pip uninstall --break-system-packages daedalus; pipx install --force --editable .",
+        "updated": "2026-10-15"
+      },
+      {
+        "id": "T-e28",
+        "title": "Hook registration: several Daedalus commands per event",
+        "status": "done",
+        "details": "hooks.py wanted_hooks/ALL_HOOKS are {event: command}, so only one Daedalus hook per event fits (board already holds UserPromptSubmit). Restructure to [(event, command, config key)], register/remove per command, hydrate --dry-run lists each. Blocks 0014's clock hook (Momus 0014 readiness F5).",
+        "updated": "2026-10-15",
+        "resolution": "PR #53 (merged 28ad709): HOOKS is a list of (event, command, hooks.* key); Momus: merge."
       }
     ],
     "deferred": []

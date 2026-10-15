@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "id": "d30af999-abc7-4d34-aec5-d05990dcf0fc",
+      "title": "Plain-language program map (wiki) anchored to palace nodes",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-10-14T23:37:13.842521",
+      "created_by": "daedalus"
+    }
+  ],
+  "version": 1
+}
