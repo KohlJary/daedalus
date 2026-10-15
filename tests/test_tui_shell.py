@@ -116,3 +116,89 @@ async def test_the_header_names_the_branch_and_phase(tui_project):
         await pilot.pause()
         text = str(app.query_one("Header").render())
         assert "p1 ▸ T-1" in text and "needs" in text
+
+
+# ---------- Momus's review of the build (F1, F4-F8) ----------
+
+async def test_no_inherited_key_reaches_past_the_claude_pane(tui_project):
+    """F1: Textual's ctrl+q (priority), ctrl+c and the ctrl+p command palette must go to Claude."""
+    backend = FakeBackend()
+    app = make_app(tui_project, backend=backend)
+    async with app.run_test(size=(140, 40)) as pilot:
+        pane = app.query_one(ClaudePane)
+        pane.start_session()
+        await pilot.press("c")
+        stack = len(app.screen_stack)
+        await pilot.press("ctrl+p", "ctrl+q", "ctrl+c", "tab", "shift+tab", "ctrl+d")
+        await pilot.pause()
+        assert app.is_running and len(app.screen_stack) == stack and app.focused is pane
+        assert backend.store[pane.session_name]["received"] == b"\x10\x11\x03\t\x1b[Z\x04"
+    assert not [b for b in app._bindings if getattr(b, "priority", False)] if hasattr(app, "_bindings") else True
+
+
+async def test_paste_is_bracketed_and_modified_enter_is_a_newline(tui_project):
+    from textual import events
+
+    backend = FakeBackend()
+    app = make_app(tui_project, backend=backend)
+    async with app.run_test(size=(140, 40)) as pilot:
+        pane = app.query_one(ClaudePane)
+        pane.start_session()
+        await pilot.press("c")
+        pane.post_message(events.Paste("line one\nline two"))
+        await pilot.pause()
+        await pilot.press("shift+enter", "alt+x", "ctrl+left", "f5")
+        got = backend.store[pane.session_name]["received"]
+        assert got.startswith(b"\x1b[200~line one\nline two\x1b[201~")
+        assert got.endswith(b"\x1b\r\x1bx\x1b[1;5D\x1b[15~")
+
+
+def test_session_names_differ_for_projects_with_the_same_folder_name(tmp_path):
+    from daedalus.tui.session import session_name
+
+    a, b = tmp_path / "x" / "app", tmp_path / "y" / "app"
+    a.mkdir(parents=True), b.mkdir(parents=True)
+    assert session_name(a) != session_name(b) and session_name(a).startswith("daedalus-app-")
+
+
+async def test_a_dead_session_returns_to_no_session(tui_project):
+    backend = FakeBackend()
+    app = make_app(tui_project, backend=backend)
+    async with app.run_test(size=(140, 40)) as pilot:
+        pane = app.query_one(ClaudePane)
+        pane.start_session()
+        backend.store[pane.session_name]["alive"] = False
+        for _ in range(30):
+            await pilot.pause(0.05)
+            if pane.session is None:
+                break
+        assert pane.session is None and "ended" in (pane.error or "")
+
+
+def test_escape_chord_is_limited_to_safe_choices(offline):
+    from sources_helpers import run
+
+    assert run("config", "tui.escape", "j").exit_code == 1
+    assert run("config", "tui.escape", "ctrl+\\").exit_code == 0
+
+
+def test_the_watcher_sees_reflection_proposals_and_nested_refs(tui_project):
+    import subprocess
+
+    from daedalus.tui.app import watched_files
+
+    subprocess.run(["git", "branch", "feat/nested"], cwd=tui_project, capture_output=True)
+    files = {str(p) for p in watched_files(tui_project)}
+    assert str(tui_project / ".daedalus/reflection/pending.json") in files
+    assert any(f.endswith("refs/heads/feat/nested") for f in files)
+
+
+async def test_resizing_away_from_the_pane_gives_focus_back(tui_project):
+    app = make_app(tui_project)
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.press("c")
+        await pilot.resize_terminal(60, 30)
+        await pilot.pause()
+        assert app.focused is not app.query_one(ClaudePane) or app.active_tab == "4"
+        if app.focused is not app.query_one(ClaudePane):
+            assert "every key goes to Claude" not in str(app.query_one(KeyBar).render())

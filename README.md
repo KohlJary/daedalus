@@ -92,7 +92,9 @@ a replacement for it.
   thread, `hydrate`/`init` when doctor names them (after you confirm), and your own reflection data. Merging,
   accepting an edict and posting stay where they live.
 - The Claude session runs in tmux (its own socket, no prefix key or status bar) so it survives quitting
-  the TUI: `tmux -L daedalus attach -t daedalus-<project>` reaches it from any terminal. Without tmux it
+  the TUI: `tmux -L daedalus attach -t daedalus-<project>-<hash>` (`tmux -L daedalus ls` lists them) reaches it
+  from any terminal. Its prefix key is off so no key is stolen from Claude; detach from another terminal with
+  `tmux -L daedalus detach-client`. Without tmux it
   runs as a plain child process and the pane says it will end with the TUI.
 
 ## Memory that stays current

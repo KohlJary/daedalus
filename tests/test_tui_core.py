@@ -71,7 +71,10 @@ def test_the_pty_fallback_runs_a_real_child_that_ends_with_it(tmp_path):
 
 @pytest.mark.skipif(not TmuxBackend().available(), reason="tmux is not installed; persistence is untested here")
 def test_tmux_session_survives_the_client_closing(tmp_path):
-    backend = TmuxBackend(socket=f"daedalus-test-{int(time.time())}")
+    import os
+    import uuid
+
+    backend = TmuxBackend(socket=f"daedalus-test-{uuid.uuid4().hex[:8]}")
     try:
         s = backend.start("persist", ["cat"], tmp_path, 80, 24)
         s.write(b"first\r")
@@ -85,6 +88,8 @@ def test_tmux_session_survives_the_client_closing(tmp_path):
     finally:
         backend.kill("persist")
         subprocess.run(["tmux", "-L", backend.socket, "kill-server"], capture_output=True)
+        sock = Path(os.environ.get("TMUX_TMPDIR", "/tmp")) / f"tmux-{os.getuid()}" / backend.socket
+        sock.unlink(missing_ok=True)  # don't leave a socket file per run
 
 
 def test_fake_backend_persistence_matches_the_interface():

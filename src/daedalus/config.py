@@ -160,6 +160,8 @@ SETTING_CHOICES = {
     "ariadne.autonomy": ("supervised", "hybrid", "full"),
     "tui.prs": ("local", "gh"),
     "tui.backend": ("auto", "tmux", "pty"),
+    # Chords Claude Code doesn't use: anything else could leave the pane with no way out (Momus F8)
+    "tui.escape": ("ctrl+]", "ctrl+\\", "ctrl+^", "ctrl+_"),
     "dream.mode": ("list", "narrative", "plain", "ab"),
     "reflection.runner": ("inhale", "local", "headless"),
     "reflection.model_summary": ("off", "on", "ab"),

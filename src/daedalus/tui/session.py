@@ -166,6 +166,8 @@ class PtyBackend(Backend):
     def start(self, name: str, command: list[str], cwd: Path, cols: int, rows: int) -> Session:
         if not self.available():
             raise SessionError("The PTY backend needs a POSIX system (Windows isn't supported in v1)")
+        if not shutil.which(command[0]):
+            raise SessionError(f"`{command[0]}` isn't on PATH, so there's nothing to start (is Claude Code installed?)")
         return PtySession(name, command, cwd, cols, rows)
 
 
@@ -202,6 +204,8 @@ class TmuxBackend(Backend):
     def start(self, name: str, command: list[str], cwd: Path, cols: int, rows: int) -> Session:
         if name in self.list():
             return self.attach(name, cols, rows)
+        if not shutil.which(command[0]):
+            raise SessionError(f"`{command[0]}` isn't on PATH, so there's nothing to start (is Claude Code installed?)")
         self._tmux("-f", os.devnull, "new-session", "-d", "-s", name, "-x", str(cols), "-y", str(rows),
                    "-c", str(cwd), *command)
         self._quiet(name)
@@ -292,7 +296,11 @@ def choose_backend(setting: str = "auto") -> tuple[Backend, Optional[str]]:
 
 
 def session_name(project_dir: Path) -> str:
-    """One Claude session per project: daedalus-<folder name>, safe for tmux."""
+    """One Claude session per project: daedalus-<folder name>-<6 hex of the full path>, safe for tmux. Two
+    projects with the same folder name (or names that sanitise alike) get different sessions (Momus F5)."""
+    import hashlib
     import re
 
-    return "daedalus-" + re.sub(r"[^A-Za-z0-9_-]", "-", Path(project_dir).resolve().name)[:40]
+    resolved = Path(project_dir).resolve()
+    tag = hashlib.sha1(str(resolved).encode("utf-8")).hexdigest()[:6]
+    return f"daedalus-{re.sub(r'[^A-Za-z0-9_-]', '-', resolved.name)[:40]}-{tag}"

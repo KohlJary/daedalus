@@ -63,22 +63,30 @@ def load_state(project_dir: Path, settings: dict) -> AppState:
 
 
 def watched_files(project_dir: Path) -> list[Path]:
+    """What the panels read, and nothing else: one cheap stat pass per tick (Momus F7)."""
     root = Path(project_dir)
-    files: list[Path] = []
-    for folder in (root / ".daedalus", root / "docs" / "edicts"):
+    d = root / ".daedalus"
+    files: list[Path] = [d / name for name in ("session-summaries.md", "decisions.md", "project-map.md",
+                                               "lessons.md", "warnings.md", "config.json")]
+    for folder in (d / "roadmap", d / "gameplans", d / "board", root / "docs" / "edicts",
+                   root / "docs" / "edicts" / "dissents"):
         if folder.is_dir():
-            for dirpath, dirnames, filenames in os.walk(folder):
-                dirnames[:] = [d for d in dirnames if d not in ("labyrinth", "__pycache__", "reflection")]
-                files += [Path(dirpath) / f for f in filenames]
-    git_head = root / ".git"
-    if git_head.is_file():  # a worktree: .git points at the real git dir
+            files += [p for p in folder.iterdir() if p.is_file()]
+    files += [d / "reflection" / "pending.json", d / "reflection" / "due.json", d / "sources" / "state.json",
+              d / "dreams" / "due.json", root / "docs" / "status.md"]
+    gitdir = root / ".git"
+    common = gitdir
+    if gitdir.is_file():  # a worktree: .git points at its git dir; refs live in the common dir
         try:
-            gitdir = Path(git_head.read_text().split(":", 1)[1].strip())
-            files.append(gitdir / "HEAD")
+            gitdir = Path(gitdir.read_text().split(":", 1)[1].strip())
+            common = gitdir / (gitdir / "commondir").read_text().strip() if (gitdir / "commondir").exists() else gitdir
         except (OSError, IndexError):
-            pass
-    elif git_head.is_dir():
-        files += [git_head / "HEAD", git_head / "refs" / "heads"]
+            return files
+    files.append(gitdir / "HEAD")
+    heads = common / "refs" / "heads"
+    if heads.is_dir():
+        files += [p for p in heads.rglob("*") if p.is_file()]  # nested refs too (feat/*, fix/*)
+    files.append(common / "packed-refs")
     return files
 
 
@@ -92,10 +100,15 @@ def snapshot(files: list[Path]) -> dict:
     return out
 
 
-class DaedalusShell(App):
-    """The home screen (◆DaedalusShell in shell.oph)."""
+class DaedalusShell(App, inherit_bindings=False):
+    """The home screen (◆DaedalusShell in shell.oph).
+
+    `inherit_bindings=False` and no command palette: Textual's own ctrl+q (priority), ctrl+c and ctrl+p would
+    otherwise reach past the Claude pane (Momus F1). The only bindings are the ones below, none priority.
+    """
 
     TITLE = "Daedalus"
+    ENABLE_COMMAND_PALETTE = False
     CSS = """
     Screen { layout: vertical; }
     #left { width: 1fr; min-width: 34; }
@@ -160,6 +173,11 @@ class DaedalusShell(App):
 
     def on_resize(self, event) -> None:
         self._layout(event.size.width)
+        pane = self.query_one(ClaudePane)
+        if self.focused is pane and self.narrow and self.active_tab != "4":
+            self.on_claude_pane_escape(ClaudePane.Escape())  # the pane is hidden now: don't claim keys go to it
+        elif self.focused is pane:
+            self.query_one(KeyBar).show_claude(self.settings.get("escape", "ctrl+]"))
 
     def _layout(self, width: int) -> None:
         self.narrow = width < NARROW_BELOW
