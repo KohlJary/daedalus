@@ -70,6 +70,7 @@ context-estimator = "daedalus.tools.context_estimator:main"
 github = "daedalus.sources.github:GitHubSource"
 ado = "daedalus.sources.ado:AdoSource"
 dream = "daedalus.sources.dream:DreamSource"
+self = "daedalus.sources.self_source:SelfSource"
 
 # TUI plugins (edict 0012): a package adds a NeedsYou kind, Explain cards or a menu screen here, naming a
 # daedalus.tui.plugin.TuiPlugin subclass (e.g. `jira = "daedalus_jira.tui:JiraTui"`). Core ships none.
