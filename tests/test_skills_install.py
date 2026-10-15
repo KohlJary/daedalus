@@ -119,7 +119,7 @@ def test_reconstruct_skill_and_mnemosyne_agent_ship(tmp_path, monkeypatch):
 def test_hit_em_up_ships_its_personas_and_they_are_generic(tmp_path, monkeypatch):
     skill = get_skills_dir() / "hit-em-up"
     personas = sorted(p.stem for p in (skill / "personas").glob("*.md"))
-    assert {"workplace", "full-bore"} <= set(personas)
+    assert {"workplace", "full-bore", "hype"} <= set(personas)
     for name in personas:
         text = (skill / "personas" / f"{name}.md").read_text(encoding="utf-8")
         assert [t for t in DENY if re.search(rf"\b{re.escape(t)}\b", text)] == []

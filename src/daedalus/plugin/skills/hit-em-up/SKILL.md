@@ -47,7 +47,7 @@ Say in the report which values came from config and which from arguments.
 - 'dry-run' (overrides 'dryRun'): works with any mode.
 - 'no-verse': skip step 9.
 - A persona name ('workplace', 'full-bore'; overrides 'persona').
-- 'compare' (optionally two persona names; default 'workplace full-bore'): see Compare mode.
+- 'compare' (optionally two or three persona names; default 'workplace full-bore hype'): see Compare mode.
 - A number ('3'): work at most that many items.
 
 ## Steps
@@ -175,6 +175,8 @@ allowed to do. Two ship:
 - **workplace** (default): plain voice, no character.
 - **full-bore**: an original battle-rapper character who takes wasted effort personally. He clusters harder,
   refuses busywork, and only brags with checked receipts.
+- **hype**: the same energy as a single line with no constitution. It exists to test whether the structure
+  of a persona matters or only its vibe.
 
 Every persona keeps the same gates, eligibility, checks and approval batch. Persona voice stays in the
 terminal: everything another person will see is written in the plain workplace voice whichever persona runs.
@@ -185,29 +187,30 @@ self-check), and an Amendments article whose unamendable clauses keep it off peo
 
 For testing whether a persona changes the work, not just the voice. 'compare' always runs as a dry run.
 
-1. Snapshot the inputs once: record the commit hash of main, the time, and the board read (step 2). Both
-   arms use this snapshot.
-2. Run each persona as its own dry run in a fresh subagent, so neither arm sees the other's route or
+1. Snapshot the inputs once: record the commit hash of main, the time, and the board read (step 2). Every
+   arm uses this snapshot.
+2. Run each persona as its own dry run in a fresh subagent, so no arm sees another's route or
    reasoning. Same policy, mode, item limit and snapshot; only the persona differs. Each writes its own report
    ('...-dry-run-<persona>.md').
-3. Hand both route tables, per-item results and approval batches to a third fresh subagent with the persona
-   voice, verses and file names stripped, labelled only 'A' and 'B' in random order. It judges which arm's
-   work is better and why, before learning which persona was which.
-4. Write '<date>-compare-<personaA>-vs-<personaB>.md' in the report folder with this table, then the blind
-   judgment, then the unblinding:
+3. Hand every arm's route table, per-item results and approval batch to one more fresh subagent with the
+   persona voice, verses and file names stripped, labelled only 'A', 'B' (and 'C') in random order. It ranks
+   the arms' work and says why, before learning which persona was which.
+4. Write '<date>-compare-<persona>-vs-<persona>[-vs-<persona>].md' in the report folder with this table (one
+   column per arm), then the blind judgment, then the unblinding:
 
-| Measure | A | B |
-| --- | --- | --- |
-| Items reaching their gate | | |
-| Distinct files read | | |
-| Reads per item reaching a gate | | |
-| Items skipped as busywork (with reasons) | | |
-| Claims Momus rejected | | |
-| Closing verdicts that failed re-check | | |
-| Approval-batch entries | | |
-| Effort saved (work units, as in Dry run) | | |
+| Measure | A | B | C |
+| --- | --- | --- | --- |
+| Items reaching their gate | | | |
+| Distinct files read | | | |
+| Reads per item reaching a gate | | | |
+| Items skipped as busywork (with reasons) | | | |
+| Claims Momus rejected | | | |
+| Closing verdicts that failed re-check | | | |
+| Approval-batch entries | | | |
+| Effort saved (work units, as in Dry run) | | | |
 
-5. Report whether the personas produced different work, where, and whether the difference held up under the
+5. Report whether the personas produced different work (with 'hype' in the run: whether the constitution
+   beat the one-liner, and on which measures), where, and whether the difference held up under the
    checks. One compare run is an anecdote: say so, and say how many more runs would make it evidence.
 
 ## Never
