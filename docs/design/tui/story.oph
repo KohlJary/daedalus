@@ -15,7 +15,7 @@ project-map.md (what's where). Read-only; Markdown rendered.
 │                                                                                                  │
 │ ## Ariadne session (2026-10-13/14)                                                               │
 │ - Released 0.2.0 to PyPI and GitHub (PR #35, tag v0.2.0).                                        │
-│ - Gate experiment: verifier + judge landed 0 bad of 121, against 26 of 151 ungated.              │
+│ - Gate experiment: verifier + judge lifted precision from ~80% to 94-97% (report on the branch). │
 │ - Still running overnight: arm A, refactor tickets, greenfield, the memory arm.                  │
 │                                                                                                  │
 │ (docs/status.md, scrollable)                                                                     │

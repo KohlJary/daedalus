@@ -64,26 +64,22 @@ and `daedalus doctor`. This file carries what the gameplan can't say. See
   It shipped the palace query CLI (T-e18, PR #33), the real Icarus identity again (T-e13, PR #34),
   and generic shipped agents (the test-runner had a hard-coded Cass Vessel home path). #14 is a known
   issue.
-- **Gate experiment (pilot design, arm D, bare prompt):**
-  - Verifier plus the qwen3-coder judge: 0 bad of 121 landed, against 26 of 151 ungated.
-  - One retry with feedback: 121 -> 129 correct landed, but 2 bad got through.
-  - Mutation test of the judges (H2): both near the 10% false-approve line, neither conclusively
-    below it.
-  - The code and results so far are on the local branch exp/ariadne-local (worktree ../daedalus-exp,
-    not pushed).
-- **Still running overnight**, from that session's background queue:
-  - arm A (identity, H4);
-  - refactor, ambiguous and colliding-pair tickets;
-  - toy features under 5 planning conditions;
-  - the mature run on this repo;
-  - greenfield;
-  - the memory arm.
-  ComfyUI restarts automatically when the queue ends.
+- **Experiment finished; report written and reviewed by Momus twice** (experiments/ariadne-local/REPORT.md on the
+  local branch exp/ariadne-local, worktree ../daedalus-exp, not pushed). The design's outcome class: **negative** (H1 fails).
+  - The gate helps (single-file precision ~80% ungated, 94-97% with verifier + judge), mostly by stopping the weaker
+    workers. **Withdrawn:** the earlier "0 bad of 121" headline. The oracle didn't check that existing tests survived;
+    counting deleted tests, 4-7 bad diffs landed.
+  - H2 not met: on real bad diffs, once deleted tests count, both judges approve ~40-47%.
+  - H4: no detectable effect of the Icarus identity (97/126 correct both ways).
+  - qwen3:8b can't build multi-file features (toy 1/45, greenfield 0/12, this repo 1 clean in 54); Claude alone 3/3.
+    No larger local worker tried yet.
+  - Colliding pairs: 16/16 detected conflicts escalate on main (fb00f36); before #28, 11 of 13 were stopped only by git.
+  - Product finding not on main: nothing flags a diff that deletes existing tests (no model needed to check).
 - **Found and logged** (gameplan): T-e8, T-e10, T-e11 (CLI-loop direction), T-e12 (test backlog),
   T-e13 and T-e14 (both fixed), T-e15 to T-e18. Claude baselines are staged for 2026-10-23, at Kohl's
   budget call (experiments/ariadne-local/mature/RUNBOOK.md, greenfield/RUNBOOK.md).
-- **Next:** read the overnight results; hand-audit the oracle/gate disagreements; write REPORT.md
-  (with Momus) on exp/ariadne-local; then a one-page map of the system as it now exists.
+- **Next:** the open checks in REPORT.md (re-verify rejected plan packages against their wave-time base; a 30B
+  local worker on features; the two breaking runs on main); then the one-page system map and the video storyboard.
 
 ## Last session
 - Built and merged edicts 0005, 0001 (as amended: an approved plan is approved
