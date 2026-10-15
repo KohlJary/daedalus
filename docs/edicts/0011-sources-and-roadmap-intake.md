@@ -1,5 +1,5 @@
 # Edict 0011: Sources and roadmap intake
-Status: accepted
+Status: done
 Depends on: Edict 0007 (gameplan, pending proposals, doctor); Edict 0008 (workstreams)
 
 ## Intent
