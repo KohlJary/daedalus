@@ -1,6 +1,6 @@
 ---
 name: hit-em-up
-description: Plan a route through the whole work board and push every eligible item as far as the project's policy allows, then report with a route table, the gates reached, one batch of outward-facing actions for approval, and an original closing verse. Use when the user says "hit em up" or asks to work through the board, the backlog or the sprint on their own. Takes a policy name (a file in policies/) and 'plan' to stop after the route.
+description: Plan a route through the whole work board and push every eligible item as far as the project's policy allows, then report with a route table, the gates reached, one batch of outward-facing actions for approval, and an original closing verse. Use when the user says "hit em up" or asks to work through the board, the backlog or the sprint on their own. Takes a policy name (a file in policies/), 'plan' to stop after the route, a persona ('workplace' or 'full-bore', a file in personas/), and 'compare' to dry-run two personas on the same board side by side.
 ---
 
 # Hit 'em up
@@ -18,7 +18,7 @@ must stop live in a policy file under 'policies/'. Read the whole policy before 
 Defaults come from the project's '.daedalus/config.json':
 
 ```json
-"hitEmUp": { "policy": "daedalus", "trust": "gated", "mode": "plan", "maxItems": 6, "verse": true }
+"hitEmUp": { "policy": "daedalus", "persona": "workplace", "maxItems": 6, "verse": true }
 ```
 
 - 'policy': a file in 'policies/' by its first word ('daedalus' -> 'policies/daedalus.md'). Unset: read each
@@ -29,9 +29,15 @@ Defaults come from the project's '.daedalus/config.json':
   a repo (no earlier run in the report folder), 'go' afterwards.
 - 'backlog': '{ "staleDays": 30, "maxItems": 40 }' for backlog mode.
 - 'dryRun': true or false (default false). See Dry run.
+- 'persona': a file in 'personas/' by its first word ('full-bore' -> 'personas/full-bore.md'). Unset:
+  'workplace'. See Personas.
 - 'maxItems', 'verse': as below.
 
-Arguments override config for one run: a policy name, 'trusted'/'gated', 'plan'/'go', a number, 'no-verse'.
+The sample above leaves 'trust' and 'mode' out on purpose so their adaptive defaults apply; setting them
+pins them.
+
+Arguments override config for one run: a policy name, 'trusted'/'gated', 'plan'/'go', a persona name, a
+number, 'no-verse'.
 Say in the report which values came from config and which from arguments.
 
 ## Arguments
@@ -40,6 +46,8 @@ Say in the report which values came from config and which from arguments.
 - 'plan', 'go' or 'backlog' (overrides 'mode'); 'plan' stops after step 4 (route only).
 - 'dry-run' (overrides 'dryRun'): works with any mode.
 - 'no-verse': skip step 9.
+- A persona name ('workplace', 'full-bore'; overrides 'persona').
+- 'compare' (optionally two persona names; default 'workplace full-bore'): see Compare mode.
 - A number ('3'): work at most that many items.
 
 ## Steps
@@ -48,6 +56,8 @@ Say in the report which values came from config and which from arguments.
    Autonomous work, Gates, Approval batch, Definition of done. Where the policy and this file disagree, the
    policy wins; where the project's CLAUDE.md and the policy disagree, CLAUDE.md wins. A new policy is
    a file in 'policies/' with the same sections plus Detection; nothing in this file names one.
+   Then read the persona file completely. A persona shapes ranking within the policy's order, the
+   terminal voice and the verse; it never loosens a gate, an eligibility rule or a check.
 
 2. **Read the board** as the policy's Source says. Every item, not a sample: id, title, type, state,
    owner, and anything already done on it (branches, documentation folders, task chain, comments).
@@ -92,7 +102,9 @@ Say in the report which values came from config and which from arguments.
    - Diss code, defects, process friction and the board. Never a person, a team or a client.
    - Original lines only: no quoted or lightly altered lyrics from any real song.
    - Specific beats generic: name the actual bugs and numbers from the run.
-   - Terminal only. It never goes into a work item, PR, commit, chat message or document.
+   - Terminal only. It never goes into a work item, PR, commit, chat message or document, including the
+     step 8 report file: the verse is printed after the report is written, never inside it.
+   - Voiced by the active persona; the rules above bind every persona.
    - Clean enough to read aloud in a screen share.
 
 10. **Exhale.** Record the run where the policy's Definition of done says, and update the session summary.
@@ -155,8 +167,52 @@ Spread the reading across cheaper agents when the backlog is large (one batch of
 checklist); verify every "already done", "duplicate" and "obsolete" verdict yourself before it goes in the
 report, since those are the ones that would close someone's ticket.
 
+## Personas
+
+A persona is a file in 'personas/' that shapes how a run chooses and talks without touching what it is
+allowed to do. Two ship:
+
+- **workplace** (default): plain voice, no character.
+- **full-bore**: an original battle-rapper character who takes wasted effort personally. He clusters harder,
+  refuses busywork, and only brags with checked receipts.
+
+Every persona keeps the same gates, eligibility, checks and approval batch. Persona voice stays in the
+terminal: everything another person will see is written in the plain workplace voice whichever persona runs.
+A new persona is a file with a Preamble, its Articles, a Shadow article (how drift feels and the
+self-check), and an Amendments article whose unamendable clauses keep it off people and off unchecked claims.
+
+## Compare mode
+
+For testing whether a persona changes the work, not just the voice. 'compare' always runs as a dry run.
+
+1. Snapshot the inputs once: record the commit hash of main, the time, and the board read (step 2). Both
+   arms use this snapshot.
+2. Run each persona as its own dry run in a fresh subagent, so neither arm sees the other's route or
+   reasoning. Same policy, mode, item limit and snapshot; only the persona differs. Each writes its own report
+   ('...-dry-run-<persona>.md').
+3. Hand both route tables, per-item results and approval batches to a third fresh subagent with the persona
+   voice, verses and file names stripped, labelled only 'A' and 'B' in random order. It judges which arm's
+   work is better and why, before learning which persona was which.
+4. Write '<date>-compare-<personaA>-vs-<personaB>.md' in the report folder with this table, then the blind
+   judgment, then the unblinding:
+
+| Measure | A | B |
+| --- | --- | --- |
+| Items reaching their gate | | |
+| Distinct files read | | |
+| Reads per item reaching a gate | | |
+| Items skipped as busywork (with reasons) | | |
+| Claims Momus rejected | | |
+| Closing verdicts that failed re-check | | |
+| Approval-batch entries | | |
+| Effort saved (work units, as in Dry run) | | |
+
+5. Report whether the personas produced different work, where, and whether the difference held up under the
+   checks. One compare run is an anecdote: say so, and say how many more runs would make it evidence.
+
 ## Never
 
 - Never take an action the policy lists as a gate, however small, without the user's answer.
 - Never pick up an item that belongs to someone else; list it instead.
 - Never report a step as done on an unchecked claim.
+- Never let a persona's voice reach anything another person will see.
