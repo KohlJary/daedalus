@@ -97,14 +97,28 @@ def _rel_to(path: str, base: str) -> str:
 
 
 def _csharp_test_classes(repo: Path, rel_file: str) -> List[str]:
-    """The classes a C# test file defines (by the palace's analyzer), else its file name."""
+    """The test classes a C# test file defines (by the palace's analyzer), else its file name."""
     from ..labyrinth.languages import get_language_registry
     support = get_language_registry().get_by_extension(Path(rel_file))
     try:
         elements = support.analyze_file(repo / rel_file, repo) if support is not None else []
     except Exception:
         elements = []
-    names = sorted({e.simple_name for e in elements if e.element_type == "class"})
+    # Classes holding a test attribute ([Fact], [Theory], [Test], [TestCase], [TestMethod], [UnityTest]);
+    # helper classes in the same file (a capturing logger, a null scope) are left out of the filter
+    try:
+        lines = (repo / rel_file).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        lines = []
+    marked = [i + 1 for i, line in enumerate(lines)
+              if re.search(r"\[\s*(Fact|Theory|Test|TestCase|TestCaseSource|TestMethod|DataTestMethod|UnityTest)\b", line)]
+    classes = [e for e in elements if e.element_type == "class"]
+    with_tests = set()
+    for line in marked:
+        holders = [c for c in classes if c.line <= line <= (c.end_line or c.line)]
+        if holders:
+            with_tests.add(min(holders, key=lambda c: (c.end_line or c.line) - c.line).simple_name)
+    names = sorted(with_tests) or sorted({c.simple_name for c in classes})
     return names or [Path(rel_file).stem]
 
 

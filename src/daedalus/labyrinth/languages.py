@@ -53,6 +53,9 @@ class CodeElement:
     receiver_types: Dict[str, str] = field(default_factory=dict)
     # A C# extension method (`static void Audit(this ILogger l)`): callable on a type it doesn't belong to
     extension_method: bool = False
+    # Names holding something whose type parameter lambdas receive: "mock:IStore" for Mock<IStore>,
+    # "seq:Order" for List<Order> or Order[] (C#)
+    element_types: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         # Derive simple_name from name if not set

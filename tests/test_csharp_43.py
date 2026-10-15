@@ -131,7 +131,8 @@ BASE = "namespace N;\npublic class A { public void Go() {} }\npublic class B { p
 
 @pytest.mark.parametrize("body, expected", [
     # untyped declarations shadow the field `A x`, so the name rule decides (both Go's)
-    ("A x; void M(System.Collections.Generic.List<B> bs) { bs.ForEach(x => x.Go()); }", {"A.Go", "B.Go"}),
+    ("A x; void M(System.Collections.Generic.List<B> bs) { bs.ForEach(x => x.Go()); }", {"B.Go"}),  # element type
+    ("A x; void M() { Use(x => x.Go()); } void Use(System.Action<object> a) {}", {"A.Go", "B.Go"}),
     ("A x; void M(object o) { if (o is B x) x.Go(); }", {"B.Go"}),
     ("A x; void M() { var x = Make(); x.Go(); } object Make() => null;", {"A.Go", "B.Go"}),
     ("A x; void M(B[] xs) { foreach (var x in xs) x.Go(); }", {"A.Go", "B.Go"}),
@@ -227,3 +228,48 @@ def test_install_findings_are_hints_not_failures(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor, "check_install", lambda: [doctor.Finding("install-stale", "old")])
     findings, hints = doctor.run_checks(tmp_path)
     assert not any(f.name == "install-stale" for f in findings) and "install-stale: old" in hints
+
+
+MOCKS = """namespace Shop;
+public class Item {} public class Order { public bool IsPaid() => true; }
+public interface IInventoryStore { Item? Find(int sku); }
+public interface IOrderStore     { Order? Find(int orderId); }
+public class RestockerTests {
+    private readonly Mock<IInventoryStore> _inventory = new();
+    private readonly Mock<IOrderStore> _orders = new();
+    [Fact] public void Setup()   { _inventory.Setup(store => store.Find(42)).Returns((Item?)null); }
+    [Fact] public void Verify()  { _orders.Verify(s => s.Find(7), Times.Once()); }
+    [Fact] public void Object()  { this._inventory.Object.Find(1); }
+    [Fact] public void Fake()    { var f = A.Fake<IOrderStore>(); A.CallTo(() => f.Find(1)); }
+    [Fact] public void Sub()     { var sub = Substitute.For<IInventoryStore>(); sub.Received().Find(2); }
+    [Fact] public void Linq()    { System.Collections.Generic.List<Order> orders = new(); orders.Where(o => o.IsPaid()); }
+    [Fact] public void Unknown() { Run(x => x.Find(3)); }
+    void Run(System.Action<object> a) {}
+}
+public class CapturingLogger { public void Log() {} }
+"""
+
+
+@pytest.mark.parametrize("test, expected", [
+    ("Setup", {"IInventoryStore.Find"}),        # issue #46: the mocked type, not every Find
+    ("Verify", {"IOrderStore.Find"}),
+    ("Object", {"IInventoryStore.Find"}),       # mock.Object
+    ("Fake", {"IOrderStore.Find"}),             # FakeItEasy
+    ("Sub", {"IInventoryStore.Find"}),          # NSubstitute Received()
+    ("Linq", {"Order.IsPaid"}),                 # a collection's element type
+    ("Unknown", {"IInventoryStore.Find", "IOrderStore.Find"}),  # nothing to infer: the name rule
+])
+def test_lambda_parameters_take_the_mocked_or_element_type(tmp_path, test, expected):
+    g = _graph(tmp_path, MOCKS)
+    finds = {c.split("a.cs.")[1] for c in g.nodes[f"a.cs.RestockerTests.{test}"].calls if c.endswith((".Find", ".IsPaid"))}
+    assert finds == expected
+
+
+def test_dotnet_filter_skips_helper_classes_in_test_files(tmp_path):
+    from daedalus.ariadne.test_runners import plan_runs
+    (tmp_path / "T.Tests").mkdir()
+    (tmp_path / "T.Tests" / "T.Tests.csproj").write_text("<Project/>")
+    (tmp_path / "T.Tests" / "RestockerTests.cs").write_text(MOCKS)
+    languages._registry = None
+    runs, _ = plan_runs(tmp_path, ["T.Tests/RestockerTests.cs"], ["pytest"])
+    assert runs[0].command[-1] == "FullyQualifiedName~RestockerTests"  # not CapturingLogger, Item, Order

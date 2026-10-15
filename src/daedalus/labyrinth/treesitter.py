@@ -383,7 +383,8 @@ def extract_elements(support: TreeSitterSupport, source: bytes, rel: str, tree=N
         if not callable_:
             el.bases = _bases(d.node)
         if support.grammar.typed_receivers:
-            el.receiver_types = _cs_receiver_types(d.node, container.node if container else None, callable_)
+            el.receiver_types = _cs_receiver_types(d.node, container.node if container else None, callable_,
+                                                   el.element_types)
             el.extension_method = callable_ and _is_extension(d.node)
         elements.append(el)
         spans.append((d.node.start_byte, d.node.end_byte, el))
@@ -472,7 +473,63 @@ def _qualifier(ref, name_node) -> str:
     text = obj.text.decode("utf-8", "replace")
     if text in SELF_WORDS or obj.type in ("this", "self", "super"):
         return "self"
+    if obj.type == "identifier":
+        lam = _lambda_context(obj)
+        if lam is not None:
+            return lam
+    if obj.type == "member_access_expression":  # mock.Object.Find(): the mocked type
+        inner, member = obj.child_by_field_name("expression"), obj.child_by_field_name("name")
+        receiver = _receiver_name(inner)
+        if receiver and member is not None and _text(member) == "Object":
+            return f"mockobj:{receiver}"
+    if obj.type == "invocation_expression":  # NSubstitute: sub.Received().Find(), sub.DidNotReceive().Find()
+        fn = obj.child_by_field_name("function")
+        if fn is not None and fn.type == "member_access_expression" and _text(fn.child_by_field_name("name")) in (
+                "Received", "DidNotReceive", "ReceivedWithAnyArgs", "DidNotReceiveWithAnyArgs"):
+            receiver = _receiver_name(fn.child_by_field_name("expression"))
+            if receiver:
+                return receiver
     return text if obj.type in IDENTIFIER_TYPES else "?"
+
+
+def _receiver_name(node) -> Optional[str]:
+    """`x` or `this.x` as a receiver name ("x" / "self.x"); None for anything else."""
+    if node is None:
+        return None
+    if node.type == "identifier":
+        return _text(node)
+    if node.type == "member_access_expression":
+        inner, member = node.child_by_field_name("expression"), node.child_by_field_name("name")
+        if inner is not None and _text(inner) in SELF_WORDS and member is not None:
+            return "self." + _text(member)
+    return None
+
+
+def _lambda_context(ident) -> Optional[str]:
+    """For `store` in `_inventory.Setup(store => store.Find(42))`: "lambda:<receiver>:<method>", naming the
+    receiver whose type parameter the lambda's parameter gets (Mock<T>.Setup, List<T>.Where). None when the
+    identifier isn't an untyped parameter of an enclosing lambda passed to a method on a named receiver."""
+    name = _text(ident)
+    node = ident.parent
+    while node is not None and node.type not in ("method_declaration", "constructor_declaration", "class_declaration"):
+        if node.type == "lambda_expression":
+            params = node.child_by_field_name("parameters")
+            declared = [params] if params is not None and params.type == "implicit_parameter" else (
+                [p for p in params.named_children if p.type == "implicit_parameter"] if params is not None else [])
+            if any(_text(p) == name for p in declared):
+                call = node.parent
+                while call is not None and call.type in ("argument", "argument_list"):
+                    call = call.parent
+                fn = call.child_by_field_name("function") if call is not None and call.type == "invocation_expression" else None
+                if fn is None or fn.type != "member_access_expression":
+                    return None
+                receiver = _receiver_name(fn.child_by_field_name("expression"))
+                method = fn.child_by_field_name("name")
+                if receiver and method is not None:
+                    return f"lambda:{receiver}:{_text(method).split('<')[0]}"
+                return None
+        node = node.parent
+    return None
 
 
 def _text(node) -> str:
@@ -647,7 +704,9 @@ def _type_text(node, type_params: Set[str]) -> Optional[str]:
     if node is None:
         return None
     t = node.type
-    if t in ("nullable_type", "array_type", "pointer_type", "ref_type", "scoped_type"):
+    if t == "array_type":
+        return None  # an Order[] isn't an Order (its element type is in element_types)
+    if t in ("nullable_type", "pointer_type", "ref_type", "scoped_type"):
         inner = node.child_by_field_name("type") or (node.named_children[0] if node.named_children else None)
         return _type_text(inner, type_params)
     if t in ("qualified_name", "alias_qualified_name"):
@@ -655,6 +714,54 @@ def _type_text(node, type_params: Set[str]) -> Optional[str]:
         return text if text.split(".")[-1] not in type_params else None
     name = _simple_type(node)
     return name if name and name not in type_params else None
+
+
+MOCK_TYPES = {"Mock"}
+SEQUENCE_TYPES = {"List", "IList", "IEnumerable", "ICollection", "IReadOnlyList", "IReadOnlyCollection", "HashSet",
+                  "ISet", "IQueryable", "Collection", "ObservableCollection", "ImmutableList", "ImmutableArray",
+                  "LinkedList", "Queue", "Stack", "ConcurrentBag", "IAsyncEnumerable"}
+# Generic factories whose result *is* the type argument: A.Fake<T>(), Substitute.For<T>(), Mock.Of<T>()
+FAKE_FACTORIES = {"Fake", "For", "Of"}
+
+
+def _element_type(node, type_params: Set[str]) -> Optional[str]:
+    """"mock:T" for Mock<T>, "seq:T" for a collection of T or T[]; None otherwise."""
+    if node is None:
+        return None
+    if node.type == "nullable_type":
+        return _element_type(node.child_by_field_name("type") or node.named_children[0], type_params)
+    if node.type == "array_type":
+        element = _type_text(node.child_by_field_name("type") or node.named_children[0], type_params)
+        return f"seq:{element}" if element else None
+    if node.type == "qualified_name":
+        return _element_type(node.child_by_field_name("name") or node.named_children[-1], type_params)
+    if node.type == "generic_name":
+        name = _text(next((c for c in node.named_children if c.type == "identifier"), None))
+        args = next((c for c in node.named_children if c.type == "type_argument_list"), None)
+        items = [a for a in args.named_children] if args is not None else []
+        if len(items) != 1:
+            return None
+        inner = _type_text(items[0], type_params)
+        if inner and name in MOCK_TYPES:
+            return f"mock:{inner}"
+        if inner and name in SEQUENCE_TYPES:
+            return f"seq:{inner}"
+    return None
+
+
+def _factory_type(value, type_params: Set[str]) -> Optional[str]:
+    """T for `A.Fake<T>()`, `Substitute.For<T>()`, `Mock.Of<T>()`."""
+    if value is None or value.type != "invocation_expression":
+        return None
+    fn = value.child_by_field_name("function")
+    name = fn.child_by_field_name("name") if fn is not None and fn.type == "member_access_expression" else fn
+    if name is None or name.type != "generic_name":
+        return None
+    method = _text(next((c for c in name.named_children if c.type == "identifier"), None))
+    args = next((c for c in name.named_children if c.type == "type_argument_list"), None)
+    if method in FAKE_FACTORIES and args is not None and len(args.named_children) == 1:
+        return _type_text(args.named_children[0], type_params)
+    return None
 
 
 def _type_parameters(*nodes) -> Set[str]:
@@ -669,13 +776,17 @@ def _type_parameters(*nodes) -> Set[str]:
     return out
 
 
-def _cs_declarations(node, types: Dict[str, Optional[str]], type_params: Set[str]) -> None:
+def _cs_declarations(node, types: Dict[str, Optional[str]], type_params: Set[str],
+                     elements: Optional[Dict[str, Optional[str]]] = None) -> None:
     """Every name declared under `node`: parameters (lambda ones too), locals, `var x = new T()`, pattern
     variables (`is B f`), `out var`, catch and foreach variables, tuple declarations."""
     for n in _walk(node):
         t = n.type
         if t == "parameter":
             _declare(types, _text(n.child_by_field_name("name")), _type_text(n.child_by_field_name("type"), type_params))
+            if elements is not None:
+                _declare(elements, _text(n.child_by_field_name("name")),
+                         _element_type(n.child_by_field_name("type"), type_params))
         elif t == "implicit_parameter":
             _declare(types, _text(n), None)
         elif t == "variable_declaration":
@@ -690,7 +801,13 @@ def _cs_declarations(node, types: Dict[str, Optional[str]], type_params: Set[str
                     (c for c in decl.named_children if c.type == "identifier"), None))
                 value = next((c for c in decl.named_children if c.type == "object_creation_expression"), None)
                 created = _type_text(value.child_by_field_name("type"), type_params) if value is not None else None
-                _declare(types, name, declared or created)
+                factory = next((_factory_type(c, type_params) for c in decl.named_children
+                                if c.type == "invocation_expression"), None)
+                _declare(types, name, declared or created or factory)
+                if elements is not None:
+                    created_type = value.child_by_field_name("type") if value is not None else None
+                    _declare(elements, name, _element_type(n.child_by_field_name("type"), type_params)
+                             or _element_type(created_type, type_params))
         elif t in ("declaration_pattern", "declaration_expression", "catch_declaration"):
             name = n.child_by_field_name("name")
             if name is not None and name.type == "identifier":
@@ -710,7 +827,8 @@ def _cs_declarations(node, types: Dict[str, Optional[str]], type_params: Set[str
                 _declare(types, _text(ident), None)
 
 
-def _cs_member_types(class_node, type_params: Set[str]) -> Dict[str, Optional[str]]:
+def _cs_member_types(class_node, type_params: Set[str],
+                     elements: Optional[Dict[str, Optional[str]]] = None) -> Dict[str, Optional[str]]:
     """A C# type's fields, properties and primary-constructor parameters."""
     types: Dict[str, Optional[str]] = {}
     for child in class_node.named_children:
@@ -718,29 +836,42 @@ def _cs_member_types(class_node, type_params: Set[str]) -> Dict[str, Optional[st
             for param in (c for c in child.named_children if c.type == "parameter"):
                 _declare(types, _text(param.child_by_field_name("name")),
                          _type_text(param.child_by_field_name("type"), type_params))
+                if elements is not None:
+                    _declare(elements, _text(param.child_by_field_name("name")),
+                             _element_type(param.child_by_field_name("type"), type_params))
         if child.type == "declaration_list":
             for member in child.named_children:
                 if member.type in ("field_declaration", "event_field_declaration"):
-                    _cs_declarations(member, types, type_params)
+                    _cs_declarations(member, types, type_params, elements)
                 elif member.type == "property_declaration":
                     _declare(types, _text(member.child_by_field_name("name")),
                              _type_text(member.child_by_field_name("type"), type_params))
+                    if elements is not None:
+                        _declare(elements, _text(member.child_by_field_name("name")),
+                                 _element_type(member.child_by_field_name("type"), type_params))
     return types
 
 
-def _cs_receiver_types(def_node, container_node, callable_: bool) -> Dict[str, str]:
+def _cs_receiver_types(def_node, container_node, callable_: bool,
+                       element_types: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     """Declared types a C# definition can call through. Its own parameters and locals shadow its type's
     fields, properties and primary-constructor parameters; the members are also kept as "self.<name>" for
     `this.x.Call()`. Names whose type isn't certain are left out, so they fall back to the name rule."""
     owner = container_node if callable_ else def_node
     type_params = _type_parameters(owner, def_node)
-    members = _cs_member_types(owner, type_params) if owner is not None else {}
+    member_elements: Dict[str, Optional[str]] = {}
+    members = _cs_member_types(owner, type_params, member_elements) if owner is not None else {}
     types: Dict[str, Optional[str]] = dict(members)
     types.update({f"self.{k}": v for k, v in members.items()})
+    elements: Dict[str, Optional[str]] = {k: v for k, v in member_elements.items() if k in members}
+    elements.update({f"self.{k}": v for k, v in elements.items()})
     if callable_:
         local: Dict[str, Optional[str]] = {}
-        _cs_declarations(def_node, local, type_params)
+        local_elements: Dict[str, Optional[str]] = {}
+        _cs_declarations(def_node, local, type_params, local_elements)
         types.update(local)  # a parameter or local, typed or not, shadows a field of the same name
+        for name in local:  # ...and its element type, if it has one
+            elements[name] = local_elements.get(name)
     else:  # code on the type itself (field initializers, property bodies): their lambdas, locals, patterns
         local: Dict[str, Optional[str]] = {}
         for child in def_node.named_children:
@@ -749,6 +880,8 @@ def _cs_receiver_types(def_node, container_node, callable_: bool) -> Dict[str, s
                     if member.type in ("property_declaration", "field_declaration"):
                         _cs_declarations(member, local, type_params)
         types.update(local)
+    if element_types is not None:
+        element_types.update({k: v for k, v in elements.items() if v})
     return {k: v for k, v in types.items() if v}
 
 

@@ -125,7 +125,7 @@ def _collect_nodes(project_root: Path, imports: Optional[Dict[str, dict]] = None
                             "is_test": el.is_test, "signature": el.signature,
                             "call_sites": [tuple(site) for site in el.call_sites],
                             "receiver_types": dict(el.receiver_types), "bases": list(el.bases),
-                            "extension_method": el.extension_method,
+                            "extension_method": el.extension_method, "element_types": dict(el.element_types),
                             "docstring": (el.docstring or "")[:200], "calls": list(el.calls)}
     return raw
 
@@ -207,6 +207,16 @@ def build_query_graph(project_root: Path, max_candidates: int = 10) -> QueryGrap
 
 
 JS_EXTS = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts")
+# Methods whose lambda gets the mocked type: Moq's Mock<T>.Setup(x => x.Find(1)) and friends
+MOQ_LAMBDA_METHODS = {"Setup", "SetupGet", "SetupSet", "SetupSequence", "SetupProperty", "Verify", "VerifyGet",
+                      "VerifySet", "Callback", "Raise"}
+# Methods whose lambda gets a collection's element: orders.Where(o => o.IsPaid())
+SEQUENCE_LAMBDA_METHODS = {"Where", "Select", "SelectMany", "Any", "All", "First", "FirstOrDefault", "Single",
+                           "SingleOrDefault", "Last", "LastOrDefault", "Count", "LongCount", "OrderBy",
+                           "OrderByDescending", "ThenBy", "ThenByDescending", "GroupBy", "ToDictionary", "ToLookup",
+                           "Sum", "Min", "Max", "Average", "MinBy", "MaxBy", "DistinctBy", "TakeWhile", "SkipWhile",
+                           "ForEach", "Find", "FindAll", "FindIndex", "FindLast", "Exists", "TrueForAll", "RemoveAll",
+                           "Aggregate", "Zip", "Join", "GroupJoin", "Contains"}
 NODE_BUILTINS = {"assert", "buffer", "child_process", "cluster", "crypto", "dgram", "dns", "events", "fs", "http",
                  "http2", "https", "net", "os", "path", "perf_hooks", "process", "querystring", "readline",
                  "stream", "string_decoder", "timers", "tls", "tty", "url", "util", "v8", "vm", "worker_threads",
@@ -341,7 +351,28 @@ class ImportResolver:
         """`inventory.Find()` where `inventory` is declared `IInventoryStore`: that interface's Find and the
         Find of every type in its hierarchy. A declared type outside the project links nothing, unless the
         project has an extension method of that name. Anything uncertain is left to the name-based rules."""
-        type_name = node.get("receiver_types", {}).get(receiver)
+        return self._resolve_cs_type(node, node.get("receiver_types", {}).get(receiver), call)
+
+    def _resolve_cs_element(self, node: dict, qualifier: str, call: str) -> Optional[Set[str]]:
+        """Calls on what a mock or a collection hands to a lambda, or on mock.Object:
+        `_inventory.Setup(s => s.Find(42))` with `Mock<IInventoryStore> _inventory` -> IInventoryStore.Find;
+        `orders.Where(o => o.IsPaid())` with `List<Order> orders` -> Order.IsPaid."""
+        kind, _, rest = qualifier.partition(":")
+        if kind == "mockobj":
+            receiver, method = rest, None
+        else:
+            receiver, _, method = rest.rpartition(":")
+        element = node.get("element_types", {}).get(receiver, "")
+        holder, _, type_name = element.partition(":")
+        if not type_name:
+            return None
+        if holder == "mock" and (method is None or method in MOQ_LAMBDA_METHODS):
+            return self._resolve_cs_type(node, type_name, call)
+        if holder == "seq" and method in SEQUENCE_LAMBDA_METHODS:
+            return self._resolve_cs_type(node, type_name, call)
+        return None
+
+    def _resolve_cs_type(self, node: dict, type_name: Optional[str], call: str) -> Optional[Set[str]]:
         if not type_name:
             return None
         if "." in type_name:  # written qualified: System.Threading.Tasks.Task, Shop.Billing.Money
@@ -379,6 +410,8 @@ class ImportResolver:
             return None
         if qualifier.startswith("self."):  # this._orders.Find(): the field, even if a local shares its name
             return self._resolve_cs_receiver(node, qualifier, call)
+        if qualifier.startswith(("lambda:", "mockobj:")):
+            return self._resolve_cs_element(node, qualifier, call)
         if qualifier in node.get("receiver_types", {}):  # a parameter, local, field or property
             return self._resolve_cs_receiver(node, qualifier, call)
         hits = {f"{t}.{call}" for t in self._cs_types(node["file"], qualifier) if f"{t}.{call}" in self.raw}
