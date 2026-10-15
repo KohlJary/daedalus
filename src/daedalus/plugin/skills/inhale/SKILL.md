@@ -64,6 +64,10 @@ different from a step below, follow CLAUDE.md.
    the user or CLAUDE.md. If something is due, say what and how
    much in the brief and ask whether to run it now or defer; run /reflect only
    if the user says to. With nothing due it prints nothing; say nothing about it.
+   **Dreams** (where `dream.enabled`): the brief's one **Dream:** line
+   says whether a dream is due or waiting. If one is due, offer it after the
+   reflection (run /dream now, or defer). Never read a dream's content into the
+   brief; `daedalus dream show` is for the user.
 
 8. **Brief the user**, in a few lines: where things stand, the next task, what
    is waiting on whom (including board threads waiting on a reply), any

@@ -43,7 +43,7 @@ def test_invalid_core_values_are_refused(offline):
 
 def test_unknown_source_names_list_the_installed_plugins(offline):
     out = run("config", "sources.jira.url", "https://jira.example")
-    assert out.exit_code == 1 and "installed: ado, github" in out.output
+    assert out.exit_code == 1 and "installed: ado, dream, github" in out.output
 
 
 def test_a_named_instance_takes_its_type(offline):

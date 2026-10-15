@@ -291,6 +291,7 @@ def _ensure_gameplan_tracked(project_dir: Path):
 
 
 REFLECTION_IGNORE = "\n# Daedalus: session digests, reports and A/B state never leave this machine (edict 0010)\n/.daedalus/reflection/\n"
+DREAMS_IGNORE = "\n# Daedalus: dreams stay local; `daedalus dream keep` copies one to docs/dreams/ (edict 0013)\n/.daedalus/dreams/\n"
 
 
 def _ensure_reflection_ignored(project_dir: Path):
@@ -305,13 +306,20 @@ def _ensure_reflection_ignored(project_dir: Path):
                                  cwd=project_dir, capture_output=True).returncode == 0
     except FileNotFoundError:
         return
-    if ignored:
-        return
-    gitignore = project_dir / ".gitignore"
-    text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
-    sep = "" if not text or text.endswith("\n") else "\n"
-    gitignore.write_text(text + sep + REFLECTION_IGNORE, encoding="utf-8")
-    click.echo("  Added .gitignore rule: .daedalus/reflection/ stays local")
+    if not ignored:
+        gitignore = project_dir / ".gitignore"
+        text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
+        sep = "" if not text or text.endswith("\n") else "\n"
+        gitignore.write_text(text + sep + REFLECTION_IGNORE, encoding="utf-8")
+        click.echo("  Added .gitignore rule: .daedalus/reflection/ stays local")
+    dreams_ignored = subprocess.run(["git", "check-ignore", "-q", ".daedalus/dreams/x/dream.md"],
+                                    cwd=project_dir, capture_output=True).returncode == 0
+    if not dreams_ignored:
+        gitignore = project_dir / ".gitignore"
+        text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
+        sep = "" if not text or text.endswith("\n") else "\n"
+        gitignore.write_text(text + sep + DREAMS_IGNORE, encoding="utf-8")
+        click.echo("  Added .gitignore rule: .daedalus/dreams/ stays local")
 
 
 def _enable_edicts(project_dir: Path):

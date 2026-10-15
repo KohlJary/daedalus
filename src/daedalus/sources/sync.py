@@ -162,7 +162,7 @@ def sync(project_dir: Path, name: str, dry_run: bool = False) -> SyncResult:
                 task_origins.add(str(o.get("external_id")))
 
     prior = state.load(project_dir).get(name, {})
-    dropped = set(prior.get("dropped", []))
+    dropped = set(drop_records(prior))
     # The watermark is the oldest tracker time any known item was last seen at, not the last sync: an item
     # that changed between a sync and the apply of its proposal is still caught on the next sync.
     seen_at = [str((i.get("synced") or {}).get("remote_updated")) for i in known_items.values()
@@ -197,7 +197,7 @@ def sync(project_dir: Path, name: str, dry_run: bool = False) -> SyncResult:
             continue
         pid = phase_id(r.external_id)
         if (r.external_id in phase_origins or pid in phase_ids or f"phase:{pid}" in pending_keys
-                or f"src:{name}:{r.external_id}" in dropped or src.status_for(r) == "done"):
+                or (f"src:{name}:{r.external_id}" in dropped and not r.reproposable) or src.status_for(r) == "done"):
             continue
         children = [roadmap.item_id_for(name, c.external_id) for c in remote
                     if c.parent == r.external_id and roles[c.external_id] == ITEM]
@@ -217,14 +217,15 @@ def sync(project_dir: Path, name: str, dry_run: bool = False) -> SyncResult:
         remote_fields = src.fields(r)
         item = known_items.get(r.external_id)
         if item is None:
-            if key in pending_keys or key in dropped or remote_fields.get("status") == "done":
+            if key in pending_keys or (key in dropped and not r.reproposable) or remote_fields.get("status") == "done":
                 continue  # already proposed, dropped by the owner, or closed before it was ever taken in
             new_item = {"id": roadmap.item_id_for(name, r.external_id), "title": r.title,
-                        "description": r.description or "", "status": "backlog", "priority": "P2",
+                        "description": r.description or "", "status": "backlog", "priority": src.priority(r),
                         "item_type": src.item_type(r), "created_at": stamp, "created_by": provenance, "origin": o}
             new_item.update(remote_fields)
             parent_phase = phase_id(r.parent) if r.parent and roles.get(r.parent) == PHASE else None
             proposals.append({"kind": "roadmap-new", "origin": o, "item": new_item,
+                              **({"recurrences": r.recurrences} if r.recurrences is not None else {}),
                               "synced": {"fields": remote_fields, "remote_updated": r.updated},
                               **({"phase": parent_phase} if parent_phase else {}),
                               "source": provenance, "created": today})
@@ -263,7 +264,7 @@ def sync(project_dir: Path, name: str, dry_run: bool = False) -> SyncResult:
             continue
         key = f"src:{name}:{r.external_id}"
         if (r.external_id in task_origins or r.external_id in pending_task_origins or key in pending_keys
-                or key in dropped or src.status_for(r) == "done"):
+                or (key in dropped and not r.reproposable) or src.status_for(r) == "done"):
             continue
         parent_item = roadmap.item_id_for(name, r.parent) if r.parent else None
         task = {"id": roadmap.item_id_for(name, r.external_id).lower(), "title": r.title, "details": r.url,
@@ -290,6 +291,8 @@ def sync(project_dir: Path, name: str, dry_run: bool = False) -> SyncResult:
     if index_dirty:
         roadmap.save_index(project_dir, index)
     result.proposals = gp.add_proposals(project_dir, proposals) if proposals else []
+    if result.proposals:
+        src.on_proposed(result.proposals)
     result.health = src.health_when_ok()
     state.record(project_dir, name, last_sync=stamp, last_attempt=stamp, health=result.health, error=None,
                  supports_write_back=bool(src.supports_write_back), skipped=result.skipped)
@@ -323,6 +326,25 @@ def apply_roadmap_proposal(project_dir: Path, data: dict[str, Any], p: dict[str,
         if (p.get("synced") or {}).get("remote_updated"):
             synced["remote_updated"] = p["synced"]["remote_updated"]
     roadmap.save_index(project_dir, index)
+    _notify(project_dir, p, "applied")
+
+
+def _notify(project_dir: Path, p: dict[str, Any], outcome: str) -> None:
+    source_name = (p.get("origin") or {}).get("source")
+    if not source_name or source_name == "local":
+        return
+    try:
+        create(project_dir, source_name).on_resolved(p, outcome)
+    except KeyError:
+        pass
+
+
+def drop_records(entry: dict) -> dict:
+    """{key: {count, last_dropped_at, recurrences_at_drop}}; the first version kept a plain list of keys."""
+    raw = entry.get("dropped") or {}
+    if isinstance(raw, list):
+        return {k: {"count": 1, "last_dropped_at": None, "recurrences_at_drop": None} for k in raw}
+    return dict(raw)
 
 
 def write_back_proposal(project_dir: Path, task: dict[str, Any]) -> Optional[dict[str, Any]]:
@@ -404,13 +426,20 @@ def record_drops(project_dir: Path, proposals: list[dict[str, Any]]) -> None:
     if index_dirty:
         roadmap.save_index(project_dir, index)
     intake = [p for p in proposals if p.get("kind") in ("roadmap-new", "new-phase", "new-task") and p.get("origin")]
-    by_source: dict[str, set] = {}
+    by_source: dict[str, list] = {}
     for p in intake:
-        o = p["origin"]
-        by_source.setdefault(o["source"], set()).add(f"src:{o['source']}:{o['external_id']}")
-    for source_name, keys in by_source.items():
-        prior = state.load(project_dir).get(source_name, {})
-        state.record(project_dir, source_name, dropped=sorted(set(prior.get("dropped", [])) | keys))
+        by_source.setdefault(p["origin"]["source"], []).append(p)
+    for source_name, props in by_source.items():
+        records = drop_records(state.load(project_dir).get(source_name, {}))
+        for p in props:
+            key = f"src:{source_name}:{p['origin']['external_id']}"
+            old = records.get(key, {})
+            records[key] = {"count": int(old.get("count") or 0) + 1, "last_dropped_at": stamp,
+                            "recurrences_at_drop": p.get("recurrences")}
+        state.record(project_dir, source_name, dropped=records)
+    for p in proposals:
+        if p.get("kind") in ("roadmap-new", "new-phase", "new-task") and p.get("origin"):
+            _notify(project_dir, p, "dropped")
     wbs = [p for p in proposals if p.get("kind") == "write-back"]
     for p in wbs:
         _record_write_back(project_dir, data, p, "dropped")
