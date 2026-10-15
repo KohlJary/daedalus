@@ -282,9 +282,10 @@
       {
         "id": "T-e27",
         "title": "doctor/source list: detect a stale or foreign install (old 'daedalus' dist, missing entry points)",
-        "status": "pending",
+        "status": "done",
         "details": "On Kohl's machine the live install is a Dec 2025 user-site editable named 'daedalus' 0.1.0: deps never refreshed (tree-sitter, keyring) and no daedalus.sources entry points, so 'source list' shows no plugins. doctor's install check looks up 'daedalus-cli' and misses it. source list should say why it found no plugins. Fix for Kohl: pip uninstall --break-system-packages daedalus; pipx install --force --editable .",
-        "updated": "2026-10-15"
+        "updated": "2026-10-15",
+        "resolution": "PR #65: doctor compares the checkout's declared entry points/dependencies with installed metadata (install-stale) and flags other dists providing daedalus (install-shadowed); source list says why no plugins. Momus: merge-acceptable (markers/TOML fixed)."
       },
       {
         "id": "T-e28",
