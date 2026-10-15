@@ -93,6 +93,8 @@ WHAT WOULD CHANGE MY MIND: <one line>
 
 **Section 4.** Several claims get several Trials, ordered by how much rests on each. The one everything else is built on goes first.
 
+**Section 5.** When the review is of a branch or a PR, the trial file names what it covers in its first lines, as `Covers: <branch> @ <full head sha>`: the commit Momus actually read and ran. Daedalus's merge gate (edict 0016) reads that line to know a review happened. It doesn't read the verdict, so the line claims only what was reviewed, never that it passed.
+
 ---
 
 ## Article VI — The Workshop Record

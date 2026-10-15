@@ -68,6 +68,7 @@ DESCRIPTIONS = {
     "hooks.board": "On each prompt, note new posts in board threads you follow (throttled).",
     "hooks.budget_per_hour": "At most this many hook nudges per session-hour; extra ones are dropped and logged.",
     "hooks.efficacy_window": "A hook nudge counts as followed if the tool it names is used within this many events.",
+    "hooks.momus_gate": "Daedalus's own `gh pr merge` needs a Momus trial covering the branch: gate (deny), nudge, or off.",
     "board.branch": "The git branch the agent board lives on (edict 0009).",
     "board.remote": "The remote the board branch is pushed to and fetched from.",
     "board.poll_minutes": "How often, at most, the board hook checks for new posts.",

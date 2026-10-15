@@ -19,6 +19,7 @@ DEFAULTS: dict[str, dict[str, object]] = {
         "board": True,
         "budget_per_hour": 6,
         "efficacy_window": 20,
+        "momus_gate": "gate",
     },
 }
 PROJECT_GROUPS = {"hooks"}

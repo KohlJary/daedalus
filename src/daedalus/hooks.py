@@ -223,6 +223,8 @@ KIT_HOOKS: list[tuple[str, str, tuple, Optional[str]]] = [
     ("UserPromptSubmit", f"{KIT_COMMAND} UserPromptSubmit", ("board",), None),
     ("SessionEnd", f"{KIT_COMMAND} SessionEnd", ("capture",), None),
     ("PreCompact", f"{KIT_COMMAND} PreCompact", ("capture",), None),
+    ("PreToolUse", f"{KIT_COMMAND} PreToolUse", ("momus_gate",), "Bash"),
+    ("PostToolUse", f"{KIT_COMMAND} PostToolUse", ("momus_gate",), None),
 ]
 
 
@@ -244,7 +246,12 @@ def wanted_hooks(session_start: bool, capture: bool, board: bool = False,
     """{(event, command)} that should be registered. `enabled` maps hooks.* keys to on/off and wins over
     the named flags (it is how a new hook's key reaches here without a new parameter)."""
     flags = {"session_start": session_start, "capture": capture, "board": board, **(enabled or {})}
-    return {(event, command) for event, command, keys, _ in _table(kit) if any(flags.get(k) for k in keys)}
+    return {(event, command) for event, command, keys, _ in _table(kit) if any(_on(flags.get(k)) for k in keys)}
+
+
+def _on(value) -> bool:
+    """A hooks.* switch: true, or a mode other than "off" (hooks.momus_gate is gate | nudge | off)."""
+    return value not in (False, None, 0, "", "off")
 
 
 def _label(event: str, command: str, kit: bool = False) -> str:
