@@ -20,32 +20,32 @@
       {
         "id": "T-h1",
         "title": "Hook kit: daedalus_hookkit, dispatchers, registration, state, budget, fail-soft",
-        "status": "pending",
-        "details": "Top-level stdlib package + daedalus-hook script; <=40 ms median subprocess on the no-feature event; HOOKS gains a matcher; board and capture move onto it; Stop/PreCompact never print.",
+        "status": "in_progress",
+        "details": "Top-level stdlib package + daedalus-hook script; <=40 ms median subprocess on the no-feature event; HOOKS gains a matcher; board and capture move onto it; Stop/PreCompact never print. | PR #74 (a6b88b6, 3bded53): kit built; Momus D1-D4 fixed, re-review running.",
         "updated": "2026-10-15",
         "edict": "0016"
       },
       {
         "id": "T-h2",
         "title": "Efficacy logging, hookstate.load, digest counts",
-        "status": "pending",
-        "details": "Events log shape agreed with the TUI session (daedalus-3b); followed within hooks.efficacy_window; per-agent/per-skill counts in digests.",
+        "status": "in_progress",
+        "details": "Events log shape agreed with the TUI session (daedalus-3b); followed within hooks.efficacy_window; per-agent/per-skill counts in digests. | PR #74: efficacy, hookstate.load, digest schema 4 (agent_calls, skill_calls, hooks).",
         "updated": "2026-10-15",
         "edict": "0016"
       },
       {
         "id": "T-c1",
         "title": "Context measuring: offset reader, index, exact attribution, base, subagent reports",
-        "status": "pending",
-        "details": "Reuse digest.py; output_tokens to their own line; totals reset at compact_boundary; cold start in slices.",
+        "status": "in_progress",
+        "details": "Reuse digest.py; output_tokens to their own line; totals reset at compact_boundary; cold start in slices. | PR #75 (d84252f, stacked on #74): exact measuring and incremental index; Momus review running.",
         "updated": "2026-10-15",
         "edict": "0015"
       },
       {
         "id": "T-c2",
         "title": "Context views, library functions (measure/plan/pin), CLI",
-        "status": "pending",
-        "details": "By subject and by task, quiet share, stable keys; JSON shape agreed with the TUI session.",
+        "status": "in_progress",
+        "details": "By subject and by task, quiet share, stable keys; JSON shape agreed with the TUI session. | PR #75: context.measure (TUI shape), daedalus context CLI.",
         "updated": "2026-10-15",
         "edict": "0015"
       },
