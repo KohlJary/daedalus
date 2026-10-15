@@ -129,6 +129,7 @@ def _collect_nodes(project_root: Path, imports: Optional[Dict[str, dict]] = None
                             "extension_method": el.extension_method, "element_types": dict(el.element_types),
                             "decorators": list(el.decorators), "generic_bases": list(el.generic_bases),
                             "messages": [tuple(m) for m in el.messages], "dispatch_calls": dict(el.dispatch_calls),
+                            "creates": list(el.creates),
                             "docstring": (el.docstring or "")[:200], "calls": list(el.calls)}
     return raw
 
@@ -726,6 +727,15 @@ def _rule_ok(rule, warn: bool = False) -> bool:
     return bool(ok)
 
 
+def _rule_label(rule: dict) -> str:
+    """The label a rule's edges carry (its own, or one naming the rule)."""
+    if rule.get("label"):
+        return rule["label"]
+    if "publish" in rule:
+        return f"{rule['publish']} (palace.dispatch)"
+    return f"{rule['factory']} -> {rule['entry']} (palace.dispatch)"
+
+
 def _dotted(value) -> bool:
     return isinstance(value, str) and "." in value and all(value.split("."))
 
@@ -763,13 +773,15 @@ def _config_dispatch(raw: Dict[str, dict], resolved: Dict[str, Set[str]], projec
         if "publish" in rule:
             type_name, method = rule["publish"].rsplit(".", 1)
             spec = rule["to"]
-            label = rule.get("label") or f"{rule['publish']} (palace.dispatch)"
+            label = _rule_label(rule)
             for node_id, node in raw.items():
                 sites = [q for q, call in node.get("call_sites", ()) if call == method]
                 types = node.get("receiver_types", {})
                 if not any(q == type_name or is_a(types.get(q, "").split(".")[-1], type_name) for q in sites):
                     continue
                 if spec.startswith("enclosing:"):
+                    if re.search(r"\bstatic\b", node.get("signature", "")):
+                        continue  # a static method has no instance to dispatch to: don't guess its class
                     iface, target_method = spec.split(":", 1)[1].rsplit(".", 1)
                     cls = owner(node_id) if node["type"] != "class" else node_id
                     targets = [f"{cls}.{target_method}"] if cls and is_a(raw[cls]["simple_name"], iface) else []
@@ -784,7 +796,7 @@ def _config_dispatch(raw: Dict[str, dict], resolved: Dict[str, Set[str]], projec
         else:
             iface, factory_method = rule["factory"].rsplit(".", 1)
             base, entry_method = rule["entry"].rsplit(".", 1)
-            label = rule.get("label") or f"{rule['factory']} -> {rule['entry']} (palace.dispatch)"
+            label = _rule_label(rule)
             for name, ids in classes.items():
                 if not is_a(name, iface):
                     continue
@@ -792,8 +804,9 @@ def _config_dispatch(raw: Dict[str, dict], resolved: Dict[str, Set[str]], projec
                     factory = f"{cls}.{factory_method}"
                     if factory not in raw:
                         continue
-                    built = [t for t in resolved.get(factory, ()) if raw[t]["type"] == "class"
-                             and is_a(raw[t]["simple_name"], base)]
+                    # Classes it constructs (`new X(...)`), not every type it mentions
+                    built = [c for name in raw[factory].get("creates", ()) if is_a(name, base)
+                             for c in classes.get(name, ())]
                     for made in built:
                         entry = f"{made}.{entry_method}"
                         if entry in raw:

@@ -110,7 +110,7 @@ reports, each under a stable name:
 | `edict-not-in-gameplan` / `edict-bad-status` / `edict-duplicate-number` | Edict bookkeeping (projects using edicts) |
 | `project-map-missing-packages` / `empty-file-read-by-hook` | Memory files that never kept up |
 | `board-ask-rule-missing` | The board is in use but posts wouldn't ask the owner first |
-| `palace-dispatch-invalid` | A `palace.dispatch` rule in `.daedalus/config.json` can't be read, so it's skipped |
+| `palace-dispatch-invalid` / `palace-dispatch-ignored` | A dispatch rule can't be read (it's skipped), or `.daedalus/dispatch.json` is git-ignored (teammates won't get it) |
 
 It exits non-zero when it finds anything, so it can run in CI. It also hints (without failing) when this
 machine's daedalus-cli is out of step with the checkout it was installed from (`install-stale`) or lacks
@@ -348,7 +348,9 @@ your own queue, describe the hop in `.daedalus/dispatch.json`, committed so the 
   `JobInstance`.
 
 Dispatch edges count like calls (so `impact --tests` sees through the queue) and are marked in the
-output: `[via dispatch: ...]` in `callers`, `-[...]->` in `path`.
+output: `[via dispatch: ...]` in `callers`, `-[...]->` in `path`. `daedalus palace dispatch` shows how many
+edges each rule produced, so a rule that matches nothing stands out. Matching a publisher by its
+receiver's declared type is C#-only; in other languages a rule matches literal `Type.Method(...)` calls.
 
 ### What lives where
 

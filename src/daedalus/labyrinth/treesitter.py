@@ -389,6 +389,8 @@ def extract_elements(support: TreeSitterSupport, source: bytes, rel: str, tree=N
             el.extension_method = callable_ and _is_extension(d.node)
             if callable_:
                 el.messages, el.dispatch_calls = _cs_dispatch_facts(d.node, el.receiver_types)
+                el.creates = sorted({t for n in _walk(d.node) if n.type == "object_creation_expression"
+                                     for t in [_simple_type(n.child_by_field_name("type"))] if t})
         elements.append(el)
         spans.append((d.node.start_byte, d.node.end_byte, el))
 

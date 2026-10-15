@@ -80,3 +80,26 @@ def test_palace_dispatch_command_lists_rules_and_edges(repo, monkeypatch):
     assert "job runner" in out and "JobQueue.Publish (palace.dispatch)" in out
     data = json.loads(CliRunner().invoke(main, ["palace", "dispatch", "--json"]).output)
     assert all(r["valid"] for r in data["rules"]) and data["edges"]["job runner"] == 1
+
+
+def test_factories_link_constructed_classes_only_and_statics_dont_guess(repo):
+    (repo / "More.cs").write_text(
+        "namespace Jobs;\npublic class Other(JobQueue queue) : IJobHandler {\n"
+        "  private Mentioned field;\n"
+        "  IJobInstance IJobHandler.CreateInstance(Message m) { Mentioned f = field; return f; }\n"
+        "  public static Task Fire(JobQueue q) => q.Publish(null, null);\n}\n"
+        "public sealed class Mentioned : JobInstance { public override Task Run(ISession s) => null; }\n")
+    (repo / ".daedalus" / "dispatch.json").write_text(json.dumps(RULES))
+    languages._registry = None
+    g = build_query_graph(repo).graph
+    assert "More.cs.Mentioned.Run" not in g.nodes["More.cs.Other.CreateInstance"].calls  # mentioned, not built
+    assert not [k for k in g.edge_labels if k[0] == "More.cs.Other.Fire"]  # static: no enclosing guess
+
+
+def test_palace_dispatch_counts_edges_per_rule(repo, monkeypatch):
+    from daedalus.cli.main import main
+    (repo / ".daedalus" / "dispatch.json").write_text(json.dumps(RULES + [{"publish": "Typo.Publish", "to": "enclosing:IJobHandler.CreateInstance"}]))
+    monkeypatch.chdir(repo)
+    data = json.loads(CliRunner().invoke(main, ["palace", "dispatch", "--json"]).output)
+    assert [r["edges"] for r in data["rules"]] == [1, 1, 0]
+    assert "matches nothing here" in CliRunner().invoke(main, ["palace", "dispatch"]).output

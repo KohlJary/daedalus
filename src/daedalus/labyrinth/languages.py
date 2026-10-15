@@ -64,6 +64,8 @@ class CodeElement:
     generic_bases: List[str] = field(default_factory=list)
     messages: List[Tuple[str, str]] = field(default_factory=list)
     dispatch_calls: Dict[str, str] = field(default_factory=dict)
+    # Types a C# method constructs (`new X(...)`), for palace.dispatch factory rules
+    creates: List[str] = field(default_factory=list)
 
     def __post_init__(self):
         # Derive simple_name from name if not set

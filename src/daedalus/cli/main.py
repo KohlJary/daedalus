@@ -743,15 +743,16 @@ def palace_dispatch(as_json: bool):
     """Dispatch rules in effect, and the dispatch edges they find here (issue #47)."""
     import json as _json
     from collections import Counter
-    from ..labyrinth.query import (BUS_NAMES, CELERY_CALLS, HANDLER_INTERFACES, _rule_ok, all_dispatch_rules,
-                                   build_query_graph, project_root_for)
+    from ..labyrinth.query import (BUS_NAMES, CELERY_CALLS, HANDLER_INTERFACES, _rule_label, _rule_ok,
+                                   all_dispatch_rules, build_query_graph, project_root_for)
 
     root = project_root_for(Path.cwd())
     rules = all_dispatch_rules(root)
     graph = build_query_graph(root).graph
     found = Counter(label for label in getattr(graph, "edge_labels", {}).values() if not label.startswith("framework"))
     if as_json:
-        click.echo(_json.dumps({"rules": [{"rule": r, "valid": _rule_ok(r)} for r in rules],
+        click.echo(_json.dumps({"rules": [{"rule": r, "valid": _rule_ok(r),
+                                           "edges": found.get(_rule_label(r), 0) if _rule_ok(r) else 0} for r in rules],
                                 "edges": dict(found)}, indent=2))
         return
     click.echo("Built in:")
@@ -761,7 +762,12 @@ def palace_dispatch(as_json: bool):
     click.echo(f"  Celery: task.{'/'.join(sorted(CELERY_CALLS))} on a @task function")
     click.echo("Project (.daedalus/dispatch.json, shared; .daedalus/config.json palace.dispatch, local):")
     for rule in rules:
-        click.echo(f"  {'ok     ' if _rule_ok(rule) else 'SKIPPED'} {_json.dumps(rule)}")
+        if not _rule_ok(rule):
+            click.echo(f"  SKIPPED  {_json.dumps(rule)}")
+            continue
+        count = found.get(_rule_label(rule), 0)
+        note = "" if count else "  <- matches nothing here: check the type and method names"
+        click.echo(f"  {count:4} edge{'s' if count != 1 else ' '}  {_json.dumps(rule)}{note}")
     if not rules:
         click.echo("  (none)")
     click.echo("Dispatch edges found here:")
