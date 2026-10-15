@@ -53,7 +53,11 @@ def all_cards() -> dict[str, Card]:
         from .state import plugins
 
         for plugin in plugins():
-            for card in getattr(plugin, "explain_cards", lambda: [])() or []:
+            try:
+                extra = list(getattr(plugin, "explain_cards", lambda: [])() or [])
+            except Exception:  # one broken plugin never takes the TUI down
+                continue
+            for card in extra:
                 _cards[card.title.lower()] = card
     return _cards
 
@@ -71,4 +75,5 @@ PANEL_CARDS = {
     "ClaudePane": "Claude pane", "LastSession": "Story", "Header": "Gameplan", "Welcome": "Gameplan",
     "Edicts": "Edict", "Board": "Board", "Story": "Story", "Config": "Config", "Sources": "Source",
     "Reflection": "Reflection", "Workstreams": "Workstream", "Roadmap": "Roadmap",
+    "Experiment": "A/B experiment", "Plugins": "TUI plugin",
 }

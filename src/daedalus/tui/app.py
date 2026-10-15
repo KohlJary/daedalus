@@ -37,6 +37,7 @@ SCREENS = {
     "config": "config:ConfigScreen",
     "sources": "sources:SourcesScreen",
     "reflection": "reflection:ReflectionScreen",
+    "plugins": "plugins:PluginMenu",
 }
 
 
@@ -109,6 +110,7 @@ class DaedalusShell(App):
         ("R", "panel('reflection')", "Reflection"), ("S", "panel('sources')", "Sources"),
         ("enter", "expand", "Expand"), ("question_mark", "explain", "Explain"),
         ("s", "send", "Send to Claude"), ("q", "quit", "Quit"), ("t", "theme", "Theme"),
+        ("m", "plugins", "Plugins"),
     ]
 
     def __init__(self, project_dir: Path, backend: Optional[Backend] = None, settings: Optional[dict] = None,
@@ -253,6 +255,10 @@ class DaedalusShell(App):
             self.notify(f"The {key} screen isn't built yet")
             return
         self.push_screen(screen_cls(self))
+
+    def action_plugins(self) -> None:
+        """The plugin menu: screens that `daedalus.tui` plugins add (daedalus.tui.plugin)."""
+        self.open_screen("plugins")
 
     def action_expand(self) -> None:
         panel = self._focused_panel()
