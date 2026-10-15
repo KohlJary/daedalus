@@ -5,7 +5,7 @@ committed gameplan, `.daedalus/roadmap/gameplan.json`: run `daedalus gameplan sh
 and `daedalus doctor`. This file carries what the gameplan can't say. See
 `docs/edicts/README.md`.*
 
-**Last updated:** 2026-10-15 overnight (edicts 0012, 0013); earlier: the night shift (edict 0011); earlier: the reflection session (edict 0010); the TUI-design, Ariadne/experiment and memory-side sessions' notes follow
+**Last updated:** 2026-10-15 ~05:30 EDT (overnight: edicts 0012, 0013; PRs #68-#70 for review); earlier: the night shift (edict 0011); earlier: the reflection session (edict 0010); the TUI-design, Ariadne/experiment and memory-side sessions' notes follow
 
 ## Reflection session (2026-10-14)
 - **Edict 0010 written with Kohl** (in chat and with Claude in chat), amended twice: user/self
@@ -45,12 +45,23 @@ Everything merged tonight went through Momus and green CI first. Audit trail:
   - **Dream-log PRs:** #56, #57, #58 and #62 were merged by Kohl. #64 (the `self` source) is open for review. The
     first dream moved to `.daedalus/dreams/2026-10-15/`, and its picks are roadmap `idea` items whose status tracks
     what's built (`daedalus roadmap list`).
-  - **Edict 0017 (Ophanic, `proposed`):** Momus's readiness review is folded in as an amendment. It is built on
-    `feat/0017-ophanic` (`oph check`, `oph map`, `oph draw`, the skill, a doctor finding) and is in Momus's build
-    review. It waits for Kohl to accept or not.
-  - **The Ophanic perception experiment:** pre-registered in `experiments/ophanic-perception/DESIGN.md`, on branch
-    `exp/ophanic-perception`. The harness is built and a local pilot is running (qwen3:8b). Paid Claude runs wait for
-    Kohl.
+  - **Edict 0017 (Ophanic, `proposed`): PR #70, for Kohl to accept or not; not merged.**
+    - Momus's build review found 8 problems. The lint was overfitted to the TUI's diagrams, and the maps had edge
+      and rendering bugs.
+    - All 8 are fixed in 5ab9cf3, and Momus's re-verification is "shown".
+    - Untested: the skill hasn't been tried in a real session.
+    - `oph.components` has no committed project default, so doctor checks components only when you set it.
+  - **The Ophanic perception pilot: PR #69, for review.** It ran on qwen3:8b with thinking off and is descriptive
+    only.
+    - Layout spatial questions: tied with the text encodings.
+    - Proportions: Ophanic scored worse than always guessing "25"; the text encodings state the percentages outright.
+    - Containment: a real gap for this model, 1 vs 29 on paired questions against JSON.
+    - Graphs: at the floor in every encoding.
+    - It says little about Claude. DESIGN.md has amendments A1-A9, informed by the pilot and awaiting Kohl's
+      confirmation before any confirmatory run.
+  - **The TUI Dream screen: PR #68, for review.** It opens on `D`, is read-only and is fully mode-blind. Momus's
+    fixes are in, his verdict is ship, and CI is green.
+    - Kohl to decide: whether the TUI may show the per-mode counts that 0013 allows in `dream log`.
   - **Coordination with the other session (daedalus-42):** it has 0015 (context map) and 0016 (toolbox hooks). The
     Ophanic edict was renumbered 0017. The file split is agreed, and the TUI's panel shapes are written into its
     edicts.
