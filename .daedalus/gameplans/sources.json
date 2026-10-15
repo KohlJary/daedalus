@@ -20,50 +20,56 @@
       {
         "id": "T-s1",
         "title": "Config schema registry + sources group",
-        "status": "pending",
+        "status": "done",
         "details": "config_schema.py (key, type, default, description, choices); core keys from dataclasses + SETTING_CHOICES; free-form sources group, project-overridable; daedalus config validates. 0012 reuses it.",
         "updated": "2026-10-14",
-        "edict": "0011"
+        "edict": "0011",
+        "resolution": "config_schema.py registry (core keys from the dataclasses, every one described; sources.<name>.<key> from plugins plus common keys); config/config --project validate, config --schema lists; tui.prs/tui.escape registered for 0012. b4d4eae; Momus-reviewed."
       },
       {
         "id": "T-s2",
         "title": "New proposal kinds: roadmap-new, roadmap-update, write-back",
-        "status": "pending",
+        "status": "done",
         "details": "PROPOSAL_KINDS, proposal_key (src:/wb: keys), describe, apply_pending; unknown kind raises; re-sync idempotent against index.json and every workstream's pending.",
         "updated": "2026-10-14",
-        "edict": "0011"
+        "edict": "0011",
+        "resolution": "roadmap-new/roadmap-update/write-back kinds (+ new-task listed); keys per edict; unknown kinds raise before anything applies; changed source proposals replace, identical skip; apply's local part is all-or-nothing (264eaee). b4d4eae, 264eaee."
       },
       {
         "id": "T-s3",
         "title": "Roadmap as committed intake",
-        "status": "pending",
+        "status": "done",
         "details": "index.json committed (gitignore blocks + _ensure_gameplan_tracked migration); item origin + synced baseline; task origin + roadmapItem; roadmap show.",
         "updated": "2026-10-14",
-        "edict": "0011"
+        "edict": "0011",
+        "resolution": "roadmap.py; index.json committed with origin per item; roadmap list shows origin, roadmap show prints baseline/phases/tasks; gitignore blocks + migration. b4d4eae."
       },
       {
         "id": "T-s4",
         "title": "Source plugin interface + GitHub Issues source",
-        "status": "pending",
+        "status": "done",
         "details": "daedalus.sources entry point; mapping with owned fields + state map; on_conflict; GitHub zero-config from origin + gh token (stubbed in tests); synthetic labelled fixtures; source list/sync/status, --dry-run; separate-package plugin test.",
         "updated": "2026-10-14",
-        "edict": "0011"
+        "edict": "0011",
+        "resolution": "daedalus.sources entry-point seam, source list|sync|status|login, sync engine (conflicts vs synced baseline, on_conflict x3, idempotent, drops remembered), GitHub Issues (unverified: no live run). Fake-Jira plugin test. 064435a, 264eaee, 9823109."
       },
       {
         "id": "T-s5",
         "title": "ADO source (synthetic, unverified)",
-        "status": "pending",
+        "status": "done",
         "details": "WIQL @Me/@CurrentIteration default; Epic/Feature/Story/Bug/Task mapping; synthetic fixtures with doc URLs; status reports unverified. Kohl finishes and verifies it live on the work machine.",
         "updated": "2026-10-14",
-        "edict": "0011"
+        "edict": "0011",
+        "resolution": "ADO source on synthetic fixtures: WIQL @Me/@CurrentIteration, parents two levels up, json-patch write-back. verified=False until Kohl runs it live (start with --dry-run). 064435a."
       },
       {
         "id": "T-s6",
         "title": "Write-back + doctor source checks",
-        "status": "pending",
+        "status": "done",
         "details": "write-back proposals on task done (origin or roadmapItem); applied/dropped recorded on the item; doctor: source health, closed-outside drift, unrecorded write-back; own function after run_checks.",
         "updated": "2026-10-14",
-        "edict": "0011"
+        "edict": "0011",
+        "resolution": "Write-back proposed on done (CLI or applied task-status); apply calls, drop calls nothing, both recorded (task.writeBack, item synced.write_back). doctor check_sources: auth-failed, unreachable, drift, write-back-missing; session-start brief shows last sync, no network. 064435a, 264eaee."
       },
       {
         "id": "T-s7",
