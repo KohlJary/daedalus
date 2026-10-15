@@ -48,8 +48,8 @@
     {
       "id": "dream-2026-10-15.p2",
       "title": "The TUI speaks Ophanic, in both directions",
-      "description": "From a dream (speculative): `daedalus dream show 2026-10-15`.\n\n**The TUI speaks Ophanic, in both directions** (from i12 and i11). The thesis says text grids are what the model reads best, and the TUI design is already 48 `.oph` diagrams. Make \"Send to Claude\" send the focused panel as an Ophanic snapshot, and test whether Claude's answers about the dashboard are better than with a prose dump: that's a small, falsifiable experiment on the thesis, run inside Daedalus. *What would make it real:* a renderer from panel state to `.oph` (the widgets already correspond to `\u25c6` components, per edict 0012). Then an A/B harness, like reflection's, that logs which form the session got and whether the next action was right. The reverse direction (render the TUI *from* the diagrams) can wait until the first half shows a difference.",
-      "status": "backlog",
+      "description": "In review: PR #71 (stacked on #70): TUI send form, Ophanic snapshots + A/B log.\n\nFrom a dream (speculative): `daedalus dream show 2026-10-15`.\n\n**The TUI speaks Ophanic, in both directions** (from i12 and i11). The thesis says text grids are what the model reads best, and the TUI design is already 48 `.oph` diagrams. Make \"Send to Claude\" send the focused panel as an Ophanic snapshot, and test whether Claude's answers about the dashboard are better than with a prose dump: that's a small, falsifiable experiment on the thesis, run inside Daedalus. *What would make it real:* a renderer from panel state to `.oph` (the widgets already correspond to `◆` components, per edict 0012). Then an A/B harness, like reflection's, that logs which form the session got and whether the next action was right. The reverse direction (render the TUI *from* the diagrams) can wait until the first half shows a difference.",
+      "status": "review",
       "priority": "P2",
       "item_type": "idea",
       "created_at": "2026-10-15T06:22:45Z",
