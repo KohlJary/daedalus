@@ -15,7 +15,7 @@
     "title": "Sources and roadmap intake: ADO + GitHub Issues, plugin seam for Jira",
     "started": "2026-10-14",
     "goal": "Build edict 0011 (as amended 2026-10-14) to its acceptance criteria, offline, in a worktree, ending in a PR with Momus's review.",
-    "sequencing": "Night shift 2026-10-14/15, unattended. Work in a worktree on feat/0011-sources from main. Order (Momus F14): T-s1 schema registry -> T-s2 proposal kinds -> T-s3 roadmap storage -> T-s4 plugin interface + GitHub -> T-s5 ADO (synthetic, unverified; Kohl finishes it live at work) -> T-s6 write-back + doctor -> T-s7 Momus + PR -> T-s8 dream. PR #44 is open and touches doctor.py: put source checks in their own function after run_checks. Never: live sync, real gh/keyring calls in tests, push to main, edit edicts. If the edict is unclear, write a dissent or a note in the PR and skip that part; don't guess.",
+    "sequencing": "Night shift 2026-10-14/15, unattended. Work in a worktree on feat/0011-sources from main. Order (Momus F14): T-s1 schema registry -> T-s2 proposal kinds -> T-s3 roadmap storage -> T-s4 plugin interface + GitHub -> T-s5 ADO (synthetic, unverified; Kohl finishes it live at work) -> T-s6 write-back + doctor -> T-s7 Momus + PR -> T-s8 dream. PR #44 (doctor.py C# checks) merged as cb62046; still put source checks in their own function after run_checks. Never: live sync, real gh/keyring calls in tests, push to main, edit edicts. If the edict is unclear, write a dissent or a note in the PR and skip that part; don't guess.",
     "tasks": [
       {
         "id": "T-s1",

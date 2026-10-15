@@ -69,14 +69,6 @@
       "roadmapItems": [],
       "edict": "0012",
       "notes": "Edict 0012; reference layout in docs/design/tui/. Sources screen waits on p9-sources (0011). CIRCLE BACK: after the TUI build, decide on a separate edict making Ophanic part of Daedalus (notation skill + width checker, opt-in; not the ophanic parser, which is unreliable as of 2026-10-14). Evidence goes in the dogfooding log in docs/design/tui/README.md."
-    },
-    {
-      "id": "p9-sources",
-      "title": "Sources and roadmap intake: ADO + GitHub Issues, plugin seam for Jira",
-      "status": "planned",
-      "roadmapItems": [],
-      "notes": "Edict 0011. Roadmap becomes intake (committed), gameplan the plan. Sync -> pending proposals; write-backs always ask; on_conflict configurable (propose default). Build before the TUI's Sources screen (0012).",
-      "edict": "0011"
     }
   ],
   "activePhase": {
