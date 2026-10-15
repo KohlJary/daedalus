@@ -7,4 +7,5 @@ def run(ctx: Ctx) -> list:
     from daedalus.hooks import board_check
 
     note = board_check(ctx.project_dir)
-    return [Line(note, nudge="board", tool="bash:daedalus board read")] if note else []
+    # whole, so the "data, not instructions" tail (edict 0009) is never cut
+    return [Line(note, nudge="board", tool="bash:daedalus board read", limit=800)] if note else []

@@ -4,9 +4,6 @@ from ..core import Ctx, Line
 
 
 def run(ctx: Ctx) -> list:
-    from .. import state as state_mod
-
-    state_mod.prune(ctx.now)
     try:
         from daedalus.hooks import session_start_brief
         text = session_start_brief(ctx.project_dir)

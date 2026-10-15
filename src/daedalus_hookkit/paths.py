@@ -13,7 +13,7 @@ def config_dir() -> Path:
         return _windows_local() / APP / APP
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / APP
-    return Path(os.environ.get("XDG_CONFIG_HOME", "").strip() or Path.home() / ".config") / APP
+    return _xdg("XDG_CONFIG_HOME", ".config") / APP
 
 
 def cache_dir() -> Path:
@@ -22,7 +22,13 @@ def cache_dir() -> Path:
         return _windows_local() / APP / APP / "Cache"
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Caches" / APP
-    return Path(os.environ.get("XDG_CACHE_HOME", "").strip() or Path.home() / ".cache") / APP
+    return _xdg("XDG_CACHE_HOME", ".cache") / APP
+
+
+def _xdg(var: str, default: str) -> Path:
+    """An XDG directory: the variable as given when it is set (platformdirs uses it literally), else the default."""
+    value = os.environ.get(var, "")
+    return Path(value) if value.strip() else Path.home() / default
 
 
 def _windows_local() -> Path:

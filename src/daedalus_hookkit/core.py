@@ -31,13 +31,17 @@ class Line:
     kind: "nudge" counts against the budget; "brief" (SessionStart), "gate" and "notice" don't.
     nudge: the nudge's id, logged for efficacy. tool: what using the nudge's advice looks like
     ("agent:momus", "skill:exhale", "bash:daedalus gameplan pending"), so a later tool call can mark it
-    followed. decision: a gate's "deny" or "allow".
+    followed. decision: a gate's "deny" or "allow". cycle: the feature's cycle (a commit, a compaction):
+    a nudge id prints at most once per cycle. limit: the line's length cap (MAX_LINE unless the feature
+    needs its whole text, such as a board note's "data, not instructions" tail).
     """
 
-    __slots__ = ("text", "kind", "nudge", "tool", "decision")
+    __slots__ = ("text", "kind", "nudge", "tool", "decision", "cycle", "limit")
 
-    def __init__(self, text: str, kind: str = "nudge", nudge: str = "", tool: str = "", decision: str = ""):
+    def __init__(self, text: str, kind: str = "nudge", nudge: str = "", tool: str = "", decision: str = "",
+                 cycle: str = "", limit: int = 0):
         self.text, self.kind, self.nudge, self.tool, self.decision = text, kind, nudge, tool, decision
+        self.cycle, self.limit = cycle, limit
 
 
 class Ctx:
@@ -83,37 +87,57 @@ def project_dir_for(payload: dict) -> Path:
 
 
 def _budgeted(ctx: Ctx, lines: list) -> list:
-    """Drop nudges over budget (and all but the first in one call), logging each nudge."""
+    """Apply the noise budget to nudges: at most budget_per_hour per session-hour, one per call, and a
+    nudge id at most once per cycle. Printed nudges are logged for efficacy; dropped ones are counted.
+
+    The budget is counted from its own list of timestamps (budget_log), which nothing trims inside the
+    hour, so a flood of attempts can't push counted nudges out of the event log and refill it."""
     per_hour = int(ctx.settings.get("hooks", "budget_per_hour"))
     st = ctx.state
-    events = st["events"]
     hour_ago = ctx.now - 3600
-    used = sum(1 for e in events if e.get("counted") and e.get("at", 0) >= hour_ago)
+    log = [t for t in st.get("budget_log", []) if isinstance(t, (int, float)) and t >= hour_ago]
+    fired = st.setdefault("fired", {})
     kept, spoke = [], False
     for line in lines:
         if line.kind != "nudge":
             kept.append(line)
             continue
-        entry = {"at": ctx.now, "hook": line.nudge.split(":")[0] if line.nudge else "", "event": ctx.event,
-                 "nudge": line.nudge, "followed": None, "tool": line.tool, "seq": int(st.get("event_seq", 0))}
-        if spoke or used >= per_hour:
-            entry["dropped"] = True
-        else:
-            entry["counted"] = True
-            used += 1
-            spoke = True
-            kept.append(line)
-        events.append(entry)
         ctx.dirty = True
-    st["budget"] = {"per_hour": per_hour, "used": used}
+        if line.cycle and fired.get(line.nudge) == line.cycle:
+            continue  # already said this cycle: not a drop, just not news
+        if spoke or len(log) >= per_hour:
+            dropped = st.setdefault("dropped", {})
+            dropped[line.nudge] = dropped.get(line.nudge, 0) + 1
+            last = st["events"][-1] if st["events"] else {}
+            if last.get("dropped") and last.get("nudge") == line.nudge:
+                last["dropped_count"] = last.get("dropped_count", 1) + 1
+            else:
+                st["events"].append({"at": ctx.now, "hook": line.nudge.split(":")[0], "event": ctx.event,
+                                     "nudge": line.nudge, "followed": None, "tool": line.tool, "dropped": True})
+            continue
+        log.append(ctx.now)
+        spoke = True
+        if line.cycle:
+            fired[line.nudge] = line.cycle
+        st["events"].append({"at": ctx.now, "hook": line.nudge.split(":")[0], "event": ctx.event,
+                             "nudge": line.nudge, "followed": None, "tool": line.tool, "counted": True})
+        kept.append(line)
+    st["budget_log"] = log
+    st["budget"] = {"per_hour": per_hour, "used": len(log)}
     return kept
+
+
+def _cut(line: Line) -> str:
+    limit = line.limit or MAX_LINE
+    if line.kind == "brief" or len(line.text) <= limit:
+        return line.text
+    return line.text[:limit - 1] + "…"
 
 
 def render(event: str, lines: list) -> str:
     if event in SILENT_EVENTS or not lines:
         return ""
-    texts = [ln.text if len(ln.text) <= MAX_LINE or ln.kind == "brief" else ln.text[:MAX_LINE - 1] + "…"
-             for ln in lines if ln.decision != "deny"]
+    texts = [_cut(ln) for ln in lines if ln.decision != "deny"]
     if event in ("SessionStart", "UserPromptSubmit"):
         return "\n".join(texts)
     out: dict = {"hookEventName": event}
@@ -139,6 +163,22 @@ def dispatch(event: str, payload: dict, features: list | None = None, now: float
         features = FEATURES
     settings = Settings(project_dir)
     ctx = Ctx(event, payload, project_dir, settings, time.time() if now is None else now)
+    if event in ("SessionStart", "SessionEnd"):
+        state_mod.prune(ctx.now)
+    # One dispatcher of a session at a time: parallel tool calls fire parallel hooks, and state is
+    # load-modify-save. A lock that can't be had in time means this call reads but doesn't write.
+    with state_mod.locked(ctx.session_id) as have_lock:
+        out = _run(ctx, event, features)
+        if ctx.dirty and ctx.session_id and have_lock:
+            try:
+                state_mod.save(ctx.state)
+            except OSError:
+                pass
+    return out
+
+
+def _run(ctx: Ctx, event: str, features: list) -> str:
+    settings = ctx.settings
     lines: list = []
     for feature in features:
         if event not in feature.events or (feature.key and not settings.enabled(feature.key)):
@@ -151,9 +191,4 @@ def dispatch(event: str, payload: dict, features: list | None = None, now: float
                 lines.append(Line(f"Daedalus: the {feature.name} check didn't run ({type(e).__name__}: {e}); "
                                   "the call was allowed.", kind="notice"))
     lines = _budgeted(ctx, lines) if any(ln.kind == "nudge" for ln in lines) else lines
-    if ctx.dirty and ctx.session_id:
-        try:
-            state_mod.save(ctx.state)
-        except OSError:
-            pass
     return render(event, lines)

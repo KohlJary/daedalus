@@ -24,6 +24,7 @@ from . import paths
 
 STATE_DAYS = 7
 MAX_EVENTS = 500
+LOCK_WAIT = 2.0
 
 
 def state_dir() -> Path:
@@ -83,10 +84,66 @@ def save(state: dict) -> None:
         raise
 
 
+class locked:
+    """An exclusive lock on a session's state, for the length of one dispatch. Yields whether it was had:
+    after LOCK_WAIT seconds without it, the caller goes on without saving (a hook must never hang)."""
+
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        self.fd = None
+
+    def __enter__(self) -> bool:
+        if not self.session_id:
+            return False
+        try:
+            state_dir().mkdir(parents=True, exist_ok=True)
+            self.fd = os.open(str(state_path(self.session_id)) + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
+        except OSError:
+            return False
+        deadline = time.monotonic() + LOCK_WAIT
+        while True:
+            try:
+                _lock(self.fd)
+                return True
+            except OSError:
+                if time.monotonic() > deadline:
+                    os.close(self.fd)
+                    self.fd = None
+                    return False
+                time.sleep(0.005)
+
+    def __exit__(self, *exc) -> None:
+        if self.fd is not None:
+            try:
+                _unlock(self.fd)
+            finally:
+                os.close(self.fd)
+                self.fd = None
+
+
+def _lock(fd: int) -> None:
+    if os.name == "nt":
+        import msvcrt
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _unlock(fd: int) -> None:
+    if os.name == "nt":
+        import msvcrt
+        os.lseek(fd, 0, 0)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
 def prune(now: float | None = None) -> None:
     now = time.time() if now is None else now
     try:
-        for p in state_dir().glob("*.json"):
+        for p in list(state_dir().glob("*.json")) + list(state_dir().glob("*.json.lock")):
             if now - p.stat().st_mtime > STATE_DAYS * 86400:
                 p.unlink()
     except OSError:

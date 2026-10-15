@@ -590,6 +590,30 @@ def check_dispatch_rules(project_dir: Path) -> list[Finding]:
     return findings
 
 
+def check_hook_commands(project_dir: Path) -> list[Finding]:
+    """Daedalus hooks registered with a command this machine can't run (edict 0016). Claude Code reports a
+    missing command as a non-blocking error, so the hook would be silently dead: say so here instead."""
+    import shutil
+
+    missing: set[str] = set()
+    for name in ("settings.json", "settings.local.json"):
+        path = project_dir / ".claude" / name
+        try:
+            hooks = json.loads(path.read_text(encoding="utf-8")).get("hooks", {})
+        except (OSError, json.JSONDecodeError, AttributeError):
+            continue
+        for groups in hooks.values() if isinstance(hooks, dict) else []:
+            for group in groups if isinstance(groups, list) else []:
+                for h in group.get("hooks", []) if isinstance(group, dict) else []:
+                    words = str(h.get("command", "") if isinstance(h, dict) else "").split()
+                    if words and words[0] in ("daedalus-hook", "daedalus") and shutil.which(words[0]) is None:
+                        missing.add(words[0])
+    return [Finding("hook-command-missing",
+                    f"Hooks in .claude/ run `{cmd}`, which isn't on this machine's PATH, so they fail silently. "
+                    "Reinstall daedalus-cli (pip install -e, or pipx), then run `daedalus hydrate`.")
+            for cmd in sorted(missing)]
+
+
 def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Finding], list[str]]:
     """(findings, hints). Hints are informational and never fail the run."""
     from . import workstreams as ws
@@ -641,6 +665,7 @@ def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Fi
     # DAEDALUS_DOCTOR_SKIP_INSTALL turns it off (the test suite does).
     if not os.environ.get("DAEDALUS_DOCTOR_SKIP_INSTALL"):
         hints += [f"{f.name}: {f.message}" for f in check_install()]
+        hints += [f"{f.name}: {f.message}" for f in check_hook_commands(project_dir)]
     from . import epitaphs as _ep
 
     hints += [f"intake-dropped-repeatedly: '{r['title']}' was dropped {r['count']} times (from {', '.join(r['sources'])}). "
