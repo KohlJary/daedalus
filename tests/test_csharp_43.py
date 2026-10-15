@@ -86,7 +86,7 @@ def test_tests_for_suggests_dotnet_test_for_csharp(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     out = CliRunner().invoke(main, ["palace", "tests-for", "Shop\\Calc.cs"]).output
     assert "Shop.Tests/CalcTests.cs" in out
-    assert 'Run: dotnet test Shop.Tests/Shop.Tests.csproj --nologo --filter FullyQualifiedName~CalcTests' in out
+    assert "Run: dotnet test Shop.Tests/Shop.Tests.csproj --nologo --filter" in out and "FullyQualifiedName~CalcTests" in out
     assert "pytest" not in out
     out = CliRunner().invoke(main, ["palace", "impact", "Calc.Add", "--tests"]).output
     assert "dotnet test" in out and "pytest" not in out
@@ -117,3 +117,101 @@ def test_inherited_methods_resolve_to_the_nearest_ancestor(tmp_path):
     g = build_query_graph(tmp_path).graph
     assert sorted(g.nodes["A.cs.Use.A"].calls) == ["A.cs.Base.Save", "A.cs.Over.Save"]  # inherited, plus an override below
     assert g.nodes["A.cs.Use.B"].calls == ["A.cs.Base.Save"]
+
+
+def _graph(tmp_path, text):
+    (tmp_path / "a.cs").write_text(text)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    languages._registry = None
+    return build_query_graph(tmp_path).graph
+
+
+BASE = "namespace N;\npublic class A { public void Go() {} }\npublic class B { public void Go() {} }\n"
+
+
+@pytest.mark.parametrize("body, expected", [
+    # untyped declarations shadow the field `A x`, so the name rule decides (both Go's)
+    ("A x; void M(System.Collections.Generic.List<B> bs) { bs.ForEach(x => x.Go()); }", {"A.Go", "B.Go"}),
+    ("A x; void M(object o) { if (o is B x) x.Go(); }", {"B.Go"}),
+    ("A x; void M() { var x = Make(); x.Go(); } object Make() => null;", {"A.Go", "B.Go"}),
+    ("A x; void M(B[] xs) { foreach (var x in xs) x.Go(); }", {"A.Go", "B.Go"}),
+    ("A x; void M() { Try(out var x); x.Go(); } void Try(out B b) { b = null; }", {"A.Go", "B.Go"}),
+    ("A x; void M() { var (x, y) = (new B(), 1); x.Go(); }", {"A.Go", "B.Go"}),
+    # a parameter shadows a field; this.x still means the field
+    ("A x; void M(B x) { this.x.Go(); }", {"A.Go"}),
+    ("A x; void M(B x) { x.Go(); }", {"B.Go"}),
+])
+def test_declarations_shadow_and_this_means_the_field(tmp_path, body, expected):
+    g = _graph(tmp_path, BASE + f"public class U {{ {body} }}\n")
+    calls = {c.split("a.cs.")[1] for c in g.nodes["a.cs.U.M"].calls}
+    assert expected <= calls and not ({"A.Go", "B.Go"} - expected) & calls
+
+
+def test_constructor_parameters_shadow_fields(tmp_path):
+    g = _graph(tmp_path, BASE + "public class U { A f; public U(B f) { f.Go(); } }\n")
+    assert g.nodes["a.cs.U.U"].calls == ["a.cs.B.Go"]
+
+
+def test_generic_parameters_records_and_structs(tmp_path):
+    g = _graph(tmp_path, "namespace N;\npublic interface IEntity { void Id(); }\npublic class E : IEntity { public void Id() {} }\n"
+                         "public class Svc<T> where T : IEntity { void A(T item) { item.Id(); } }\n"
+                         "public record R(int X) { public void Go() {} }\npublic struct St { public void Go() {} }\n"
+                         "public class U { void M(R r, St s) { r.Go(); s.Go(); } }\n")
+    assert g.nodes["a.cs.Svc.A"].calls  # T says nothing certain: the name rule links Id
+    assert sorted(g.nodes["a.cs.U.M"].calls) == ["a.cs.R.Go", "a.cs.St.Go"]
+
+
+def test_inherited_overloads_and_multiline_extensions(tmp_path):
+    g = _graph(tmp_path, "namespace N;\npublic class Base { public void Save(string s) {} }\n"
+                         "public class D : Base { public void Save(int i) {} }\n"
+                         "public static class Ext { public static void Audit(\n    this Microsoft.Extensions.Logging.ILogger l) {} }\n"
+                         "public class U(Microsoft.Extensions.Logging.ILogger log, System.Threading.Tasks.Task t) {\n"
+                         "  void M(D d) { d.Save(\"x\"); log.Audit(); t.Wait(); }\n}\n"
+                         "public class Task { public void Wait() {} }\n")
+    calls = sorted(g.nodes["a.cs.U.M"].calls)
+    assert "a.cs.Base.Save" in calls and "a.cs.D.Save" in calls  # an overload in the base isn't dropped
+    assert "a.cs.Ext.Audit" in calls                              # extension on an outside type, multi-line
+    assert "a.cs.Task.Wait" not in calls                          # System.Threading.Tasks.Task isn't ours
+
+
+def test_framework_called_methods_are_reached_from_the_class(tmp_path):
+    g = _graph(tmp_path, "using UnityEngine;\npublic class Player : MonoBehaviour { void Update() { Move(); } void Move() {} }\n"
+                         "public class T { [Fact] public void Spawns() { new Player(); } }\n")
+    assert "a.cs.Player.Update" in g.nodes["a.cs.Player"].calls
+
+
+def test_razor_components_reach_their_lifecycle_methods(tmp_path):
+    (tmp_path / "Counter.razor").write_text("<h1>Hi</h1>\n@code {\n  protected override async Task OnInitializedAsync() { await Load(); }\n"
+                                            "  Task Load() => Task.CompletedTask;\n}\n")
+    (tmp_path / "Other.razor").write_text("@code { protected override void OnInitialized() { } }\n")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    languages._registry = None
+    g = build_query_graph(tmp_path).graph
+    assert "Counter.razor.Counter.OnInitializedAsync" in g.nodes["Counter.razor.Counter"].calls
+    assert "Other.razor.Other.OnInitialized" not in g.nodes["Counter.razor.Counter"].calls
+
+
+def test_run_lines_quote_odd_paths_and_name_the_directory(tmp_path):
+    from daedalus.cli.palace_query import _run_lines
+    (tmp_path / "web app").mkdir()
+    (tmp_path / "web app" / "package.json").write_text('{"devDependencies": {"jest": "1"}}')
+    languages._registry = None
+    line = _run_lines(tmp_path, ["web app/src/o'brien (1).test.ts"])[0]
+    assert line.startswith("Run (in web app): ")
+    assert "'src/o'\"'\"'brien (1).test.ts'" in line or '"src/o\'brien (1).test.ts"' in line
+
+
+def test_install_versions_compare_by_value_and_read_the_project_table(tmp_path):
+    from daedalus import doctor
+    (tmp_path / "pyproject.toml").write_text('[tool.x]\nversion = "9.9"\n\n[project]\nname = "daedalus-cli"\nversion = "0.2"\n')
+    assert doctor._source_version(tmp_path) == "0.2"
+    assert doctor.check_install(lambda: ("0.2.0", tmp_path, False)) == []
+    assert doctor._same_version("1.0rc1", "1.0-rc.1") and not doctor._same_version("0.2.0", "0.2.1")
+
+
+def test_install_findings_are_hints_not_failures(tmp_path, monkeypatch):
+    from daedalus import doctor
+    monkeypatch.delenv("DAEDALUS_DOCTOR_SKIP_INSTALL")
+    monkeypatch.setattr(doctor, "check_install", lambda: [doctor.Finding("install-stale", "old")])
+    findings, hints = doctor.run_checks(tmp_path)
+    assert not any(f.name == "install-stale" for f in findings) and "install-stale: old" in hints

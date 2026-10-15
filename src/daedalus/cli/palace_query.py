@@ -42,21 +42,25 @@ def _one(graph, symbol: str) -> str:
 
 
 def _run_lines(root: Path, files: List[str]) -> List[str]:
-    """How to run these test files, with each language's runner (the same plan Ariadne's verifier uses)."""
+    """How to run these test files, with each language's runner (the same plan Ariadne's verifier uses).
+    The directory is named rather than `cd`-ed into, so the line works in any shell."""
     from ..ariadne.test_runners import plan_runs
 
     runs, problems = plan_runs(root, files, ["python", "-m", "pytest"])
     lines = []
     for run in runs:
-        prefix = "" if run.cwd in ("", ".") else f"(cd {run.cwd} && "
-        suffix = "" if not prefix else ")"
-        lines.append(f"Run: {prefix}{' '.join(_quote(a) for a in run.command)}{suffix}")
+        where = "" if run.cwd in ("", ".") else f" (in {run.cwd})"
+        lines.append(f"Run{where}: {_command_line(run.command)}")
     lines += [f"Note: {p}" for p in problems]
     return lines
 
 
-def _quote(arg: str) -> str:
-    return f'"{arg}"' if any(c in arg for c in " |;&") else arg
+def _command_line(args: List[str]) -> str:
+    """A command line quoted for this platform's shell (POSIX sh, or cmd.exe on Windows)."""
+    import os
+    import shlex
+    import subprocess
+    return subprocess.list2cmdline(args) if os.name == "nt" else shlex.join(args)
 
 
 FULL_SUITE = {"Python": "python -m pytest", "Go": "go test ./...", "Rust": "cargo test", "JavaScript": "npm test",

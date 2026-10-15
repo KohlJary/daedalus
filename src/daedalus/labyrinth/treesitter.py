@@ -384,6 +384,7 @@ def extract_elements(support: TreeSitterSupport, source: bytes, rel: str, tree=N
             el.bases = _bases(d.node)
         if support.grammar.typed_receivers:
             el.receiver_types = _cs_receiver_types(d.node, container.node if container else None, callable_)
+            el.extension_method = callable_ and _is_extension(d.node)
         elements.append(el)
         spans.append((d.node.start_byte, d.node.end_byte, el))
 
@@ -632,60 +633,130 @@ def _bases(class_node) -> List[str]:
 
 
 def _declare(types: Dict[str, Optional[str]], name: str, type_name: Optional[str]) -> None:
-    """Record name -> type; a name declared with two different types is ambiguous (None)."""
-    if not name or not type_name:
+    """Record name -> type. An untyped declaration (`var x = Make()`, a lambda parameter) or a name declared
+    with two types is recorded as None: it shadows a typed field, and leaves the name to the name rule."""
+    if not name:
         return
-    types[name] = type_name if types.get(name, type_name) == type_name else None
+    types[name] = type_name if (type_name and types.get(name, type_name) == type_name) else None
 
 
-def _cs_declarations(node, types: Dict[str, Optional[str]], skip_nested=None) -> None:
-    """Parameters, locals and `var x = new T()` declared anywhere under `node` (not in nested members)."""
-    for n in _walk(node):
-        if skip_nested is not None and n is not node and n.type in skip_nested:
+def _type_text(node, type_params: Set[str]) -> Optional[str]:
+    """A declared type for receiver resolution: `IStore`, or `System.Threading.Tasks.Task` when written
+    qualified (so an outside type isn't mistaken for a project type of the same simple name); None for
+    `var`, built-ins and the enclosing generic parameters (`T item` says nothing certain)."""
+    if node is None:
+        return None
+    t = node.type
+    if t in ("nullable_type", "array_type", "pointer_type", "ref_type", "scoped_type"):
+        inner = node.child_by_field_name("type") or (node.named_children[0] if node.named_children else None)
+        return _type_text(inner, type_params)
+    if t in ("qualified_name", "alias_qualified_name"):
+        text = re.sub(r"<.*$", "", _text(node)).replace("global::", "")
+        return text if text.split(".")[-1] not in type_params else None
+    name = _simple_type(node)
+    return name if name and name not in type_params else None
+
+
+def _type_parameters(*nodes) -> Set[str]:
+    out: Set[str] = set()
+    for node in nodes:
+        if node is None:
             continue
-        if n.type == "parameter":
-            _declare(types, _text(n.child_by_field_name("name")), _simple_type(n.child_by_field_name("type")))
-        elif n.type == "variable_declaration":
-            type_node = n.child_by_field_name("type")
-            declared = _simple_type(type_node)
+        for child in node.named_children:
+            if child.type == "type_parameter_list":
+                out |= {_text(tp.child_by_field_name("name") or tp) for tp in child.named_children
+                        if tp.type == "type_parameter"}
+    return out
+
+
+def _cs_declarations(node, types: Dict[str, Optional[str]], type_params: Set[str]) -> None:
+    """Every name declared under `node`: parameters (lambda ones too), locals, `var x = new T()`, pattern
+    variables (`is B f`), `out var`, catch and foreach variables, tuple declarations."""
+    for n in _walk(node):
+        t = n.type
+        if t == "parameter":
+            _declare(types, _text(n.child_by_field_name("name")), _type_text(n.child_by_field_name("type"), type_params))
+        elif t == "implicit_parameter":
+            _declare(types, _text(n), None)
+        elif t == "variable_declaration":
+            declared = _type_text(n.child_by_field_name("type"), type_params)
             for decl in (c for c in n.named_children if c.type == "variable_declarator"):
+                pattern = next((c for c in decl.named_children if c.type == "tuple_pattern"), None)
+                if pattern is not None:  # var (x, y) = ...
+                    for ident in (x for x in _walk(pattern) if x.type == "identifier"):
+                        _declare(types, _text(ident), None)
+                    continue
                 name = _text(decl.child_by_field_name("name") or next(
                     (c for c in decl.named_children if c.type == "identifier"), None))
                 value = next((c for c in decl.named_children if c.type == "object_creation_expression"), None)
-                created = _simple_type(value.child_by_field_name("type")) if value is not None else None
+                created = _type_text(value.child_by_field_name("type"), type_params) if value is not None else None
                 _declare(types, name, declared or created)
+        elif t in ("declaration_pattern", "declaration_expression", "catch_declaration"):
+            name = n.child_by_field_name("name")
+            if name is not None and name.type == "identifier":
+                _declare(types, _text(name), _type_text(n.child_by_field_name("type"), type_params))
+            elif name is not None:  # var (x, y) = ...: every name in the designation, type unknown
+                for ident in (x for x in _walk(name) if x.type == "identifier"):
+                    _declare(types, _text(ident), None)
+        elif t == "foreach_statement":
+            left = n.child_by_field_name("left")
+            if left is not None and left.type == "identifier":
+                _declare(types, _text(left), _type_text(n.child_by_field_name("type"), type_params))
+            elif left is not None:
+                for ident in (x for x in _walk(left) if x.type == "identifier"):
+                    _declare(types, _text(ident), None)
+        elif t == "parenthesized_variable_designation":
+            for ident in (x for x in n.named_children if x.type == "identifier"):
+                _declare(types, _text(ident), None)
 
 
-def _cs_member_types(class_node) -> Dict[str, Optional[str]]:
-    """A C# class's fields, properties and primary-constructor parameters."""
+def _cs_member_types(class_node, type_params: Set[str]) -> Dict[str, Optional[str]]:
+    """A C# type's fields, properties and primary-constructor parameters."""
     types: Dict[str, Optional[str]] = {}
     for child in class_node.named_children:
         if child.type == "parameter_list":  # primary constructor: class Restocker(IInventoryStore inventory)
             for param in (c for c in child.named_children if c.type == "parameter"):
-                _declare(types, _text(param.child_by_field_name("name")), _simple_type(param.child_by_field_name("type")))
+                _declare(types, _text(param.child_by_field_name("name")),
+                         _type_text(param.child_by_field_name("type"), type_params))
         if child.type == "declaration_list":
             for member in child.named_children:
                 if member.type in ("field_declaration", "event_field_declaration"):
-                    _cs_declarations(member, types)
+                    _cs_declarations(member, types, type_params)
                 elif member.type == "property_declaration":
                     _declare(types, _text(member.child_by_field_name("name")),
-                             _simple_type(member.child_by_field_name("type")))
+                             _type_text(member.child_by_field_name("type"), type_params))
     return types
 
 
 def _cs_receiver_types(def_node, container_node, callable_: bool) -> Dict[str, str]:
-    """Declared types a C# definition can call through: its own parameters and locals over its class's
-    fields, properties and primary-constructor parameters. Ambiguous names are left out."""
-    types: Dict[str, Optional[str]] = {}
+    """Declared types a C# definition can call through. Its own parameters and locals shadow its type's
+    fields, properties and primary-constructor parameters; the members are also kept as "self.<name>" for
+    `this.x.Call()`. Names whose type isn't certain are left out, so they fall back to the name rule."""
+    owner = container_node if callable_ else def_node
+    type_params = _type_parameters(owner, def_node)
+    members = _cs_member_types(owner, type_params) if owner is not None else {}
+    types: Dict[str, Optional[str]] = dict(members)
+    types.update({f"self.{k}": v for k, v in members.items()})
     if callable_:
-        if container_node is not None:
-            types.update(_cs_member_types(container_node))
         local: Dict[str, Optional[str]] = {}
-        _cs_declarations(def_node, local)
-        types.update(local)  # a parameter or local shadows a field of the same name
-    else:
-        types.update(_cs_member_types(def_node))
+        _cs_declarations(def_node, local, type_params)
+        types.update(local)  # a parameter or local, typed or not, shadows a field of the same name
+    else:  # code on the type itself (field initializers, property bodies): their lambdas, locals, patterns
+        local: Dict[str, Optional[str]] = {}
+        for child in def_node.named_children:
+            if child.type == "declaration_list":
+                for member in child.named_children:
+                    if member.type in ("property_declaration", "field_declaration"):
+                        _cs_declarations(member, local, type_params)
+        types.update(local)
     return {k: v for k, v in types.items() if v}
+
+
+def _is_extension(def_node) -> bool:
+    """`static void Audit(this ILogger l)`: the first parameter carries the `this` modifier."""
+    params = def_node.child_by_field_name("parameters")
+    first = next((c for c in params.named_children if c.type == "parameter"), None) if params is not None else None
+    return first is not None and any(m.type == "modifier" and _text(m) == "this" for m in first.named_children)
 
 
 def _receiver(node) -> Optional[str]:

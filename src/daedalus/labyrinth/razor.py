@@ -170,6 +170,16 @@ class RazorSupport(LanguageSupport):
                     el.name = component + el.name[len("__Razor"):]
                 el.is_test = False
                 elements.append(el)
+        # Blazor calls a component's lifecycle methods and handlers itself, so the component reaches every
+        # method of its @code: a test that renders it runs them. Linked by node id, so a same-named method of
+        # another component can't be picked up.
+        from .sources import module_id
+        module = module_id(Path(rel))
+        for el in elements[1:]:
+            if el.element_type == "method" and el.class_name == component:
+                target = f"{module}.{el.name}"
+                if target not in cls.calls:
+                    cls.calls.append(target)
         return elements
 
     def generate_anchor_pattern(self, element: CodeElement) -> AnchorPattern:

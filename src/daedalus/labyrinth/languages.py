@@ -51,6 +51,8 @@ class CodeElement:
     # Declared types of the names a definition can call through (fields, properties, parameters, locals):
     # name -> simple type name. Lets `inventory.Find()` resolve through IInventoryStore (C#).
     receiver_types: Dict[str, str] = field(default_factory=dict)
+    # A C# extension method (`static void Audit(this ILogger l)`): callable on a type it doesn't belong to
+    extension_method: bool = False
 
     def __post_init__(self):
         # Derive simple_name from name if not set

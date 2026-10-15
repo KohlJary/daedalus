@@ -125,6 +125,7 @@ def _collect_nodes(project_root: Path, imports: Optional[Dict[str, dict]] = None
                             "is_test": el.is_test, "signature": el.signature,
                             "call_sites": [tuple(site) for site in el.call_sites],
                             "receiver_types": dict(el.receiver_types), "bases": list(el.bases),
+                            "extension_method": el.extension_method,
                             "docstring": (el.docstring or "")[:200], "calls": list(el.calls)}
     return raw
 
@@ -178,12 +179,20 @@ def build_query_graph(project_root: Path, max_candidates: int = 10) -> QueryGrap
                 else:
                     skipped[call.split(".")[-1]] = len(candidates)
         resolved[node_id] = targets
+    from .orphan_detector import LANGUAGE_ENTRY_POINTS
     for node_id, node in raw.items():  # Foo() carries on into its constructor (Foo.__init__, Foo.constructor, ...)
         if node["type"] == "class":
             language = _language(node["file"])
             for ctor in (language.constructor_of(node["simple_name"]) if language else ("__init__",)):
                 if f"{node_id}.{ctor}" in raw:
                     resolved[node_id].add(f"{node_id}.{ctor}")
+            # Methods the framework calls on an instance (Unity's Update, Blazor's OnInitializedAsync, Dispose):
+            # a test that only constructs the class still runs them. Python classes already carry their
+            # methods' calls, so this is for the tree-sitter languages, whose classes don't.
+            if language is not None and language.name != "Python":
+                for name in LANGUAGE_ENTRY_POINTS.get(language.name if language.name != "Razor" else "C#", ()):
+                    if f"{node_id}.{name}" in raw:
+                        resolved[node_id].add(f"{node_id}.{name}")
 
     graph = CallGraph()
     for node_id, node in raw.items():
@@ -257,6 +266,16 @@ class ImportResolver:
         self.cs_parents: Dict[str, Set[str]] = {}
         self.cs_by_name: Dict[str, List[str]] = {}
         self.cs_extensions: Set[str] = set()
+        # Every name a C# file declares as a type, whatever the analyzer made of it (enums, delegates, ...)
+        self.cs_declared_names: Set[str] = set()
+        for f in imports:
+            if f.endswith((".cs", ".razor", ".cshtml")):
+                try:
+                    text = (project_root / f).read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    continue
+                self.cs_declared_names |= set(re.findall(
+                    r"\b(?:class|interface|struct|record|enum|delegate\s+\S+)\s+([A-Z_]\w*)", text))
         for node_id, node in raw.items():
             if not node["file"].endswith(".cs"):
                 continue
@@ -265,7 +284,7 @@ class ImportResolver:
                 for base in node.get("bases", ()):
                     self.cs_parents.setdefault(node["simple_name"], set()).add(base)
                     self.cs_children.setdefault(base, set()).add(node["simple_name"])
-            elif "(this " in node.get("signature", ""):
+            elif node.get("extension_method"):
                 self.cs_extensions.add(node["simple_name"])
 
     def _cs_namespace(self, file: str) -> str:
@@ -307,13 +326,18 @@ class ImportResolver:
         own = {f"{t}.{call}" for t in type_ids if f"{t}.{call}" in self.raw}
         below = {f"{t}.{call}" for n in self._cs_walk(names, self.cs_children) for t in self.cs_by_name.get(n, ())
                  if f"{t}.{call}" in self.raw}
-        if own:
-            return own | below
+        # The nearest ancestor defining the name is a target too: either the method is inherited, or the
+        # type's own Call is an overload of it (node ids carry no signature, so arguments can't tell them
+        # apart). Interfaces above a concrete type are left out: a call through a class doesn't call them.
         for ancestor in self._cs_walk(names, self.cs_parents):
-            inherited = {f"{t}.{call}" for t in self.cs_by_name.get(ancestor, ()) if f"{t}.{call}" in self.raw}
+            inherited = {f"{t}.{call}" for t in self.cs_by_name.get(ancestor, ()) if f"{t}.{call}" in self.raw
+                         and not (own and self._cs_is_interface(t))}
             if inherited:
-                return inherited | below
-        return below
+                return own | inherited | below
+        return own | below
+
+    def _cs_is_interface(self, type_id: str) -> bool:
+        return re.search(r"\binterface\b", self.raw[type_id].get("signature", "").split("{")[0]) is not None
 
     def _resolve_cs_receiver(self, node: dict, receiver: str, call: str) -> Optional[Set[str]]:
         """`inventory.Find()` where `inventory` is declared `IInventoryStore`: that interface's Find and the
@@ -322,9 +346,18 @@ class ImportResolver:
         type_name = node.get("receiver_types", {}).get(receiver)
         if not type_name:
             return None
-        types = self._cs_types(node["file"], type_name)
+        if "." in type_name:  # written qualified: System.Threading.Tasks.Task, Shop.Billing.Money
+            namespace, _, simple = type_name.rpartition(".")
+            types = list(self.cs_types.get((namespace, simple), []))
+            if not types:
+                if any(ns == namespace or ns.startswith(namespace + ".") for ns, _ in self.cs_types):
+                    return None  # a project namespace: the type is ours, we just didn't index it
+                return None if call in self.cs_extensions else set()  # System.Threading.Tasks.Task: not ours
+        else:
+            simple = type_name
+            types = self._cs_types(node["file"], type_name)
         if not types:
-            if type_name in self.cs_type_names or call in self.cs_extensions:
+            if simple in self.cs_type_names or call in self.cs_extensions or simple in self.cs_declared_names:
                 return None  # a project type this file doesn't see by its usings, or an extension method
             return set()  # ILogger.LogInformation, List.Add: not the project's code
         return self._cs_method_targets(types, call) or None
@@ -342,8 +375,8 @@ class ImportResolver:
             return set(types) or None
         if qualifier in ("?", "self"):
             return None
-        if qualifier.startswith("self."):  # this._orders.Find()
-            return self._resolve_cs_receiver(node, qualifier[5:], call)
+        if qualifier.startswith("self."):  # this._orders.Find(): the field, even if a local shares its name
+            return self._resolve_cs_receiver(node, qualifier, call)
         if qualifier in node.get("receiver_types", {}):  # a parameter, local, field or property
             return self._resolve_cs_receiver(node, qualifier, call)
         hits = {f"{t}.{call}" for t in self._cs_types(node["file"], qualifier) if f"{t}.{call}" in self.raw}

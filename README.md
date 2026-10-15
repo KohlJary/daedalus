@@ -110,9 +110,10 @@ reports, each under a stable name:
 | `edict-not-in-gameplan` / `edict-bad-status` / `edict-duplicate-number` | Edict bookkeeping (projects using edicts) |
 | `project-map-missing-packages` / `empty-file-read-by-hook` | Memory files that never kept up |
 | `board-ask-rule-missing` | The board is in use but posts wouldn't ask the owner first |
-| `install-stale` / `palace-grammars-missing` | The installed daedalus-cli is out of step with the checkout it came from, or lacks its tree-sitter grammars |
 
-It exits non-zero when it finds anything, so it can run in CI. On the projects it was built
+It exits non-zero when it finds anything, so it can run in CI. It also hints (without failing) when this
+machine's daedalus-cli is out of step with the checkout it was installed from (`install-stale`) or lacks
+its tree-sitter grammars (`palace-grammars-missing`). On the projects it was built
 against, it found a plan five weeks and 94 commits behind, a task "in progress" for 148 days, and
 a project map missing 25 packages.
 
