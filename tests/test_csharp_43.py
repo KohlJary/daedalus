@@ -176,8 +176,19 @@ def test_inherited_overloads_and_multiline_extensions(tmp_path):
 
 def test_framework_called_methods_are_reached_from_the_class(tmp_path):
     g = _graph(tmp_path, "using UnityEngine;\npublic class Player : MonoBehaviour { void Update() { Move(); } void Move() {} }\n"
+                         "public class Svc : Base, System.IDisposable { public override void Run() {} public void Dispose() {} }\n"
+                         "public class Base { public virtual void Run() {} }\n"
+                         "public class Cart { public void Update() {} public void Reset() {} }\n"
                          "public class T { [Fact] public void Spawns() { new Player(); } }\n")
     assert "a.cs.Player.Update" in g.nodes["a.cs.Player"].calls
+    assert {"a.cs.Svc.Run", "a.cs.Svc.Dispose"} <= set(g.nodes["a.cs.Svc"].calls)  # an override; IDisposable
+    assert g.nodes["a.cs.Cart.Update"].called_by == [] and g.nodes["a.cs.Cart.Reset"].called_by == []  # plain class
+
+
+def test_nested_types_qualified_by_their_outer_type(tmp_path):
+    g = _graph(tmp_path, "namespace N1;\npublic class Outer { public class Node { public void Run() {} } }\n"
+                         "public class U { Outer.Node n; void A() { n.Run(); } }\n")
+    assert g.nodes["a.cs.U.A"].calls == ["a.cs.Node.Run"]
 
 
 def test_razor_components_reach_their_lifecycle_methods(tmp_path):
@@ -188,6 +199,7 @@ def test_razor_components_reach_their_lifecycle_methods(tmp_path):
     languages._registry = None
     g = build_query_graph(tmp_path).graph
     assert "Counter.razor.Counter.OnInitializedAsync" in g.nodes["Counter.razor.Counter"].calls
+    assert "Counter.razor.Counter.Load" not in g.nodes["Counter.razor.Counter"].calls  # reached through the lifecycle
     assert "Other.razor.Other.OnInitialized" not in g.nodes["Counter.razor.Counter"].calls
 
 

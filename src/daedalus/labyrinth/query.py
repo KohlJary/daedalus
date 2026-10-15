@@ -179,20 +179,18 @@ def build_query_graph(project_root: Path, max_candidates: int = 10) -> QueryGrap
                 else:
                     skipped[call.split(".")[-1]] = len(candidates)
         resolved[node_id] = targets
-    from .orphan_detector import LANGUAGE_ENTRY_POINTS
     for node_id, node in raw.items():  # Foo() carries on into its constructor (Foo.__init__, Foo.constructor, ...)
         if node["type"] == "class":
             language = _language(node["file"])
             for ctor in (language.constructor_of(node["simple_name"]) if language else ("__init__",)):
                 if f"{node_id}.{ctor}" in raw:
                     resolved[node_id].add(f"{node_id}.{ctor}")
-            # Methods the framework calls on an instance (Unity's Update, Blazor's OnInitializedAsync, Dispose):
-            # a test that only constructs the class still runs them. Python classes already carry their
-            # methods' calls, so this is for the tree-sitter languages, whose classes don't.
-            if language is not None and language.name != "Python":
-                for name in LANGUAGE_ENTRY_POINTS.get(language.name if language.name != "Razor" else "C#", ()):
-                    if f"{node_id}.{name}" in raw:
-                        resolved[node_id].add(f"{node_id}.{name}")
+            # Methods the framework calls on an instance: a test that only constructs the class still runs
+            # them. Only where that's certain (C#): `override`s, and the message methods of a framework base
+            # the class names (MonoBehaviour's Update, ComponentBase's OnInitializedAsync, IDisposable's
+            # Dispose). Python classes already carry their methods' calls.
+            if language is not None and language.name in ("C#", "Razor"):
+                resolved[node_id] |= _framework_called(node_id, node, raw)
 
     graph = CallGraph()
     for node_id, node in raw.items():
@@ -349,6 +347,10 @@ class ImportResolver:
         if "." in type_name:  # written qualified: System.Threading.Tasks.Task, Shop.Billing.Money
             namespace, _, simple = type_name.rpartition(".")
             types = list(self.cs_types.get((namespace, simple), []))
+            if not types and namespace.split(".")[-1] in self.cs_type_names:
+                types = list(self.cs_by_name.get(simple, []))  # Outer.Node: a nested type, not a namespace
+                if not types:
+                    return None
             if not types:
                 if any(ns == namespace or ns.startswith(namespace + ".") for ns, _ in self.cs_types):
                     return None  # a project namespace: the type is ours, we just didn't index it
@@ -544,6 +546,44 @@ class ImportResolver:
             else:
                 decided |= result
         return decided, undecided
+
+
+# C# framework bases and the methods they call on a subclass, by name (Unity messages aren't overrides)
+UNITY_MESSAGES = {"Awake", "Start", "Update", "FixedUpdate", "LateUpdate", "OnEnable", "OnDisable", "OnDestroy",
+                  "OnValidate", "Reset", "OnGUI", "OnDrawGizmos", "OnDrawGizmosSelected", "OnApplicationQuit",
+                  "OnApplicationPause", "OnApplicationFocus", "OnBecameVisible", "OnBecameInvisible",
+                  "OnTriggerEnter", "OnTriggerExit", "OnTriggerStay", "OnTriggerEnter2D", "OnTriggerExit2D",
+                  "OnTriggerStay2D", "OnCollisionEnter", "OnCollisionExit", "OnCollisionStay", "OnCollisionEnter2D",
+                  "OnCollisionExit2D", "OnCollisionStay2D", "OnMouseDown", "OnMouseUp", "OnMouseEnter", "OnMouseExit",
+                  "OnAnimatorMove", "OnAnimatorIK", "OnRenderObject", "OnPreRender", "OnPostRender"}
+BLAZOR_LIFECYCLE = {"OnInitialized", "OnInitializedAsync", "OnParametersSet", "OnParametersSetAsync", "OnAfterRender",
+                    "OnAfterRenderAsync", "SetParametersAsync", "ShouldRender", "BuildRenderTree", "Dispose",
+                    "DisposeAsync"}
+CS_FRAMEWORK_BASES = {
+    **{b: UNITY_MESSAGES for b in ("MonoBehaviour", "NetworkBehaviour", "ScriptableObject", "StateMachineBehaviour",
+                                    "Editor", "EditorWindow")},
+    **{b: BLAZOR_LIFECYCLE for b in ("ComponentBase", "LayoutComponentBase", "OwningComponentBase")},
+    "IDisposable": {"Dispose"}, "IAsyncDisposable": {"DisposeAsync"},
+    "BackgroundService": {"ExecuteAsync", "StartAsync", "StopAsync", "Dispose"},
+    "IHostedService": {"StartAsync", "StopAsync"},
+}
+
+
+def _framework_called(class_id: str, node: dict, raw: Dict[str, dict]) -> Set[str]:
+    """A C# class's own methods its framework calls: overrides, and the messages of a framework base it
+    names. A Razor component counts as a ComponentBase."""
+    names: Set[str] = set()
+    for base in node.get("bases", ()):
+        names |= CS_FRAMEWORK_BASES.get(base.split(".")[-1], set())
+    if node["file"].endswith((".razor", ".cshtml")):
+        names |= BLAZOR_LIFECYCLE
+    prefix = class_id + "."
+    out = set()
+    for other_id, other in raw.items():
+        if other_id.startswith(prefix) and "." not in other_id[len(prefix):] and other["type"] == "method":
+            if other["simple_name"] in names or re.search(r"\boverride\b", other.get("signature", "")):
+                out.add(other_id)
+    return out
 
 
 def resolve_symbol(graph: CallGraph, symbol: str) -> List[str]:
