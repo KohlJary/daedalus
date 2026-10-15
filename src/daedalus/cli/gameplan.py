@@ -187,7 +187,8 @@ def activate_phase(
         "started": started or date.today().isoformat(),
         "goal": goal,
         "sequencing": sequencing,
-        "tasks": [],
+        # Tasks queued on the phase while it was planned (from a source, edict 0011) become its tasks
+        "tasks": [t for t in (phase.pop("tasks", None) or []) if isinstance(t, dict)],
         "deferred": [],
     }
     if phase.get("edict"):
@@ -285,34 +286,76 @@ PENDING_FILENAME = "pending.json"
 #   task-status:    {"task", "status", "resolution"}
 #   new-phase:      {"phase": {"id", "title", "status", "notes", "tasks": [...], ...}}
 #   roadmap-status: {"item", "status"}
-PROPOSAL_KINDS = ("task-status", "new-phase", "roadmap-status")
+#   new-task:       {"task", "title", "details", ["phase", "origin", "roadmapItem"]} (reflection, sources)
+# From sources (edict 0011), each carrying "origin": {"source", "external_id", "url"}:
+#   roadmap-new:    {"item": {<the new roadmap item>}, "synced": {...}}
+#   roadmap-update: {"item": <id>, "changes": {field: value}, "conflicts": {...}, "synced": {...}}
+#   write-back:     {"task", "item", "target": "task" | "item", "comment"}
+PROPOSAL_KINDS = ("task-status", "new-phase", "roadmap-status", "new-task",
+                  "roadmap-new", "roadmap-update", "write-back")
+# Kinds whose proposals carry commits: a newer one replaces a pending one only when it brings new commits
+COMMIT_KINDS = ("task-status", "new-phase", "roadmap-status")
 
 
 def proposal_kind(proposal: dict[str, Any]) -> str:
-    return proposal.get("kind", "task-status")
+    kind = proposal.get("kind", "task-status")
+    if kind not in PROPOSAL_KINDS:
+        raise GameplanError(f"Unknown proposal kind {kind!r} (known: {', '.join(PROPOSAL_KINDS)})")
+    return kind
+
+
+def _src_key(proposal: dict[str, Any]) -> str:
+    o = proposal["origin"]
+    return f"src:{o['source']}:{o['external_id']}"
 
 
 def proposal_key(proposal: dict[str, Any]) -> str:
     kind = proposal_kind(proposal)
+    if kind == "task-status":
+        return f"task:{proposal['task']}"
     if kind == "new-phase":
         return f"phase:{proposal['phase']['id']}"
     if kind == "roadmap-status":
         return f"roadmap:{proposal['item']}"
     if kind == "new-task":
-        return f"new-task:{proposal['task']}"
-    return f"task:{proposal['task']}"
+        return _src_key(proposal) if proposal.get("origin") else f"new-task:{proposal['task']}"
+    if kind in ("roadmap-new", "roadmap-update"):
+        return _src_key(proposal)
+    if kind == "write-back":
+        o = proposal["origin"]
+        return f"wb:{o['source']}:{o['external_id']}:{proposal['task']}"
+    raise GameplanError(f"Unknown proposal kind {kind!r}")
 
 
 def describe_proposal(proposal: dict[str, Any]) -> str:
     kind = proposal_kind(proposal)
+    if kind == "task-status":
+        return f"{proposal['task']} -> {proposal['status']}"
     if kind == "new-phase":
         ph = proposal["phase"]
         return f"new phase {ph['id']} ({ph.get('status', 'planned')}, {len(ph.get('tasks', []))} tasks): {ph.get('title', '')}"
     if kind == "roadmap-status":
         return f"roadmap {proposal['item']} -> {proposal['status']}"
     if kind == "new-task":
-        return f"new task {proposal['task']}: {proposal.get('title', '')}"
-    return f"{proposal['task']} -> {proposal['status']}"
+        where = f" in {proposal['phase']}" if proposal.get("phase") else ""
+        return f"new task {proposal['task']}{where}: {proposal.get('title', '')}"
+    if kind == "roadmap-new":
+        item = proposal["item"]
+        return f"new roadmap item {item['id']} ({item.get('status', 'backlog')}): {item.get('title', '')}"
+    if kind == "roadmap-update":
+        changes = ", ".join(f"{k} -> {_short(v)}" for k, v in proposal.get("changes", {}).items())
+        conflict = " [changed here too: " + ", ".join(proposal["conflicts"]) + "]" if proposal.get("conflicts") else ""
+        return f"roadmap {proposal['item']} from {proposal['origin']['source']}: {changes}{conflict}"
+    if kind == "write-back":
+        o = proposal["origin"]
+        extra = " with a comment" if proposal.get("comment") else ""
+        return f"write back to {o['source']} {o['external_id']}: done{extra} (task {proposal['task']})"
+    raise GameplanError(f"Unknown proposal kind {kind!r}")
+
+
+def _short(value: Any, width: int = 40) -> str:
+    text = str(value).replace("\n", " ")
+    return text if len(text) <= width else text[:width - 1] + "…"
 
 
 def pending_path(project_dir: Path) -> Path:
@@ -350,7 +393,10 @@ def add_proposals(project_dir: Path, new: list[dict[str, Any]]) -> list[dict[str
     added = []
     for proposal in new:
         old = by_key.get(proposal_key(proposal))
-        if old and set(proposal.get("commits", [])) <= set(old.get("commits", [])):
+        if old and proposal_kind(proposal) in COMMIT_KINDS:
+            if set(proposal.get("commits", [])) <= set(old.get("commits", [])):
+                continue
+        elif old and _same_content(old, proposal):
             continue
         if old:
             proposal["id"] = old["id"]
@@ -365,6 +411,12 @@ def add_proposals(project_dir: Path, new: list[dict[str, Any]]) -> list[dict[str
     return added
 
 
+def _same_content(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    """Whether two proposals say the same thing (ignoring id and creation date)."""
+    strip = lambda p: {k: v for k, v in p.items() if k not in ("id", "created")}  # noqa: E731
+    return strip(a) == strip(b)
+
+
 def _select(proposals: list[dict[str, Any]], which: str) -> list[dict[str, Any]]:
     chosen = proposals if which == "all" else [p for p in proposals if p.get("id") == which]
     if not chosen:
@@ -372,31 +424,86 @@ def _select(proposals: list[dict[str, Any]], which: str) -> list[dict[str, Any]]
     return chosen
 
 
-def apply_pending(project_dir: Path, data: dict[str, Any], which: str) -> list[dict[str, Any]]:
-    """Apply proposals (an id or 'all') to the gameplan data; removes them from the pending file."""
+def apply_pending(project_dir: Path, data: dict[str, Any], which: str,
+                  failures: Optional[list] = None) -> list[dict[str, Any]]:
+    """Apply proposals (an id or 'all') to the gameplan data; removes them from the pending file.
+
+    Write-backs go first, one at a time, because each calls the outside tracker: one that fails stays
+    pending, and is added to `failures` as (proposal, error) when a list is given (otherwise the error
+    is raised). Every kind is handled explicitly; an unknown kind raises before anything changes.
+    """
     proposals = load_pending(project_dir)
     chosen = _select(proposals, which)
+    for p in chosen:
+        proposal_kind(p)  # raises on an unknown kind, before anything is applied
+    applied: list[dict[str, Any]] = []
     roadmap_changes = []
+    from ..sources import sync as source_sync
+
+    for p in [p for p in chosen if proposal_kind(p) == "write-back"]:
+        try:
+            source_sync.apply_write_back(project_dir, data, p)
+        except Exception as e:  # SourceError, or a plugin that isn't installed
+            if failures is None:
+                raise GameplanError(f"{p.get('id')}: write-back failed: {e}")
+            failures.append((p, str(e)))
+            continue
+        applied.append(p)
+    if applied:  # the outside call happened: never leave it pending, whatever happens next
+        save_pending(project_dir, [p for p in proposals if p not in applied])
+    done_tasks = []
     for p in chosen:
         kind = proposal_kind(p)
+        if kind == "write-back":
+            continue
         if kind == "new-phase":
             spec = p["phase"]
             phase = add_phase(data, spec["id"], spec["title"], notes=spec.get("notes", ""),
                               status=spec.get("status", "planned"), edict=spec.get("edict", ""))
-            for key in ("goal", "dates", "tasks", "provenance"):
+            for key in ("goal", "dates", "tasks", "provenance", "origin"):
                 if spec.get(key):
                     phase[key] = spec[key]
+            if spec.get("roadmapItems"):
+                phase["roadmapItems"] = list(spec["roadmapItems"])
         elif kind == "roadmap-status":
             roadmap_changes.append(p)
         elif kind == "new-task":
-            # From reflection (edict 0010): new work a pattern in the session logs calls for
-            add_task(data, p["task"], p.get("title", ""), details=p.get("details", ""))
-        else:
-            set_task_status(data, p["task"], p["status"], resolution=p.get("resolution", ""))
+            # From reflection (edict 0010): new work a pattern in the session logs calls for. From a source
+            # (edict 0011): a tracker's task, placed in the phase that references its parent's item.
+            _apply_new_task(data, p)
+        elif kind in ("roadmap-new", "roadmap-update"):
+            source_sync.apply_roadmap_proposal(project_dir, data, p)
+        elif kind == "task-status":
+            task = set_task_status(data, p["task"], p["status"], resolution=p.get("resolution", ""))
+            if p["status"] == "done":
+                done_tasks.append(task)
+        else:  # proposal_kind() already refused unknown kinds; this keeps a new kind from falling through
+            raise GameplanError(f"No handler for proposal kind {kind!r}")
+        applied.append(p)
     if roadmap_changes:
         _apply_roadmap_status(project_dir, roadmap_changes)
-    save_pending(project_dir, [p for p in proposals if p not in chosen])
-    return chosen
+    save_pending(project_dir, [p for p in proposals if p not in applied])
+    for task in done_tasks:
+        source_sync.propose_write_back(project_dir, data, task)
+    return applied
+
+
+def _apply_new_task(data: dict[str, Any], p: dict[str, Any]) -> dict[str, Any]:
+    extra = {k: p[k] for k in ("origin", "roadmapItem") if p.get(k)}
+    active = data.get("activePhase") or {}
+    if p.get("phase") and p["phase"] != active.get("id"):
+        phase = find_phase(data, p["phase"])
+        if phase is None:
+            raise GameplanError(f"Phase '{p['phase']}' not found for task {p['task']}")
+        if any(t.get("id") == p["task"] for t in phase.get("tasks", []) if isinstance(t, dict)):
+            raise GameplanError(f"Task '{p['task']}' already exists in phase {p['phase']}")
+        task = {"id": p["task"], "title": p.get("title", ""), "status": "pending", "details": p.get("details", ""),
+                "updated": date.today().isoformat(), **extra}
+        phase.setdefault("tasks", []).append(task)
+        return task
+    task = add_task(data, p["task"], p.get("title", ""), details=p.get("details", ""))
+    task.update(extra)
+    return task
 
 
 def _apply_roadmap_status(project_dir: Path, changes: list[dict[str, Any]]) -> None:
@@ -465,7 +572,14 @@ def proposals_from_reconstruction(reconstruction: dict[str, Any]) -> tuple[list[
 
 
 def drop_pending(project_dir: Path, which: str) -> list[dict[str, Any]]:
+    """Discard proposals. Dropping a source's proposal is remembered so the next sync doesn't bring it
+    back: a dropped update keeps the local values (its remote values become the baseline), and a dropped
+    write-back is recorded as `dropped` (doctor then knows it wasn't forgotten). Nothing is called."""
     proposals = load_pending(project_dir)
     chosen = _select(proposals, which)
+    if any(proposal_kind(p) in ("roadmap-update", "write-back") for p in chosen):
+        from ..sources import sync as source_sync
+
+        source_sync.record_drops(project_dir, [p for p in chosen if proposal_kind(p) in ("roadmap-update", "write-back")])
     save_pending(project_dir, [p for p in proposals if p not in chosen])
     return chosen

@@ -209,6 +209,7 @@ GITIGNORE_GAMEPLAN_BLOCK = """
 !.daedalus/roadmap/
 .daedalus/roadmap/*
 !.daedalus/roadmap/gameplan.json
+!.daedalus/roadmap/index.json
 """
 
 
@@ -220,8 +221,15 @@ GITIGNORE_WORKSTREAMS_BLOCK = """
 !.daedalus/roadmap/
 .daedalus/roadmap/*
 !.daedalus/roadmap/gameplan.json
+!.daedalus/roadmap/index.json
 !.daedalus/gameplans/
 .daedalus/gameplans/*.pending.json
+"""
+
+
+GITIGNORE_ROADMAP_BLOCK = """
+# Daedalus: the roadmap is committed intake; phases reference its items (edict 0011)
+!.daedalus/roadmap/index.json
 """
 
 
@@ -244,6 +252,7 @@ def _ensure_gameplan_tracked(project_dir: Path):
 
     checks = [(".daedalus/roadmap/gameplan.json", GITIGNORE_WORKSTREAMS_BLOCK, "the gameplan"),
               (".daedalus/gameplans/plan.json", GITIGNORE_WORKSTREAMS_BLOCK, "workstream plans"),
+              (".daedalus/roadmap/index.json", GITIGNORE_ROADMAP_BLOCK, "the roadmap index"),
               (".daedalus/dispatch.json", GITIGNORE_DISPATCH_BLOCK, "the palace's dispatch rules")]
     gitignore = project_dir / ".gitignore"
     in_repo = subprocess.run(["git", "rev-parse"], cwd=project_dir, capture_output=True).returncode == 0
@@ -252,7 +261,8 @@ def _ensure_gameplan_tracked(project_dir: Path):
     # files (and so chose to share them) is left to do so.
     tracked = subprocess.run(["git", "ls-files", "--", ".daedalus/"], cwd=project_dir, capture_output=True,
                              text=True).stdout.split() if in_repo else []
-    shares_memory = any(not (t.startswith(".daedalus/gameplans/") or t == ".daedalus/roadmap/gameplan.json")
+    shares_memory = any(not (t.startswith(".daedalus/gameplans/") or t in (".daedalus/roadmap/gameplan.json",
+                                                                         ".daedalus/roadmap/index.json"))
                         for t in tracked)
     if in_repo and not shares_memory and not ignored(".daedalus/session-summaries.md"):
         text = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
@@ -476,15 +486,18 @@ def list_roadmap_items(
     status: Optional[str] = None,
     assigned_to: Optional[str] = None,
 ):
-    """List roadmap items from file-based storage."""
-    roadmap_file = project_dir / ".daedalus" / "roadmap" / "index.json"
+    """List roadmap items from file-based storage, with where each came from (edict 0011)."""
+    from .. import roadmap as rm
 
-    if not roadmap_file.exists():
+    if not rm.index_path(project_dir).exists():
         click.echo("No roadmap found. Run: daedalus init")
         return
 
-    data = json.loads(roadmap_file.read_text(encoding="utf-8"))
-    items = data.get("items", [])
+    try:
+        items = rm.load_index(project_dir).get("items", [])
+    except rm.RoadmapError as e:
+        click.echo(str(e), err=True)
+        return
 
     # Filter
     if status:
@@ -508,9 +521,47 @@ def list_roadmap_items(
 
         priority = item.get("priority", "P2")
         title = item.get("title", "Untitled")
-        item_id = item.get("id", "???")[:8]
+        item_id = item.get("id", "???")
+        short = item_id[:8] if rm.origin(item)["source"] == "local" else item_id
 
-        click.echo(f"{status_icon} {priority} {title} ({item_id})")
+        click.echo(f"{status_icon} {priority} {title} ({short}) [{rm.origin_label(item)}]")
+
+
+def show_roadmap_item(project_dir: Path, item_id: str):
+    """One item with its origin and sync baseline, then the phases that list it, then its tasks."""
+    from .. import roadmap as rm
+
+    try:
+        item = rm.find(rm.load_index(project_dir), item_id)
+    except rm.RoadmapError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(1)
+    o = rm.origin(item)
+    click.echo(f"{item.get('id')}: {item.get('title', 'Untitled')}")
+    click.echo(f"  status: {item.get('status', 'backlog')}   priority: {item.get('priority', 'P2')}   "
+               f"type: {item.get('item_type', 'task')}")
+    if o["source"] == "local":
+        click.echo("  origin: local")
+    else:
+        click.echo(f"  origin: {o['source']} {o.get('external_id', '')}  {o.get('url', '')}".rstrip())
+    if item.get("description"):
+        click.echo("  description: " + item["description"].strip().replace("\n", "\n    "))
+    synced = item.get("synced")
+    if synced:
+        click.echo("  last sync saw:")
+        for k, v in synced.get("fields", {}).items():
+            click.echo(f"    {k}: {str(v).splitlines()[0] if str(v) else ''}")
+        if synced.get("remote_updated"):
+            click.echo(f"    (changed in the tracker at {synced['remote_updated']})")
+        if synced.get("write_back"):
+            click.echo(f"  write-back: {synced['write_back']}")
+    phases, tasks = rm.references(project_dir, item["id"])
+    click.echo("Phases:" if phases else "Phases: none list it")
+    for wid, phase in phases:
+        click.echo(f"  {wid}/{phase.get('id')} [{phase.get('status', 'planned')}]: {phase.get('title', '')}")
+    click.echo("Tasks:" if tasks else "Tasks: none point to it")
+    for wid, phase_id, task in tasks:
+        click.echo(f"  {wid}/{phase_id}/{task.get('id')} [{task.get('status', 'pending')}]: {task.get('title', '')}")
 
 
 def add_roadmap_item(
@@ -520,32 +571,14 @@ def add_roadmap_item(
     priority: str = "P2",
     item_type: str = "task",
 ):
-    """Add a new roadmap item."""
-    import uuid
-    from datetime import datetime
+    """Add a new roadmap item, typed in here (its origin is local)."""
+    from .. import roadmap as rm
 
-    roadmap_file = project_dir / ".daedalus" / "roadmap" / "index.json"
-
-    if not roadmap_file.exists():
+    if not rm.index_path(project_dir).exists():
         click.echo("No roadmap found. Run: daedalus init")
         return
 
-    data = json.loads(roadmap_file.read_text(encoding="utf-8"))
-
-    new_item = {
-        "id": str(uuid.uuid4()),
-        "title": title,
-        "description": description or "",
-        "priority": priority,
-        "item_type": item_type,
-        "status": "backlog",
-        "created_at": datetime.utcnow().isoformat(),
-        "created_by": "daedalus",
-    }
-
-    data["items"].append(new_item)
-    roadmap_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
-
+    new_item = rm.add_local_item(project_dir, title, description or "", priority, item_type)
     click.echo(f"Added: {title} ({new_item['id'][:8]})")
 
 
@@ -709,11 +742,23 @@ def set_gameplan_task_status(
 ):
     from . import gameplan as gp
 
-    if _gameplan_run(
-        project_dir,
-        lambda d: gp.set_task_status(d, task_id, status, resolution=resolution),
-    ):
+    done = []
+
+    def _set(d):
+        task = gp.set_task_status(d, task_id, status, resolution=resolution)
+        done.append(task)
+        return task
+
+    if _gameplan_run(project_dir, _set):
         click.echo(f"Task '{task_id}' -> {status}")
+        if status == "done" and done:
+            # A task traced to a source with write-back proposes the matching update out (edict 0011)
+            from ..sources import sync as source_sync
+
+            p = source_sync.propose_write_back(project_dir, None, done[0])
+            if p:
+                click.echo(f"Proposed {p['id']}: {gp.describe_proposal(p)}. "
+                           "Apply it with `daedalus gameplan pending apply` (it calls the tracker), or drop it.")
 
 
 def defer_gameplan_task(project_dir: Path, task_id: str, reason: str):
@@ -739,9 +784,14 @@ def list_pending(project_dir: Path):
 def apply_pending(project_dir: Path, which: str):
     from . import gameplan as gp
 
-    applied = _gameplan_run(project_dir, lambda d: gp.apply_pending(project_dir, d, which))
+    failures: list = []
+    applied = _gameplan_run(project_dir, lambda d: gp.apply_pending(project_dir, d, which, failures=failures))
     for p in applied or []:
         click.echo(f"Applied {p['id']}: {gp.describe_proposal(p)}")
+    for p, error in failures:
+        click.echo(f"Not applied {p['id']} (still pending): {error}", err=True)
+    if failures:
+        raise SystemExit(1)
 
 
 def drop_pending(project_dir: Path, which: str):

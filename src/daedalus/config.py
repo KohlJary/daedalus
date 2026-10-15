@@ -131,9 +131,18 @@ class MachineConfig:
     employer: Optional[bool] = None
 
 
-# Allowed values for string settings that the template branches on
+@dataclass
+class TuiConfig:
+    """The Daedalus TUI (edict 0012)."""
+    prs: str = "local"       # local: branches ahead of main; gh: the GitHub CLI
+    escape: str = "ctrl+]"   # returns focus from the Claude pane to the dashboard
+
+
+# Allowed values for string settings (the registry in config_schema.py reads these)
 SETTING_CHOICES = {
     "git.authorship": ("daedalus", "user"),
+    "ariadne.autonomy": ("supervised", "hybrid", "full"),
+    "tui.prs": ("local", "gh"),
     "reflection.runner": ("inhale", "local", "headless"),
     "reflection.model_summary": ("off", "on", "ab"),
     "reflection.forget": ("purge", "retain"),
@@ -147,7 +156,7 @@ TRISTATE_SETTINGS = ("machine.employer",)
 TEMPLATE_SETTING_GROUPS = ("git", "sections", "edicts")
 
 # Groups a project may override in .daedalus/config.json
-PROJECT_SETTING_GROUPS = TEMPLATE_SETTING_GROUPS + ("doctor", "hooks", "reconstruct", "board", "reflection")
+PROJECT_SETTING_GROUPS = TEMPLATE_SETTING_GROUPS + ("doctor", "hooks", "reconstruct", "board", "reflection", "tui")
 
 
 @dataclass
@@ -165,6 +174,9 @@ class DaedalusConfig:
     board: BoardConfig = field(default_factory=BoardConfig)
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
     machine: MachineConfig = field(default_factory=MachineConfig)
+    tui: TuiConfig = field(default_factory=TuiConfig)
+    # Sources (edict 0011): {name: {key: value}}, free-form here and validated by config_schema
+    sources: dict = field(default_factory=dict)
 
 
 def get_config_dir() -> Path:
@@ -246,6 +258,8 @@ def load_config() -> DaedalusConfig:
             board=BoardConfig(**data.get("board", {})),
             reflection=ReflectionConfig(**data.get("reflection", {})),
             machine=MachineConfig(**data.get("machine", {})),
+            tui=TuiConfig(**data.get("tui", {})),
+            sources=data["sources"] if isinstance(data.get("sources"), dict) else {},
         )
     except (json.JSONDecodeError, TypeError, KeyError):
         # Return defaults on any parse error
@@ -270,7 +284,10 @@ def save_config(config: DaedalusConfig) -> None:
         "board": asdict(config.board),
         "reflection": asdict(config.reflection),
         "machine": asdict(config.machine),
+        "tui": asdict(config.tui),
     }
+    if config.sources:
+        data["sources"] = config.sources
 
     get_config_file().write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -285,64 +302,59 @@ def get_nested_value(config: DaedalusConfig, key: str) -> Optional[str]:
     obj = config
 
     for part in parts:
-        if hasattr(obj, part):
+        if isinstance(obj, dict):
+            if part not in obj:
+                return None
+            obj = obj[part]
+        elif hasattr(obj, part):
             obj = getattr(obj, part)
         else:
             return None
 
+    if isinstance(obj, (dict, list)):
+        return json.dumps(obj)
     return str(obj) if obj is not None else None
 
 
 def set_nested_value(config: DaedalusConfig, key: str, value: str) -> bool:
     """
-    Set a nested config value by dot-separated key.
+    Set a nested config value by dot-separated key, validated against the config schema registry.
 
     Example: set_nested_value(config, "user.name", "Kohl")
 
-    Returns True if successful, False if key path is invalid.
+    Returns True if successful, False for an unknown key or a value the setting doesn't take
+    (`config_schema.check` says why).
     """
-    parts = key.split(".")
+    from . import config_schema
 
-    if len(parts) < 2:
+    converted, error = config_schema.check(key, value, source_type(config.sources, key))
+    if error:
         return False
-
-    # Navigate to parent object
-    obj = config
-    for part in parts[:-1]:
-        if hasattr(obj, part):
-            obj = getattr(obj, part)
+    parts = key.split(".")
+    if parts[0] == "sources":
+        entry = config.sources.setdefault(parts[1], {})
+        if converted is None:
+            entry.pop(parts[2], None)
         else:
-            return False
-
-    # Set the final attribute
-    final_key = parts[-1]
-    if key in TRISTATE_SETTINGS and hasattr(obj, final_key):
-        lowered = value.lower()
-        if lowered in ("true", "1", "yes", "on"):
-            setattr(obj, final_key, True)
-        elif lowered in ("false", "0", "no", "off"):
-            setattr(obj, final_key, False)
-        elif lowered in ("unset", "none", "null"):
-            setattr(obj, final_key, None)
-        else:
-            return False
+            entry[parts[2]] = converted
         return True
-    if hasattr(obj, final_key):
-        # Handle type conversion for boolean fields
-        current_value = getattr(obj, final_key)
-        if isinstance(current_value, bool):
-            value = value.lower() in ("true", "1", "yes", "on")
-        elif isinstance(current_value, int):
-            try:
-                value = int(value)
-            except ValueError:
-                return False
-        elif key in SETTING_CHOICES and value not in SETTING_CHOICES[key]:
-            return False
-        setattr(obj, final_key, value)
-        return True
+    setattr(getattr(config, parts[0]), parts[1], converted)
+    return True
 
-    return False
+
+def source_type(*layers_and_key) -> Optional[str]:
+    """The plugin type configured for the source a `sources.<name>.<key>` key names, from any of the given
+    sources dicts (later ones win), or None. Called as source_type(sources_dict, ..., key)."""
+    *layers, key = layers_and_key
+    parts = key.split(".")
+    if len(parts) < 2 or parts[0] != "sources":
+        return None
+    found = None
+    for layer in layers:
+        entry = layer.get(parts[1]) if isinstance(layer, dict) else None
+        if isinstance(entry, dict) and entry.get("type"):
+            found = entry["type"]
+    return found
 
 
 def setting_refusal(config: DaedalusConfig, key: str, value: str) -> Optional[str]:
@@ -373,31 +385,64 @@ def load_project_overrides(project_dir: Path) -> dict:
 
 def set_project_value(project_dir: Path, key: str, value: str) -> bool:
     """
-    Set a template setting in the project config (.daedalus/config.json).
+    Set a setting in the project config (.daedalus/config.json).
 
-    Only PROJECT_SETTING_GROUPS (the template's git and sections, plus doctor and hooks) can be
-    overridden per project. The value is
-    validated and type-converted against the global config's field. Returns False for an unknown key
-    or a value outside the allowed choices.
+    Only PROJECT_SETTING_GROUPS and `sources.<name>.<key>` can be overridden per project. The value is
+    validated and converted against the config schema registry. Returns False for an unknown key or a
+    value the setting doesn't take.
     """
-    if key.split(".")[0] not in PROJECT_SETTING_GROUPS:
-        return False
-    probe = DaedalusConfig()
-    if not set_nested_value(probe, key, value):
-        return False
-    converted = getattr(getattr(probe, key.split(".")[0]), key.split(".")[1])
+    from . import config_schema
 
+    group = key.split(".")[0]
+    if group not in PROJECT_SETTING_GROUPS and group != "sources":
+        return False
     data = load_project_overrides(project_dir)
+    stype = source_type(load_config().sources, data.get("sources", {}), key)
+    converted, error = config_schema.check(key, value, stype)
+    if error:
+        return False
+
     node = data
     parts = key.split(".")
     for part in parts[:-1]:
         node = node.setdefault(part, {})
-    node[parts[-1]] = converted
+    if converted is None and group == "sources":
+        node.pop(parts[-1], None)
+    else:
+        node[parts[-1]] = converted
 
     path = get_project_config_file(project_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return True
+
+
+def get_source_settings(project_dir: Path, name: str, config: Optional[DaedalusConfig] = None) -> dict:
+    """One source's settings: the registry's defaults, then the global config, then the project's
+    .daedalus/config.json (edict 0011). Keys the registry doesn't know are dropped."""
+    from . import config_schema
+
+    config = config or load_config()
+    glob = config.sources.get(name, {}) if isinstance(config.sources.get(name), dict) else {}
+    proj_all = load_project_overrides(project_dir).get("sources", {})
+    proj = proj_all.get(name, {}) if isinstance(proj_all, dict) and isinstance(proj_all.get(name), dict) else {}
+    stype = proj.get("type") or glob.get("type") or None
+    schema = config_schema.source_settings(name, stype)
+    out = {}
+    for full, setting in schema.items():
+        k = full.split(".")[-1]
+        out[k] = proj.get(k, glob.get(k, setting.default))
+    return out
+
+
+def configured_source_names(project_dir: Path, config: Optional[DaedalusConfig] = None) -> list[str]:
+    """Names of sources set in the global or project config, in order of first appearance."""
+    config = config or load_config()
+    proj = load_project_overrides(project_dir).get("sources", {})
+    names = list(config.sources)
+    if isinstance(proj, dict):
+        names += [n for n in proj if n not in names]
+    return names
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
