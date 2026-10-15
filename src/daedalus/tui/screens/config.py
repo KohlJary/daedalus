@@ -289,14 +289,14 @@ class EditSetting(ModalScreen):
                 for c in self.choices:
                     tags = [t for t, on in (("current", c == current), ("default", c == show(s.default))) if on]
                     opts.append(Option(f"{c}" + (f"  ({', '.join(tags)})" if tags else ""), id=c))
-                olist = OptionList(*opts, id="edit-choices")
+                olist = OptionList(*opts, id="edit-choices", markup=False)
                 if current in self.choices:
                     olist.highlighted = self.choices.index(current)
                 yield olist
             else:
                 yield Input(value="" if row.value is None else current, id="edit-input",
                             placeholder="unset" if s.nullable else "")
-            yield Static("", id="edit-layer")
+            yield Static("", id="edit-layer", markup=False)
             yield Static("", id="edit-error", markup=False)
             keys = "tab layer · enter save" if self.choices is None else "←/→ layer · enter save"
             if s.type == "bool":
@@ -315,7 +315,7 @@ class EditSetting(ModalScreen):
             text = "Save to:  [user]   (this setting is for you only, not per project)"
         else:
             text = "Save to:  " + "  ".join(f"[{n}]" if n == self.save_layer else n for n in ("project", "user"))
-        self.query_one("#edit-layer", Static).update(text.replace("[", "\\["))
+        self.query_one("#edit-layer", Static).update(text)  # markup=False: values are shown as typed
 
     def action_layer(self) -> None:
         if self.row.secret or not self.row.setting.project:
@@ -383,12 +383,12 @@ class ConfigScreen(Screen):
         self.shown_rows: list[Row] = []
 
     def compose(self):
-        yield Static("Config", id="config-title")
+        yield Static("Config", id="config-title", markup=False)
         yield Static("", id="config-filter", markup=False)
         yield Input(placeholder="search settings", id="config-search")
         with Horizontal(id="config-body"):
-            yield OptionList(id="config-groups")
-            yield OptionList(id="config-keys")
+            yield OptionList(id="config-groups", markup=False)
+            yield OptionList(id="config-keys", markup=False)
             yield Static("", id="config-detail", markup=False)
         yield KeyBar()
 
@@ -506,7 +506,7 @@ class ConfigScreen(Screen):
 
         def done(layer: Optional[str]) -> None:
             if layer:
-                self.notify(f"Set {row.setting.key} ({layer})")
+                self.notify(f"Set {row.setting.key} ({layer})", markup=False)
             self.refresh_state()
             self.query_one("#config-keys").focus()
 

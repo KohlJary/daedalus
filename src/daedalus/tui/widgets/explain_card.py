@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from rich.text import Text
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Static
@@ -31,10 +32,10 @@ class ExplainCard(ModalScreen):
     def compose(self):
         c = get_card(self.card_name)
         with Vertical():
-            yield Static(f"[b]? {c.title}[/b]", id="card-title")
-            yield Static(c.body, id="card-body")
-            yield Static(f"\nLives in {c.lives or '(nowhere on disk)'}.", id="card-lives")
-            yield Static(f"CLI: {c.cli or 'daedalus --help'}", id="card-cli")
+            yield Static(Text(f"? {c.title}", style="bold"), id="card-title")
+            yield Static(c.body, id="card-body", markup=False)
+            yield Static(f"\nLives in {c.lives or '(nowhere on disk)'}.", id="card-lives", markup=False)
+            yield Static(f"CLI: {c.cli or 'daedalus --help'}", id="card-cli", markup=False)
             yield Static("\ng glossary · esc close", id="card-keys")
 
     def action_glossary(self) -> None:
@@ -63,4 +64,4 @@ class Glossary(ModalScreen):
         with Vertical():
             for name in self.names:
                 c = all_cards()[name]
-                yield Static(f"[b]{c.title}[/b]\n{c.body}\nCLI: {c.cli}\n")
+                yield Static(Text.assemble((c.title, "bold"), f"\n{c.body}\nCLI: {c.cli}\n"))

@@ -105,8 +105,11 @@ how many concepts have an Explain card in `glossary.md`.
   a citation to its event (`enter` in the diagram) isn't built.
 - **`edict resolve-dissent`, `workstream use`, `palace status/languages`:** no
   view and no hand-off.
-- **Plugins:** a plugin's NeedsYou kind offers only Send to Claude; plugins
-  can't add writes.
+- **Plugins:** a plugin's NeedsYou kind shows its own `detail()` and the
+  `actions()` it declares, in the key row (one protocol: `daedalus.tui.plugin`).
+  Each action runs `run_action` only after the shared confirm, which names the
+  plugin and the action, gets a `y`; undeclared keys say "no such action for
+  this kind". The TUI's own writes are still exactly 0012's list.
 
 ## History
 

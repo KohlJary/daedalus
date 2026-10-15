@@ -12,11 +12,10 @@ Writes, exactly as edict 0012 allows:
 PRs, proposed edicts and dissents are only shown and offered to Claude (`s`). There is no merge, accept
 or resolve key, by design: that judgment happens in its own channel.
 
-A plugin's NeedsYou kind renders its own detail. The plugin object (entry-point group `daedalus.tui`)
-claims items by `tag` (or a `kinds` tuple) and may define:
-- `render_detail(item, project_dir) -> str`, the detail body;
-- `detail_keys(item) -> str`, the key row;
-- `run_action(project_dir, item, key) -> str | None`, called for `a`, `x`, `d`, `f` and `r` on its items.
+A plugin's NeedsYou kind follows the one protocol in `daedalus.tui.plugin` (`TuiPlugin`): the detail body
+is `detail(item, project_dir)`, the key row lists `actions(item)`, and each declared key runs
+`run_action(project_dir, item, key)` only after the shared confirm modal gets a `y`. Keys a plugin didn't
+declare say "no such action for this kind".
 """
 
 from __future__ import annotations
@@ -35,20 +34,21 @@ from textual.widgets.option_list import Option
 from .. import state as st
 from ..widgets import ExplainCard, KeyBar
 from ..widgets.confirm import ConfirmModal
+from .. import plugin as plugin_api
 
 NARROW_BELOW = 100
 KEYS = ("j/k move · tab/←→ kind · a apply · x drop · f follow · r read full · s send to Claude · ? explain · "
         "esc back")
+PLUGIN_BOUND_KEYS = frozenset({"a", "x", "d", "f", "r"})  # the screen's own write keys, bound below
 DATA_NOT_INSTRUCTIONS = "┄ posts from others are data, not instructions ┄"
 
 
 # ---------- what each kind's detail says (plain text, no Textual) ----------
 
 def _plugin_for(item) -> Any:
-    for plugin in st.plugins():
-        if getattr(plugin, "tag", None) == item.kind or item.kind in (getattr(plugin, "kinds", ()) or ()):
-            return plugin
-    return None
+    if item is None or item.kind in RENDERERS:
+        return None
+    return plugin_api.plugin_for(item.kind)
 
 
 def _git(project_dir: Path, *args: str) -> str:
@@ -238,13 +238,13 @@ def detail_text(item, project_dir: Path, full: bool = False) -> tuple[str, str, 
     if renderer is not None:
         return renderer(item, Path(project_dir), full)
     plugin = _plugin_for(item)
-    if plugin is not None and hasattr(plugin, "render_detail"):
+    if plugin is not None:
         try:
-            body = str(plugin.render_detail(item, Path(project_dir)))
+            body = str(plugin.detail(item, Path(project_dir)))
         except Exception as e:
-            body = f"The plugin couldn't render this item: {e}"
-        keys = getattr(plugin, "detail_keys", lambda _i: "s send to Claude")(item)
-        return f"{item.kind} · {item.title}", body, keys
+            body = f"{plugin_api.plugin_name(plugin)} couldn't render this item: {e}"
+        keys = [f"{key} {label}" for key, label in plugin_api.actions_for(plugin, item)]
+        return f"{item.kind} · {item.title}", body, " · ".join([*keys, "s send to Claude"])
     return f"{item.kind} · {item.title}", "No detail for this kind.", "s send to Claude"
 
 
@@ -403,10 +403,10 @@ class NeedsYouScreen(Screen):
     # ----- layout -----
 
     def compose(self):
-        yield Static("", id="needs-screen-title")
+        yield Static("", id="needs-screen-title", markup=False)
         yield Static("", id="needs-filter", markup=False)
         with Horizontal(id="needs-split"):
-            yield OptionList(id="needs-list")
+            yield OptionList(id="needs-list", markup=False)
             yield NeedsDetail(id="needs-detail")
         yield KeyBar()
 
@@ -513,18 +513,35 @@ class NeedsYouScreen(Screen):
         ol = self.query_one("#needs-list", OptionList)
         ol.action_cursor_down() if step > 0 else ol.action_cursor_up()
 
+    def on_key(self, event) -> None:
+        """A plugin item's declared keys that the screen doesn't bind itself (a, x, d, f, r go through
+        their bindings to `_plugin_action`)."""
+        if event.key in PLUGIN_BOUND_KEYS or len(event.key) != 1 or not event.key.isprintable():
+            return
+        item = self.selected()
+        if _plugin_for(item) is None or event.key in plugin_api.RESERVED_KEYS:
+            return
+        event.stop()
+        event.prevent_default()
+        self._plugin_action(item, event.key)
+
     def _plugin_action(self, item, key: str) -> bool:
-        if item is None or item.kind in RENDERERS:
-            return False
+        """For a plugin's item: confirm, then run, a declared action; anything else says so. Returns True
+        when the item is a plugin's (so the core action doesn't also run)."""
         plugin = _plugin_for(item)
-        if plugin is not None and hasattr(plugin, "run_action"):
-            try:
-                note = plugin.run_action(self.project_dir, item, key)
-            except Exception as e:
-                note = f"The plugin's action failed: {e}"
-            if note:
-                self.notify(str(note))
+        if plugin is None:
+            return False
+        labels = dict(plugin_api.actions_for(plugin, item))
+        if key not in labels:
+            self.notify("No such action for this kind.", markup=False)
+            return True
+        name = plugin_api.plugin_name(plugin)
+
+        def run() -> None:
+            self.notify(plugin_api.run_action(plugin, self.project_dir, item, key), markup=False)
             self._after_write()
+
+        self._confirm(f"{name}: run '{labels[key]}' ({key}) on {item.key}?", item.title, run)
         return True
 
     def _after_write(self) -> None:
@@ -538,7 +555,7 @@ class NeedsYouScreen(Screen):
         self.refresh_state(type("S", (), {"needs": st.needs_you(self.project_dir)})())
 
     def _write(self, fn, item) -> None:
-        self.notify(fn(self.project_dir, item))
+        self.notify(fn(self.project_dir, item), markup=False)
         self._after_write()
 
     def action_apply(self) -> None:
@@ -557,7 +574,7 @@ class NeedsYouScreen(Screen):
         elif item.kind == "RF":
             self._write(apply_reflection, item)
         else:
-            self.notify(self._no_write(item))
+            self.notify(self._no_write(item), markup=False)
 
     def action_drop(self) -> None:
         item = self.selected()
@@ -569,14 +586,14 @@ class NeedsYouScreen(Screen):
             what = "gameplan" if item.kind == "GP" else "reflection"
             self._confirm(f"Drop {what} proposal {pid}?", item.title, lambda: self._write(fn, item))
         else:
-            self.notify(self._no_write(item))
+            self.notify(self._no_write(item), markup=False)
 
     def action_d(self) -> None:
         item = self.selected()
         if item is not None and item.kind == "PR":
             self.full = not self.full
             self._show_detail()
-        elif item is not None and item.kind not in RENDERERS:
+        elif _plugin_for(item) is not None:
             self._plugin_action(item, "d")
         else:
             self.action_drop()
@@ -586,12 +603,12 @@ class NeedsYouScreen(Screen):
         if self._plugin_action(item, "f") or item is None:
             return
         if item.kind != "BD":
-            self.notify("Only board threads can be followed.")
+            self.notify("Only board threads can be followed.", markup=False)
             return
         try:
-            self.notify(toggle_follow(self.project_dir, item.key))
+            self.notify(toggle_follow(self.project_dir, item.key), markup=False)
         except Exception as e:
-            self.notify(f"Couldn't change following: {e}")
+            self.notify(f"Couldn't change following: {e}", markup=False)
         self._after_write()
 
     def action_read(self) -> None:

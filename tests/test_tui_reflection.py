@@ -157,7 +157,10 @@ async def test_user_model_edit_stable_forget_delete(refl):
         assert m.find(m.load("user"), b["id"])
         await pilot.press("x")
         await pilot.pause()
-        await pilot.press("enter")
+        await pilot.press("enter")  # enter never confirms a destructive write
+        await pilot.pause()
+        assert isinstance(app.screen, ConfirmModal) and m.find(m.load("user"), b["id"])
+        await pilot.press("y")
         await pilot.pause()
         data = m.load("user")
         assert m.find(data, b["id"]) is None and m.is_tombstoned(data, entry_id=b["id"])
@@ -167,7 +170,7 @@ async def test_user_model_edit_stable_forget_delete(refl):
         await pilot.press("f")
         await pilot.pause()
         assert isinstance(app.screen, ConfirmModal)
-        await pilot.press("enter")
+        await pilot.press("y")
         await pilot.pause()
         assert m.find(m.load("user"), c["id"]) is None
         # reflection.forget defaults to purge: only the forget record itself is left
@@ -189,7 +192,7 @@ async def test_aspirations_are_deleted_never_edited(refl):
         assert m.find(m.load("self"), asp["id"]) == asp
         await pilot.press("x")
         await pilot.pause()
-        await pilot.press("enter")
+        await pilot.press("y")  # the confirm: only y confirms
         await pilot.pause()
         assert m.find(m.load("self"), asp["id"]) is None
 
@@ -243,7 +246,7 @@ async def test_a_tui_edit_records_the_same_history_as_the_cli(refl, tmp_path, mo
         await pilot.press("S")
         await pilot.press("x")
         await pilot.pause()
-        await pilot.press("enter")
+        await pilot.press("y")  # the confirm: only y confirms
         await pilot.pause()
     tui_history = m.load_history()
 

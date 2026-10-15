@@ -87,10 +87,10 @@ class BoardScreen(Screen):
         self.problem = ""
 
     def compose(self):
-        yield Static("", id="board-title")
+        yield Static("", id="board-title", markup=False)
         yield Static("", id="board-views", markup=False)
         with Horizontal(id="board-split"):
-            yield OptionList(id="board-list")
+            yield OptionList(id="board-list", markup=False)
             with Vertical(id="board-thread"):
                 yield Static(BANNER, id="board-banner", markup=False)
                 yield Static("", id="board-head", markup=False)
@@ -224,9 +224,9 @@ class BoardScreen(Screen):
         t = row["thread"]
         try:
             board.set_follow(self.project_dir, t.id, self.me(), not row["following"])
-            self.notify(f"{'Stopped following' if row['following'] else 'Following'} {board.one_line(t.title, 60)}")
+            self.notify(f"{'Stopped following' if row['following'] else 'Following'} {board.one_line(t.title, 60)}", markup=False)
         except Exception as e:
-            self.notify(f"Couldn't change following: {e}")
+            self.notify(f"Couldn't change following: {e}", markup=False)
         self.reload()
 
     def action_send(self) -> None:

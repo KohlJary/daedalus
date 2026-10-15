@@ -18,8 +18,8 @@ class NeedsYou(Panel):
     """
 
     def compose(self):
-        yield Static("Needs you", classes="title", id="needs-title")
-        yield Static("", id="needs-body")
+        yield Static("Needs you", classes="title", id="needs-title", markup=False)
+        yield Static("", id="needs-body", markup=False)
 
     def refresh_state(self, state) -> None:
         items = state.needs

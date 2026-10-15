@@ -100,16 +100,16 @@ class EdictsScreen(Screen):
         self.dissents: list = []
 
     def compose(self):
-        yield Static("Edicts", id="edicts-title")
+        yield Static("Edicts", id="edicts-title", markup=False)
         yield Static("", id="edicts-tabs", markup=False)
         with Horizontal(id="edicts-main"):
-            yield OptionList(id="edict-list")
-            yield OptionList(id="dissent-list")
+            yield OptionList(id="edict-list", markup=False)
+            yield OptionList(id="dissent-list", markup=False)
             with Vertical(id="edict-detail-box"):
                 yield Static("", id="edict-head", markup=False)
                 with VerticalScroll(id="edict-scroll"):
                     yield Markdown("", id="edict-body")
-                yield Static("r read full · s send to Claude", id="edict-keys")
+                yield Static("r read full · s send to Claude", id="edict-keys", markup=False)
         yield KeyBar()
 
     def on_mount(self) -> None:

@@ -175,23 +175,23 @@ class GameplanScreen(Screen):
         self.focus_on = "phase"                 # what the plan detail shows: the phase or the task
 
     def compose(self):
-        yield Static("Gameplan", id="gp-title")
+        yield Static("Gameplan", id="gp-title", markup=False)
         yield Static("", id="gp-tabs", markup=False)
         with Horizontal(id="tab-plan", classes="gp-body"):
-            yield OptionList(id="phases")
-            yield OptionList(id="tasks")
+            yield OptionList(id="phases", markup=False)
+            yield OptionList(id="tasks", markup=False)
             with Vertical(id="plan-detail-box", classes="detail"):
                 with VerticalScroll(classes="detail-body"):
                     yield Static("", id="plan-detail", markup=False)
                 yield Static("s send to Claude · e edict", id="plan-keys", classes="detail-keys")
         with Horizontal(id="tab-workstreams", classes="gp-body"):
-            yield OptionList(id="workstream-list")
+            yield OptionList(id="workstream-list", markup=False)
             with Vertical(classes="detail"):
                 with VerticalScroll(classes="detail-body"):
                     yield Static("", id="workstream-detail", markup=False)
                 yield Static("enter show its plan · s send to Claude", classes="detail-keys")
         with Horizontal(id="tab-roadmap", classes="gp-body"):
-            yield OptionList(id="roadmap-list")
+            yield OptionList(id="roadmap-list", markup=False)
             with Vertical(classes="detail"):
                 with VerticalScroll(classes="detail-body"):
                     yield Static("", id="roadmap-detail", markup=False)
@@ -490,7 +490,7 @@ class GameplanScreen(Screen):
     def action_edict(self) -> None:
         number = self._selected_edict()
         if not number:
-            self.notify("Nothing selected cites an edict.")
+            self.notify("Nothing selected cites an edict.", markup=False)
             return
         from .edicts import EdictsScreen
 

@@ -17,11 +17,12 @@ from typing import Any, Callable, Optional
 
 from rich.text import Text
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.screen import ModalScreen, Screen
+from textual.screen import Screen
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
 from ..widgets import ExplainCard, KeyBar
+from ..widgets.confirm import ConfirmModal  # noqa: F401  (the shared one; tests import it from here)
 
 
 # ---------- the allowlist ----------
@@ -122,35 +123,6 @@ def run_fix(command: str, project_dir: Path) -> str:
     return out.getvalue()
 
 
-# ---------- the confirm modal ----------
-
-class ConfirmModal(ModalScreen):
-    """Asks before a write. Dismisses with True only on y or enter."""
-
-    BINDINGS = [("y", "yes", "yes"), ("enter", "yes", "yes"), ("n", "no", "no"), ("escape", "no", "no")]
-    DEFAULT_CSS = """
-    ConfirmModal { align: center middle; }
-    ConfirmModal > Vertical { width: 64; height: auto; border: round $warning; background: $surface; padding: 1 2; }
-    ConfirmModal #confirm-keys { color: $text-muted; }
-    """
-
-    def __init__(self, title: str, body: str):
-        super().__init__()
-        self.title_text, self.body = title, body
-
-    def compose(self):
-        with Vertical():
-            yield Static(Text(self.title_text, style="bold"))
-            yield Static(Text(self.body))
-            yield Static("\ny / enter run it · n / esc cancel", id="confirm-keys")
-
-    def action_yes(self) -> None:
-        self.dismiss(True)
-
-    def action_no(self) -> None:
-        self.dismiss(False)
-
-
 # ---------- the screen ----------
 
 class HealthScreen(Screen):
@@ -179,9 +151,9 @@ class HealthScreen(Screen):
         self.last_output: Optional[str] = None
 
     def compose(self):
-        yield Static("Health", id="health-title")
+        yield Static("Health", id="health-title", markup=False)
         with Horizontal(id="health-main"):
-            yield OptionList(id="findings")
+            yield OptionList(id="findings", markup=False)
             with Vertical(id="health-detail-box"):
                 with VerticalScroll(id="health-detail-scroll"):
                     yield Static("", id="health-detail", markup=False)
@@ -253,7 +225,7 @@ class HealthScreen(Screen):
     def action_fix(self) -> None:
         e = self.selected()
         if e is None or e.fix is None or e.fix not in RUNNABLE:
-            self.notify("Doctor names no command the TUI can run for this. Press s to hand it to Claude.")
+            self.notify("Doctor names no command the TUI can run for this. Press s to hand it to Claude.", markup=False)
             return
         command = e.fix
 
@@ -277,11 +249,11 @@ class HealthScreen(Screen):
             return
         if event.state == WorkerState.SUCCESS:
             self.last_output = event.worker.result or ""
-            self.notify(f"{event.worker.name[4:]} done. Rechecking.")
+            self.notify(f"{event.worker.name[4:]} done. Rechecking.", markup=False)
             self.action_recheck()
         elif event.state == WorkerState.ERROR:
             self.last_output = f"Failed: {event.worker.error}"
-            self.notify(self.last_output, severity="error")
+            self.notify(self.last_output, severity="error", markup=False)
             self._show(self.query_one("#findings", OptionList).highlighted)
 
     def action_recheck(self) -> None:
