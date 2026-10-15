@@ -94,6 +94,7 @@ DESCRIPTIONS = {
     "dream.waking_temperature": "Temperature for the waking pass, when a runner can set one.",
     "dream.review_min": "Dreams since the last review before a dream review is due.",
     "dream.recur_min": "Dreams, with different top seeds, a theme needs before it is elevated to the roadmap.",
+    "oph.components": "Components a ◆Name in docs/design may refer to (class names, or package directories to scan), for doctor's diagram lint.",
     # The TUI's own keys (edict 0012) register here so its config screen can edit them
     "tui.prs": "Where the TUI's NeedsYou finds PRs: 'local' (branches ahead of main) or 'gh' (the GitHub CLI).",
     "tui.escape": "The key chord that returns focus from the Claude pane to the dashboard.",

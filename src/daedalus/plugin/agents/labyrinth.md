@@ -27,7 +27,9 @@ In myth, Daedalus built the Labyrinth to contain the Minotaur. Here, the Labyrin
 For "who calls this", "what breaks if I change it", "how does A reach B" and "which tests should run",
 use the CLI first. It builds a call graph from source in well under a second and needs no palace:
 `daedalus palace callers|callees <symbol>`, `daedalus palace impact <symbol> --tests`,
-`daedalus palace path <a> <b>`, `daedalus palace tests-for --diff`. Use the palace below for what a
+`daedalus palace path <a> <b>`, `daedalus palace tests-for --diff`. To show what you find as a diagram rather
+than a list, write it as graph JSON and run `daedalus oph draw <file>` (the `ophanic` skill); for Daedalus's own
+state, `daedalus oph map edicts|plan|workstreams|intake`. Use the palace below for what a
 call graph can't hold: purpose, hazards, invariants, history.
 
 ## Palace Location
