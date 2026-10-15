@@ -44,6 +44,12 @@ def plan_graph(project_dir: Path, workstream: str | None = None) -> dict:
         data = gp.load_gameplan(project_dir, workstream)
     except gp.GameplanError:
         data = {}
+    return plan_graph_from(data)
+
+
+def plan_graph_from(data: dict) -> dict:
+    """The plan graph from an already loaded gameplan (the TUI's send form draws what its panel holds)."""
+    data = data if isinstance(data, dict) else {}
     active = data.get("activePhase") or {}
     nodes, edges = [], []
     for i, phase in enumerate(data.get("phases", [])):

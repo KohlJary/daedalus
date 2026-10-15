@@ -529,4 +529,14 @@ class GameplanScreen(Screen):
 
     def action_send(self) -> None:
         source, prompt = self.send_target()
-        self.app.ask_to_send(source, prompt)
+        self.app.ask_to_send(source, prompt, "gameplan", self.snapshot)
+
+    def snapshot(self) -> str:
+        """The open tab as an Ophanic snapshot (tui.send_form): the plan, the workstreams, or intake."""
+        from .. import sendform
+
+        if self.tab == "workstreams":
+            return sendform.map_snapshot("Gameplan (workstreams tab)", "workstreams", self.project_dir)
+        if self.tab == "roadmap":
+            return sendform.map_snapshot("Gameplan (roadmap tab)", "intake", self.project_dir)
+        return sendform.plan_snapshot(self.plan)

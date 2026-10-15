@@ -99,6 +99,7 @@ DESCRIPTIONS = {
     "tui.prs": "Where the TUI's NeedsYou finds PRs: 'local' (branches ahead of main) or 'gh' (the GitHub CLI).",
     "tui.escape": "The key chord that returns focus from the Claude pane to the dashboard.",
     "tui.backend": "How the Claude pane hosts its session: auto (tmux when installed, so it outlives the TUI), tmux, or pty (ends with the TUI).",
+    "tui.send_form": "What s sends Claude: prose (the prompt), ophanic (the prompt plus the panel as an Ophanic snapshot), or ab (drawn per send in code, logged to .daedalus/tui/sends.jsonl).",
 }
 
 ON_CONFLICT_CHOICES = ("propose", "source", "local")

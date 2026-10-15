@@ -259,5 +259,7 @@ class EdictsScreen(Screen):
         return ("Edicts", "Help me draft a first edict for this project, for me to review and accept.")
 
     def action_send(self) -> None:
+        from ..sendform import edicts_snapshot
+
         source, prompt = self.send_target()
-        self.app.ask_to_send(source, prompt)
+        self.app.ask_to_send(source, prompt, "edicts", lambda: edicts_snapshot(self.rows, self.project_dir))

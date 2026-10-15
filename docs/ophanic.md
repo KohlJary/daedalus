@@ -196,6 +196,9 @@ here are plain fences, not ```` ```oph ````, because they are the parser's failu
 Edict 0017 allows these to follow later without failing the rest; v1 doesn't have them:
 - **`oph map palace`**: the codebase's module groups and their cross-group calls, from the Mind Palace query graph.
 - **The send-form A/B** in the TUI (Gameplan panel sent to Claude as a diagram or as prose, assigned per send).
+  Now built on its own branch, for five panels: `tui.send_form` (`prose`, `ophanic`, `ab`), each send logged without
+  its content. See [Send form](design/tui/README.md#send-form) in the TUI's design README. Judging whether Claude did
+  better with the diagram, through reflection's digests, is still to come.
 - **`oph outline`**: reading a layout back into a box tree, for the frontend half.
 
 ## For Momus

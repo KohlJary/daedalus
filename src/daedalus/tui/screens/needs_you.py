@@ -628,7 +628,9 @@ class NeedsYouScreen(Screen):
         if item is None:
             return
         source, prompt = send_prompt(item, self.shell.state)
-        self.shell.ask_to_send(source, prompt)
+        from ..sendform import needs_snapshot
+
+        self.shell.ask_to_send(source, prompt, "needs", lambda: needs_snapshot(self.items))
 
     def _no_write(self, item) -> str:
         return {"PR": "Merging happens on GitHub, not here. s hands it to Claude.",

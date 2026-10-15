@@ -14,7 +14,7 @@ import importlib
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from textual.app import App
 from textual.containers import Vertical
@@ -297,14 +297,30 @@ class DaedalusShell(App, inherit_bindings=False):
         self.push_screen(ExplainCard(PANEL_CARDS.get(name, name)))
 
     def action_send(self, source: Optional[str] = None, prompt: Optional[str] = None) -> None:
+        panel = snapshot = None
         if source is None:
-            item = self.state.needs[0] if self.state.needs and self._focused_panel() == "needs" else None
+            focused = self._focused_panel()
+            item = self.state.needs[0] if self.state.needs and focused == "needs" else None
             source, prompt = send_prompt(item, self.state)
-        self.ask_to_send(source, prompt)
+            panel, snapshot = panel_snapshot(focused, self.state)
+        self.ask_to_send(source, prompt, panel, snapshot)
 
-    def ask_to_send(self, source: str, prompt: str) -> None:
+    def ask_to_send(self, source: str, prompt: str, panel: Optional[str] = None,
+                    snapshot: Optional[Callable[[], Optional[str]]] = None) -> None:
+        """Open Send to Claude. `panel` names the panel for the send log; `snapshot` draws its state for the
+        ophanic form (tui.send_form), and is only called when that form is chosen."""
+        from . import sendform
+
+        setting = self.settings.get("send_form", "prose")
+        sent = sendform.build(self.project_dir, setting, prompt, snapshot)
+
         def done(text: Optional[str]) -> None:
             if text:
+                try:
+                    sendform.record(self.project_dir, panel or "other", prompt, sent,
+                                    edited=text != sent["text"].rstrip("\n"))
+                except Exception:  # the log must never stop a send
+                    pass
                 while len(self.screen_stack) > 1:  # back to the shell from an expanded screen, to show Claude
                     self.pop_screen()
                 pane = self.query_one(ClaudePane)
@@ -315,10 +331,23 @@ class DaedalusShell(App, inherit_bindings=False):
                     self.pop_screen()
                 self.action_focus_claude()
         self.query_one(KeyBar).show_modal()
-        self.push_screen(SendToClaude(source, prompt), done)
+        self.push_screen(SendToClaude(source, sent["text"], sendform.setting_note(setting, sent)), done)
 
     def action_theme(self) -> None:
         self.theme = "textual-light" if self.theme != "textual-light" else "textual-dark"
+
+
+def panel_snapshot(panel: str, state: AppState) -> tuple[str, Optional[Callable[[], str]]]:
+    """(panel name for the send log, a function drawing its snapshot) for a home-screen panel."""
+    from . import sendform
+
+    if panel == "needs":
+        return "needs", lambda: sendform.needs_snapshot(state.needs)
+    if panel == "gameplan":
+        return "gameplan", lambda: sendform.plan_snapshot(state.gameplan)
+    if panel == "health":
+        return "health", lambda: sendform.health_snapshot(state.findings, state.hints)
+    return panel or "other", None
 
 
 def send_prompt(item: Any, state: AppState) -> tuple[str, str]:

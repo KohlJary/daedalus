@@ -164,3 +164,12 @@ A package that adds to the TUI: a kind of item in Needs you, Explain cards, or
 a screen in the plugin menu (`m`). It registers through the `daedalus.tui`
 entry point. Plugins can't change the home screen's layout or add writes.
 *Lives in* an installed package's `daedalus.tui` entry point. *CLI:* `pip show <package>`
+
+## Send form
+What `s` hands Claude. `prose` (the default) sends the prompt alone.
+`ophanic` adds the focused panel drawn as an Ophanic snapshot, which says how
+to read it and writes every count as a number. `ab` draws one of the two for
+each send, in code, so the person sending can't steer it. Each send is logged
+with its panel, form, a hash of the prompt, the snapshot's size and whether
+you edited it, never the content.
+*Lives in* `.daedalus/tui/sends.jsonl` (local). *CLI:* `daedalus tui sends`, `daedalus config tui.send_form ab`

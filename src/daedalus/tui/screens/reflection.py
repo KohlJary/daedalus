@@ -549,7 +549,7 @@ class ReflectionScreen(Screen):
         else:
             return
         if hasattr(self.app, "ask_to_send"):
-            self.app.ask_to_send(source, prompt)
+            self.app.ask_to_send(source, prompt, "reflection")
 
     # ----- writes (edict 0012's reflection amendment, through the reflect commands' functions) -----
 

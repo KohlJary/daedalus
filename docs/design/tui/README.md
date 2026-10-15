@@ -87,6 +87,32 @@ esc returns to the shell from any expanded screen.
     the same library as `daedalus config`. Credentials live in the system
     keyring and are never shown or written to a config file.
 
+## Send form
+
+What `s` hands Claude is set by `tui.send_form` (dream pick p2; the send-form A/B edict 0017 deferred):
+
+- `prose` (the default): the prompt the screen builds, byte for byte as before. Nothing changes unless you opt in.
+- `ophanic`: the same prompt, then the focused panel's state as an Ophanic snapshot in an ```` ```oph ```` fence.
+  Gameplan (each tab: plan, workstreams, roadmap), Needs you, Health, Edicts and Board have snapshots
+  (`src/daedalus/tui/sendform.py`); other screens send prose.
+- `ab`: each send draws one of the two in code, from a seed and a counter in `.daedalus/tui/send-ab.json`. The
+  counter moves only when a send is pasted, so cancelling and sending again can't re-roll the draw. Send to Claude
+  says which form it drew.
+
+Momus's perception pilot (PR #69) found that a small model misread containment and read proportions off box widths.
+So every snapshot opens with how to read it (a `·` line inside a box belongs to that box, and nothing else does),
+spells out its marks, says that sizes and positions mean nothing, and states its counts as numbers. Every snapshot
+passes `daedalus oph check` at 100 and 60 columns (tests/test_tui_send_form.py).
+
+Each pasted send appends one line to `.daedalus/tui/sends.jsonl` (local: the folder carries its own `.gitignore`):
+the time, the panel, the form, a hash of the prompt, the snapshot's size, the A/B draw, and whether you edited the
+text first. Never the content. `daedalus tui sends` counts sends per form and per panel.
+
+**Not built yet: judging it.** Whether Claude's next action was better after a diagram than after prose needs
+reflection's session digests: joining each send to the session that received it, and to what happened next. That is
+the next step (edict 0017's criterion that the draw is "recorded in the session's reflection digest"). Until then
+the log only says what was sent.
+
 ## Extensibility: sources and plugins
 
 The TUI will grow, and different users track work in different places: ADO

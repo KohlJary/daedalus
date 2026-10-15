@@ -1140,9 +1140,12 @@ def page_cmd(out):
     click.echo(f"Wrote {write(Path.cwd(), Path(out) if out else None)}")
 
 
-@main.command("tui")
-def tui_cmd():
+@main.group("tui", invoke_without_command=True)
+@click.pass_context
+def tui_cmd(ctx):
     """Open the Daedalus TUI: what needs you, the plan, health, and a Claude Code session (edict 0012)."""
+    if ctx.invoked_subcommand is not None:
+        return
     try:
         from ..tui.app import run  # Textual is imported only here: nothing else pays its import cost
     except ImportError as e:
@@ -1150,6 +1153,19 @@ def tui_cmd():
                    err=True)
         raise SystemExit(1)
     run(Path.cwd())
+
+
+@tui_cmd.command("sends")
+def tui_sends_cmd():
+    """Count what Send to Claude has sent, per form (tui.send_form: prose, ophanic, or the A/B draw).
+
+    Reads .daedalus/tui/sends.jsonl, which holds a time, panel, form, prompt hash, snapshot size, A/B draw and
+    whether the text was edited, per send; never the content.
+    """
+    from ..tui import sendform  # no Textual import: sendform is plain Python
+
+    for line in sendform.summary(sendform.load(Path.cwd())):
+        click.echo(line)
 
 
 from .reflect import reflect as _reflect  # noqa: E402
