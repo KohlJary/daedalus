@@ -446,7 +446,13 @@ def _python_call_sites(node) -> List[Tuple[str, str]]:
             sites.add(("", c.func.id))
         elif isinstance(c.func, ast.Attribute):
             value = c.func.value
-            qualifier = ("self" if value.id in ("self", "cls") else value.id) if isinstance(value, ast.Name) else "?"
+            if isinstance(value, ast.Name):
+                qualifier = "self" if value.id in ("self", "cls") else value.id
+            elif isinstance(value, ast.Attribute) and isinstance(value.value, ast.Name) and \
+                    value.value.id not in ("self", "cls"):
+                qualifier = f"{value.value.id}.{value.attr}"  # tasks.send.delay(): "tasks.send"
+            else:
+                qualifier = "?"
             sites.add((qualifier, c.func.attr))
     return sorted(sites)
 

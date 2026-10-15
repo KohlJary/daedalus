@@ -741,17 +741,29 @@ PUBLISH_METHODS = {"Send", "SendAsync", "Publish", "PublishAsync", "SendLocal", 
 JOB_METHODS = {"Enqueue", "Schedule", "AddOrUpdate", "ContinueJobWith", "Requeue"}
 
 
-def _cs_dispatch_facts(def_node, receiver_types: Dict[str, str]) -> Tuple[List[Tuple[str, str]], Dict[str, str]]:
-    """What a C# method publishes (Send(new ShipOrder(...)), Publish<OrderShipped>(...), Send(cmd) with cmd
-    typed) and which of its calls a job framework runs later (inside an Enqueue/Schedule lambda)."""
-    messages: List[Tuple[str, str]] = []
-    dispatch: Dict[str, str] = {}
+HANGFIRE_RECEIVERS = {"BackgroundJob", "RecurringJob", "IBackgroundJobClient", "BackgroundJobClient",
+                      "IRecurringJobManager", "RecurringJobManager"}
+
+
+def _cs_dispatch_facts(def_node, receiver_types: Dict[str, str]) -> Tuple[List[Tuple[str, str, str]], Dict[str, str]]:
+    """What a C# method publishes and which of its calls a job framework runs later.
+
+    messages: (method, message type, receiver) for Send(new ShipOrder(...)), Publish<OrderShipped>(...),
+    Send(cmd) with cmd typed; the receiver lets query.py rule out SmtpClient.Send and the like.
+    dispatch: call name -> label for calls made only inside a Hangfire Enqueue/Schedule lambda (on
+    BackgroundJob, RecurringJob or a typed IBackgroundJobClient); a name also called directly stays a
+    plain call."""
+    messages: List[Tuple[str, str, str]] = []
+    inside: Dict[str, str] = {}
+    lambda_calls: Set[int] = set()
     for inv in (n for n in _walk(def_node) if n.type == "invocation_expression"):
         fn = inv.child_by_field_name("function")
         method = _method_name(fn)
         args = inv.child_by_field_name("arguments")
         first = next((a.named_children[0] for a in args.named_children if a.type == "argument" and a.named_children), None) \
             if args is not None else None
+        receiver_node = fn.child_by_field_name("expression") if fn is not None and fn.type == "member_access_expression" else None
+        receiver = _receiver_name(receiver_node) or (_text(receiver_node) if receiver_node is not None else "")
         if method in PUBLISH_METHODS:
             type_name = None
             name_node = fn.child_by_field_name("name") if fn is not None and fn.type == "member_access_expression" else fn
@@ -765,13 +777,19 @@ def _cs_dispatch_facts(def_node, receiver_types: Dict[str, str]) -> Tuple[List[T
                 elif first.type == "identifier":
                     type_name = receiver_types.get(_text(first))
             if type_name:
-                messages.append((method, type_name))
-        if method in JOB_METHODS and args is not None:
+                messages.append((method, type_name, receiver))
+        hangfire = receiver.split(".")[-1] in HANGFIRE_RECEIVERS or \
+            receiver_types.get(receiver, "").split(".")[-1] in HANGFIRE_RECEIVERS
+        if method in JOB_METHODS and hangfire and args is not None:
             for lam in (n for n in _walk(args) if n.type == "lambda_expression"):
                 for call in (n for n in _walk(lam) if n.type == "invocation_expression"):
                     name = _method_name(call.child_by_field_name("function"))
                     if name:
-                        dispatch.setdefault(name, f"Hangfire {method}")
+                        inside.setdefault(name, f"Hangfire {method}")
+                        lambda_calls.add(call.id)
+    outside = {_method_name(n.child_by_field_name("function")) for n in _walk(def_node)
+               if n.type == "invocation_expression" and n.id not in lambda_calls}
+    dispatch = {name: label for name, label in inside.items() if name not in outside}
     return messages, dispatch
 
 

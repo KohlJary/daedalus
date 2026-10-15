@@ -168,14 +168,17 @@ def path(cwd: Path, source: str, target: str, depth: int, limit: int, as_json: b
         names = [graph.nodes[x].simple_name for x in p]
         arrows = [f" -[{graph.edge_labels[(a, b)]}]-> " if (a, b) in getattr(graph, "edge_labels", {}) else " -> "
                   for a, b in zip(p, p[1:])]
-        if len(names) <= 12:
-            chain = names[0] + "".join(arrow + name for arrow, name in zip(arrows, names[1:]))
-        else:
-            chain = " -> ".join(names[:5] + [f"... {len(names) - 10} more ..."] + names[-5:])
+        chain = names[0] + "".join(arrow + name for arrow, name in zip(arrows, names[1:]))
+        if len(names) > 12:  # elide the middle, keeping the labelled arrows at both ends
+            head = names[0] + "".join(arrow + name for arrow, name in zip(arrows[:4], names[1:5]))
+            tail = "".join(arrow + name for arrow, name in zip(arrows[-5:], names[-5:]))
+            chain = f"{head} ... {len(names) - 10} more ...{tail}"
         lines.append(f"  ({len(p) - 1} hops) " + chain)
     if not paths:
         lines.append(f"  none within {depth} hops. Note: {STATIC_NOTE}.")
-    _emit({"source": a, "target": b, "paths": paths}, as_json, lines)
+    via = {f"{x} -> {y}": graph.edge_labels[(x, y)] for p in paths for x, y in zip(p, p[1:])
+           if (x, y) in getattr(graph, "edge_labels", {})}
+    _emit({"source": a, "target": b, "paths": paths, "via": via}, as_json, lines)
 
 
 def tests_for(cwd: Path, target: str, diff: bool, base: str, depth: int, as_json: bool):

@@ -94,3 +94,76 @@ def test_dispatch_reaches_tests_upstream_of_the_queue(repo):
     languages._registry = None
     g = build_query_graph(repo).graph
     assert tests_reaching(g, resolve_symbol(g, "ShipOrderHandler.Pack")) == ["Tests.OrdersTests.cs.OrdersTests.Ships"]
+
+
+def _cs(tmp_path, files):
+    for rel, text in files.items():
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(text)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    languages._registry = None
+    return build_query_graph(tmp_path).graph
+
+
+def test_message_types_resolve_by_namespace_and_bus_receivers(tmp_path):
+    pytest.importorskip("tree_sitter_c_sharp")
+    g = _cs(tmp_path, {
+        "A.cs": "namespace A;\npublic record ShipOrder(int Id);\npublic class H : IRequestHandler<ShipOrder> { public Task Handle(ShipOrder r) => null; }\n"
+                "public class P(IMediator m) { public Task Go() => m.Send(new ShipOrder(1)); }\n",
+        "B.cs": "namespace B;\npublic record ShipOrder(int Id);\npublic class H2 : IRequestHandler<ShipOrder> { public Task Handle(ShipOrder r) => null; }\n",
+        "Mail.cs": "namespace A;\nusing System.Net.Mail;\npublic record MailMessage(string To);\n"
+                   "public class MailHandler : IRequestHandler<MailMessage> { public Task Handle(MailMessage m) => null; }\n"
+                   "public class Notifier(SmtpClient smtp) { public void Go() { smtp.Send(new MailMessage(\"x\")); } }\n",
+    })
+    assert g.nodes["A.cs.H.Handle"].called_by == ["A.cs.P.Go"]
+    assert g.nodes["B.cs.H2.Handle"].called_by == []  # B.ShipOrder isn't A.ShipOrder
+    assert "Mail.cs.MailHandler.Handle" not in g.nodes["Mail.cs.Notifier.Go"].calls  # SmtpClient isn't a bus
+
+
+def test_nullable_parameters_derived_handlers_and_direct_calls(tmp_path):
+    pytest.importorskip("tree_sitter_c_sharp")
+    g = _cs(tmp_path, {"S.cs": "namespace S;\npublic record Cmd(int X);\n"
+                                "public class BaseH : IRequestHandler<Cmd> { public virtual Task Handle(Cmd c) => null; }\n"
+                                "public class DerivedH : BaseH { public override Task Handle(Cmd c) => null; }\n"
+                                "public class P(IMediator m, BaseH h) {\n"
+                                "  public Task Go(Cmd? cmd) => m.Send(cmd);\n"
+                                "  public Task Both() { h.Handle(new Cmd(1)); return m.Send(new Cmd(2)); }\n}\n"})
+    assert {"S.cs.BaseH.Handle", "S.cs.DerivedH.Handle"} <= set(g.nodes["S.cs.P.Go"].calls)
+    assert g.edge_labels.get(("S.cs.P.Go", "S.cs.DerivedH.Handle"))
+    assert ("S.cs.P.Both", "S.cs.BaseH.Handle") not in g.edge_labels  # a direct call too: no dispatch label
+
+
+def test_hangfire_labels_only_hangfire_lambdas_and_only_lambda_calls(tmp_path):
+    pytest.importorskip("tree_sitter_c_sharp")
+    g = _cs(tmp_path, {"J.cs": "namespace J;\npublic class W { public void Run() {} public void Prep() {} }\n"
+                                "public class O { public void Run() {} }\n"
+                                "public class U(W w, O o, Scheduler sched) {\n"
+                                "  void A() { BackgroundJob.Enqueue(() => w.Run()); o.Run(); }\n"
+                                "  void B() { sched.Schedule(() => w.Prep()); }\n"
+                                "  void C() { BackgroundJob.Enqueue(() => w.Prep()); }\n}\n"})
+    assert ("J.cs.U.A", "J.cs.O.Run") not in g.edge_labels      # called directly, outside the lambda
+    assert ("J.cs.U.A", "J.cs.W.Run") not in g.edge_labels      # Run is also called directly in A
+    assert ("J.cs.U.B", "J.cs.W.Prep") not in g.edge_labels     # not Hangfire
+    assert g.edge_labels[("J.cs.U.C", "J.cs.W.Prep")] == "Hangfire Enqueue"
+
+
+def test_generic_arguments_of_outside_types_dont_decide(tmp_path):
+    pytest.importorskip("tree_sitter_c_sharp")
+    g = _cs(tmp_path, {"G.cs": "namespace G;\npublic class Helper { public string Describe3() => \"\"; }\n"
+                                "public class U { void M(System.Collections.Generic.List<int> l) { l.ConvertAll<System.Uri>(x => x.Describe3()); } }\n"})
+    assert "G.cs.Helper.Describe3" in g.nodes["G.cs.U.M"].calls  # Uri says nothing certain: the name rule
+
+
+def test_celery_module_attribute_form(tmp_path):
+    g = _cs(tmp_path, {"app/__init__.py": "", "app/tasks.py": "from celery import shared_task\n\n@shared_task\ndef send(c):\n    return c\n",
+                       "app/views.py": "from app import tasks\nimport app.tasks as t2\n\ndef go(c):\n    tasks.send.delay(c)\n\n"
+                                       "def go2(c):\n    t2.send.apply_async((c,))\n"})
+    assert g.edge_labels[("app.views.go", "app.tasks.send")] == "Celery delay"
+    assert g.edge_labels[("app.views.go2", "app.tasks.send")] == "Celery apply_async"
+
+
+def test_path_json_carries_labels(repo, monkeypatch):
+    from daedalus.cli.main import main
+    monkeypatch.chdir(repo)
+    data = json.loads(CliRunner().invoke(main, ["palace", "path", "OrdersController.Ship", "ShipOrderHandler.Pack", "--json"]).output)
+    assert data["via"] == {"Orders.cs.OrdersController.Ship -> Orders.cs.ShipOrderHandler.Handle": "Send ShipOrder -> IRequestHandler"}

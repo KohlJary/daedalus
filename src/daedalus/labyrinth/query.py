@@ -425,7 +425,12 @@ class ImportResolver:
         if qualifier.startswith(("lambda:", "mockobj:")):
             return self._resolve_cs_element(node, qualifier, call)
         if qualifier.startswith("lambdatype:"):  # Enqueue<IInvoiceMailer>(m => m.SendOverdue())
-            return self._resolve_cs_type(node, qualifier.split(":", 1)[1], call)
+            # A generic argument types the lambda only for certain when it's a project type: for ConvertAll<Uri>
+            # or AddSingleton<IExternal> it says nothing about what the lambda's parameter is
+            type_name = qualifier.split(":", 1)[1]
+            if not self._cs_types(node["file"], type_name):
+                return None
+            return self._resolve_cs_type(node, type_name, call)
         if qualifier in node.get("receiver_types", {}):  # a parameter, local, field or property
             return self._resolve_cs_receiver(node, qualifier, call)
         hits = {f"{t}.{call}" for t in self._cs_types(node["file"], qualifier) if f"{t}.{call}" in self.raw}
@@ -609,28 +614,62 @@ BUS_NAMES = {"Send": "Send", "SendAsync": "Send", "Publish": "Publish", "Publish
 CELERY_CALLS = {"delay", "apply_async", "s", "si", "signature", "apply"}
 
 
+# Receivers whose Send/Publish is a message bus (anything declared as an outside type not in this list, such
+# as SmtpClient or HttpClient, isn't one; an undeclared or project-typed receiver may be)
+BUS_RECEIVERS = {"IMediator", "ISender", "IPublisher", "Mediator", "IBus", "IBusControl", "IPublishEndpoint",
+                 "ISendEndpoint", "ISendEndpointProvider", "IRequestClient", "ConsumeContext", "IMessageSession",
+                 "IMessageHandlerContext", "IEndpointInstance", "IPipelineContext", "IMessageBus", "ICapPublisher",
+                 "IMessageBroker", "IEventBus", "ICommandBus", "IServiceBus"}
+
+
 def _dispatch_edges(raw: Dict[str, dict], resolved: Dict[str, Set[str]], resolver: "ImportResolver") -> Dict[Tuple[str, str], str]:
     """Edges across framework dispatch (issue #47), added to `resolved`; returns their labels.
 
     - Message buses (MediatR, MassTransit, NServiceBus, ...): a method that sends or publishes a ShipOrder
-      reaches the Handle/Consume of every class implementing a handler interface for ShipOrder.
-    - Hangfire: calls inside an Enqueue/Schedule lambda are already edges; they're labelled as dispatch.
-    - Celery: task.delay(...) / apply_async / .s() reaches the @task function.
+      reaches the Handle/Consume of every class implementing a handler interface for that ShipOrder (the
+      type each side sees through its namespace and usings), and the overrides in their subclasses.
+    - Hangfire: calls made only inside an Enqueue/Schedule lambda are labelled as dispatch.
+    - Celery: task.delay(...) / apply_async / .s() reaches the @task function, also as module.task.delay.
+    An edge that is also a direct call keeps no label: it's a call either way.
     """
+    direct = {node_id: set(targets) for node_id, targets in resolved.items()}
     labels: Dict[Tuple[str, str], str] = {}
-    handlers: Dict[str, List[Tuple[str, str]]] = {}  # message type -> [(handler method id, interface)]
+
+    def link(src: str, dst: str, label: str) -> None:
+        resolved[src].add(dst)
+        if dst not in direct.get(src, ()):
+            labels[(src, dst)] = label
+
+    def message_types(file: str, name: str) -> Set[str]:
+        """The project type a C# file means by `name` (by its namespace and usings), or by name elsewhere."""
+        if file.endswith(".cs"):
+            return set(resolver._cs_types(file, name))
+        return set(resolver.cs_by_name.get(name, ()))
+
+    handlers: Dict[str, List[Tuple[str, str]]] = {}  # message type node id -> [(handler method id, interface)]
     for node_id, node in raw.items():
         for entry in node.get("generic_bases", ()):
             interface, _, message = entry.partition(":")
-            for method in HANDLER_INTERFACES.get(interface, ()):
-                for candidate in (f"{node_id}.{method}", f"{node_id}.{method}Async"):
-                    if candidate in raw:
-                        handlers.setdefault(message, []).append((candidate, interface))
+            if interface not in HANDLER_INTERFACES:
+                continue
+            owners = [node_id] + [c for n in resolver._cs_walk({node["simple_name"]}, resolver.cs_children)
+                                  for c in resolver.cs_by_name.get(n, ())]
+            for message_id in message_types(node["file"], message):
+                for owner in owners:  # the handler and the overrides in its subclasses
+                    for method in HANDLER_INTERFACES[interface]:
+                        for candidate in (f"{owner}.{method}", f"{owner}.{method}Async"):
+                            if candidate in raw:
+                                handlers.setdefault(message_id, []).append((candidate, interface))
     for node_id, node in raw.items():
-        for method, message in node.get("messages", ()):
-            for handler, interface in handlers.get(message, ()):
-                resolved[node_id].add(handler)
-                labels[(node_id, handler)] = f"{BUS_NAMES.get(method, method)} {message} -> {interface}"
+        types = node.get("receiver_types", {})
+        for message_entry in node.get("messages", ()):
+            method, message, receiver = (tuple(message_entry) + ("",))[:3]
+            declared = types.get(receiver, "").split(".")[-1]
+            if declared and declared not in BUS_RECEIVERS and not resolver.cs_by_name.get(declared):
+                continue  # smtp.Send(new MailMessage()): an outside type that isn't a bus
+            for message_id in message_types(node["file"], message):
+                for handler, interface in handlers.get(message_id, ()):
+                    link(node_id, handler, f"{BUS_NAMES.get(method, method)} {message} -> {interface}")
         for name, label in node.get("dispatch_calls", {}).items():
             for target in resolved.get(node_id, ()):
                 if raw[target]["simple_name"] == name:
@@ -639,8 +678,7 @@ def _dispatch_edges(raw: Dict[str, dict], resolved: Dict[str, Set[str]], resolve
             for qualifier, call in node.get("call_sites", ()):
                 if call in CELERY_CALLS and qualifier not in ("", "?", "self"):
                     for task in _celery_tasks(node, qualifier, raw, resolver):
-                        resolved[node_id].add(task)
-                        labels[(node_id, task)] = f"Celery {call}"
+                        link(node_id, task, f"Celery {call}")
     return labels
 
 
@@ -651,9 +689,17 @@ def _celery_tasks(node: dict, qualifier: str, raw: Dict[str, dict], resolver: "I
     local = f"{node['module']}.{qualifier}"
     if local in raw:
         candidates.add(local)
-    binding = resolver.imports.get(node["file"], {}).get(qualifier)
-    if binding and binding[1] is not None:
+    imports = resolver.imports.get(node["file"], {})
+    head, _, rest = qualifier.partition(".")
+    binding = imports.get(qualifier if not rest else head)
+    if binding and not rest and binding[1] is not None:  # from tasks import send; send.delay()
         candidates |= resolver.symbol(binding[0], binding[1], qualifier, node["file"]) or set()
+    elif binding and rest and "." not in rest:  # import tasks; tasks.send.delay() / from app import tasks
+        if binding[1] is None:
+            modules = resolver.modules_for(binding[0], node["file"]) or []
+        else:
+            modules = list(resolver.symbol(binding[0], binding[1], head, node["file"]) or ())
+        candidates |= {f"{m}.{rest}" for m in modules}
     return sorted(c for c in candidates if c in raw and any(
         re.search(r"(^|\.)(shared_task|task)\b", d) for d in raw[c].get("decorators", ())))
 
