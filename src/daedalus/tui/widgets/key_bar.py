@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from textual.widgets import Static
 
-DASHBOARD = "1-5 panel · enter expand · s send to Claude · c focus Claude · e edicts · b board · , config · R reflection · S sources · m plugins · ? help · q quit"
+DASHBOARD = "1-5 panel · enter expand · s send to Claude · c focus Claude · e edicts · b board · , config · R reflection · S sources · D dream · m plugins · ? help · q quit"
 MODAL = "enter confirm · esc cancel"
 
 

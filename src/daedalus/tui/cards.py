@@ -75,5 +75,5 @@ PANEL_CARDS = {
     "ClaudePane": "Claude pane", "LastSession": "Story", "Header": "Gameplan", "Welcome": "Gameplan",
     "Edicts": "Edict", "Board": "Board", "Story": "Story", "Config": "Config", "Sources": "Source",
     "Reflection": "Reflection", "Workstreams": "Workstream", "Roadmap": "Roadmap",
-    "Experiment": "A/B experiment", "Plugins": "TUI plugin",
+    "Experiment": "A/B experiment", "Plugins": "TUI plugin", "Dream": "Dream",
 }
