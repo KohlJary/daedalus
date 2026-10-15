@@ -21,6 +21,8 @@ agents:
     description: Reflection over session logs - findings and proposals from session digests; aspirations, asked cold
   - name: docs
     description: Documentation and codebase exploration
+  - name: chorus
+    description: The audience, rehearsed - reads a piece as each of its audiences would, before it goes out; reports reception, not truth
   - name: icarus
     description: Parallel worker identity for distributed execution
   - name: labyrinth
