@@ -100,7 +100,9 @@ def check_evidence(evidence: Any) -> None:
 
 
 def normalise(text: str) -> str:
-    return re.sub(r"\W+", " ", (text or "").lower()).strip()
+    """Case, spacing and trailing punctuation don't make a different observation; symbols inside it do
+    (x != y is not x == y)."""
+    return re.sub(r"\s+", " ", (text or "").lower()).strip().rstrip(".!?,;:").strip()
 
 
 def _empty(model: str) -> dict:
@@ -313,6 +315,10 @@ def apply_change(model: str, change: dict, by: str, proposal_id: Optional[str] =
                     if mid not in entry.setdefault("model_ids", []):
                         entry["model_ids"].append(mid)
             elif op == "revise":
+                new_obs = change.get("changes", {}).get("observation")
+                twin = same_observation(data, new_obs, exclude_id=entry["id"]) if new_obs else None
+                if twin is not None:
+                    raise ModelError(f"{twin['id']} already says this; revise into it, or retire one of them")
                 for key in ("observation", "confidence", "label", "category", "scope"):
                     if key in change.get("changes", {}):
                         entry[key] = change["changes"][key]
