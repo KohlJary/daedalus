@@ -251,7 +251,9 @@ def wanted_hooks(session_start: bool, capture: bool, board: bool = False,
 
 def _on(value) -> bool:
     """A hooks.* switch: true, or a mode other than "off" (hooks.momus_gate is gate | nudge | off)."""
-    return value not in (False, None, 0, "", "off")
+    if isinstance(value, str):
+        return value.strip().lower() not in ("", "off", "false", "0", "no")
+    return value not in (False, None, 0)
 
 
 def _label(event: str, command: str, kit: bool = False) -> str:

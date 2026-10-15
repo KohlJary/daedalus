@@ -24,7 +24,7 @@ from ..shell import parse
 
 PR_URL = re.compile(r"github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)")
 SKIP_BODY = re.compile(r"^[ \t>*-]*momus:[ \t]*skip[ \t]+(\S[^\n]*)$", re.IGNORECASE | re.MULTILINE)
-PLACEHOLDER = re.compile(r"^<[^>]*>$|^\.\.\.$")
+PLACEHOLDER = re.compile(r"^<[^>]*>|^\.\.\.$")  # <reason>, <reason> in the PR body, ...
 COVERS = re.compile(r"^\s*\**Covers:?\**\s*`?([^\s`@]+)`?\s*@\s*`?([0-9a-f]{7,40})", re.IGNORECASE | re.MULTILINE)
 GH_TIMEOUT = 5
 MODES = ("gate", "nudge", "off")
@@ -71,6 +71,8 @@ def merges(command: str) -> list:
                 continue
             if a.startswith("--repo="):
                 repo = a.split("=", 1)[1]
+            elif a.startswith("-R") and len(a) > 2:  # -Ro/r and -R=o/r (pflag forms)
+                repo = a[2:].lstrip("=")
             elif a in ("-t", "--subject", "-b", "--body", "-F", "--body-file", "-A", "--author-email",
                        "--match-head-commit"):
                 i += 2
@@ -173,6 +175,10 @@ def pr_info(ctx: Ctx, target: str, repo: str = "") -> dict:
                 "skip": body_skip(data.get("body") or ""), "source": "gh"}
     rec = ctx.state.get("prs", {}).get(target) if target and not repo else None
     if rec and rec.get("branch") and rec.get("head"):
+        try:  # the branch may have moved since create: its current head locally, if it has one
+            rec = dict(rec, head=_git(ctx.project_dir, "rev-parse", f"refs/heads/{rec['branch']}"))
+        except (RuntimeError, OSError):
+            pass
         return {"number": target, **rec, "source": "session state (gh unavailable)"}
     raise err or RuntimeError(f"gh pr view {target or '(current branch)'} gave no head")
 

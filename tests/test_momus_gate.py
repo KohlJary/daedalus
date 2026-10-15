@@ -342,3 +342,63 @@ def test_trials_are_read_from_a_submodule_project(repo, tmp_path, monkeypatch):
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(repo))
     p = {"session_id": "s1", "cwd": str(tmp_path), "tool_name": "Bash", "tool_input": {"command": "gh pr merge 7"}}
     assert dispatch("PreToolUse", p, GATE) == ""
+
+
+# ---------- Momus's final pass (trial 2026-10-15-momus-gate.md, 2nd section) ----------
+
+
+def test_g1_pflag_repo_forms_reach_gh(repo, tmp_path, monkeypatch):
+    log = tmp_path / "gh-args.txt"
+    bindir = tmp_path / "bin"
+    gh = bindir / "gh"
+    gh.write_text(f"#!{sys.executable}\nimport sys, json\nopen({str(log)!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
+                  "print(json.dumps({'number': 12, 'headRefName': 'feat/x', 'headRefOid': 'f' * 40, "
+                  "'files': [{'path': 'a.py'}], 'body': ''}))\n")
+    for command in ("gh pr merge -Ro/r 12", "gh pr merge -R=o/r 12", "gh pr merge --repo o/r 12",
+                    "gh pr merge https://github.com/o/r/pull/12"):
+        call(repo, "PreToolUse", command)
+    assert [line.split(" --json")[0] for line in log.read_text().splitlines()] == ["pr view 12 -R o/r"] * 4
+
+
+def test_g2_with_gh_down_the_branch_head_is_read_locally(repo):
+    create(repo)
+    trial(repo, "feat/x", git(repo, "rev-parse", "HEAD"))
+    commit(repo, "b.py", "z = 1\n")
+    out = call(repo, "PreToolUse", "gh pr merge 7")
+    assert out["permissionDecision"] == "deny" and "session state" in out["permissionDecisionReason"]
+
+
+def test_g3_a_placeholder_with_trailing_text_is_no_reason(repo, tmp_path, monkeypatch):
+    gh_says(tmp_path, monkeypatch, repo, body="- momus: skip <reason> in the PR body")
+    assert call(repo, "PreToolUse", "gh pr merge 7")["permissionDecision"] == "deny"
+
+
+def test_passes_are_counted(repo, tmp_path, monkeypatch):
+    gh_says(tmp_path, monkeypatch, repo, files=["docs/a.md"])
+    call(repo, "PreToolUse", "gh pr merge 7")
+    trial(repo, "feat/x", git(repo, "rev-parse", "HEAD"))
+    gh_says(tmp_path, monkeypatch, repo)
+    call(repo, "PreToolUse", "gh pr merge 7")
+    assert kit_state.load("s1")["gate"] == {"blocks": 0, "passes": 2, "skips": 0, "allowed_by_error": 0}
+
+
+def test_a_body_skip_at_create_suppresses_the_nudge(repo):
+    assert create(repo, 50, body="momus: skip reverting a typo") == {}
+    assert kit_state.load("s1")["prs"]["50"]["skip"] == "reverting a typo"
+
+
+def test_the_nearest_trial_sets_the_count(repo, tmp_path, monkeypatch):
+    first = git(repo, "rev-parse", "HEAD")
+    commit(repo, "b.py", "1\n")
+    second = commit(repo, "c.py", "2\n")
+    commit(repo, "d.py", "3\n")
+    trial(repo, "feat/x", first, name="a.md")
+    trial(repo, "feat/x", second, name="b.md")
+    gh_says(tmp_path, monkeypatch, repo)
+    assert "1 commit since the trial" in call(repo, "PreToolUse", "gh pr merge 7")["permissionDecisionReason"]
+
+
+def test_a_detached_head_records_nothing(repo):
+    git(repo, "checkout", "-q", "--detach")
+    assert create(repo, 51) == {}
+    assert "51" not in kit_state.load("s1").get("prs", {})
