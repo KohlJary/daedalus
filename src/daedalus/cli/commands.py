@@ -795,6 +795,11 @@ def apply_pending(project_dir: Path, which: str):
 
     failures: list = []
     applied = _gameplan_run(project_dir, lambda d: gp.apply_pending(project_dir, d, which, failures=failures))
+    if applied:
+        from .. import undo
+
+        undo.seal(project_dir)
+        click.echo("(Undo within a day with `daedalus gameplan pending undo`, while nothing else has changed.)")
     for p in applied or []:
         click.echo(f"Applied {p['id']}: {gp.describe_proposal(p)}")
     for p, error in failures:

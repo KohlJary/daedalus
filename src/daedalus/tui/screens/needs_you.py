@@ -272,6 +272,9 @@ def apply_gameplan(project_dir: Path, item) -> str:
         failures: list = []
         applied = gp.apply_pending(project_dir, data, pid, failures=failures)
         gp.save_gameplan(project_dir, data, wid)
+        from ...undo import seal
+
+        seal(project_dir)
         if failures:
             return f"Not applied {pid} (still pending): {failures[0][1]}"
         return f"Applied {pid}: " + ", ".join(gp.describe_proposal(p) for p in applied)

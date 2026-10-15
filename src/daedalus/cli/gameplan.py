@@ -443,6 +443,9 @@ def apply_pending(project_dir: Path, data: dict[str, Any], which: str,
     chosen = _select(proposals, which)
     for p in chosen:
         proposal_kind(p)  # raises on an unknown kind, before anything is applied
+    from .. import undo
+
+    undo.begin(project_dir, None, chosen)  # the before state, so the apply can be undone (sealed after the save)
     applied: list[dict[str, Any]] = []
     from ..sources import sync as source_sync
 
