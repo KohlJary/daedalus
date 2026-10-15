@@ -137,6 +137,7 @@ class TuiConfig:
     """The Daedalus TUI (edict 0012)."""
     prs: str = "local"       # local: branches ahead of main; gh: the GitHub CLI
     escape: str = "ctrl+]"   # returns focus from the Claude pane to the dashboard
+    backend: str = "auto"    # how the Claude pane hosts its session: auto (tmux if installed) | tmux | pty
 
 
 # Allowed values for string settings (the registry in config_schema.py reads these)
@@ -144,6 +145,7 @@ SETTING_CHOICES = {
     "git.authorship": ("daedalus", "user"),
     "ariadne.autonomy": ("supervised", "hybrid", "full"),
     "tui.prs": ("local", "gh"),
+    "tui.backend": ("auto", "tmux", "pty"),
     "reflection.runner": ("inhale", "local", "headless"),
     "reflection.model_summary": ("off", "on", "ab"),
     "reflection.forget": ("purge", "retain"),

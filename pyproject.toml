@@ -42,16 +42,21 @@ dependencies = [
     "tree-sitter-ruby>=0.23",
     # Source credentials live in the system keyring, never in config (edict 0011); imported only when used
     "keyring>=24",
+    # The TUI (edict 0012): a core dependency so `pip install daedalus-cli` is enough, imported only by `daedalus tui`
+    "textual>=0.80",
+    "pyte>=0.8",
 ]
 
 [project.optional-dependencies]
 sdk = ["claude-agent-sdk>=0.1.0"]
 # The bundled grammars are core dependencies; kept so `daedalus-cli[palace]` still installs
 palace = []
+# Textual moved into core (edict 0012 amendment 3); kept so `daedalus-cli[tui]` still installs
+tui = []
 # More languages (Kotlin, PHP, Scala, Lua) through tree-sitter-language-pack. It downloads a grammar the
 # first time that language is analyzed, so those languages need network access once.
 palace-all = ["tree-sitter-language-pack>=1.0"]
-dev = ["pytest>=7.0", "pytest-cov>=4.0"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-asyncio>=0.23"]
 
 [project.scripts]
 daedalus = "daedalus.cli:main"
@@ -82,6 +87,7 @@ daedalus = [
     "identity/data/*.json",
     "plugin/**/*",
     "labyrinth/queries/*.scm",
+    "tui/data/*.md",
 ]
 
 [tool.pytest.ini_options]

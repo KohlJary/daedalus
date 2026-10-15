@@ -1065,6 +1065,18 @@ def gameplan_pending_drop(proposal_id: str):
     drop_pending(Path.cwd(), proposal_id)
 
 
+@main.command("tui")
+def tui_cmd():
+    """Open the Daedalus TUI: what needs you, the plan, health, and a Claude Code session (edict 0012)."""
+    try:
+        from ..tui.app import run  # Textual is imported only here: nothing else pays its import cost
+    except ImportError as e:
+        click.echo(f"The TUI needs Textual and pyte ({e}). Reinstall daedalus-cli: they are core dependencies.",
+                   err=True)
+        raise SystemExit(1)
+    run(Path.cwd())
+
+
 from .reflect import reflect as _reflect  # noqa: E402
 from .source import source as _source  # noqa: E402
 

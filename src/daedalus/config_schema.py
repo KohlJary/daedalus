@@ -88,6 +88,7 @@ DESCRIPTIONS = {
     # The TUI's own keys (edict 0012) register here so its config screen can edit them
     "tui.prs": "Where the TUI's NeedsYou finds PRs: 'local' (branches ahead of main) or 'gh' (the GitHub CLI).",
     "tui.escape": "The key chord that returns focus from the Claude pane to the dashboard.",
+    "tui.backend": "How the Claude pane hosts its session: auto (tmux when installed, so it outlives the TUI), tmux, or pty (ends with the TUI).",
 }
 
 ON_CONFLICT_CHOICES = ("propose", "source", "local")

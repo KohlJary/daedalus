@@ -71,7 +71,7 @@ The narrative half of memory: what happened, why, and what to watch out for.
 reference: session summaries, decisions, lessons, warnings and the project
 map. It's what a fresh Claude context reads first with `/inhale`, and what it
 writes with `/exhale`.
-*Lives in* `docs/status.md` and `.daedalus/*.md`.
+*Lives in* `docs/status.md` and `.daedalus/*.md`. *CLI:* `daedalus hook session-start` (the brief), or read `docs/status.md`
 
 ## Momus
 The critic. Before a claim is believed or published ("this works", "X%
@@ -100,8 +100,9 @@ refactors it.
 A live Claude Code session running as Daedalus, the builder. Anything the TUI
 only shows, you can hand to Claude with `s`, which pastes a prompt you can edit
 before you press enter.
+*Lives in* a tmux session named `daedalus-<project>` on the `daedalus` socket (or a plain PTY that ends with the TUI). *CLI:* `tmux -L daedalus attach -t daedalus-<project>`
 
-## Reflection (incoming, PR #39)
+## Reflection
 Daedalus reading its own Claude Code session logs to learn from them. It
 counts what happened, writes periodic reports with checked citations, and
 turns what it learns into proposals that you apply. None of it leaves this
@@ -143,3 +144,9 @@ purpose: reflection then runs only inside your own session, never as a
 separate model call.
 *Config:* `machine.employer`
 
+## Config
+Every setting Daedalus reads, each with a description, a default and the
+values it takes. A setting can be set for you (globally) or for one project;
+the project's value wins. Tokens are never settings: they live in the system
+keyring and are never shown.
+*Lives in* `~/.config/daedalus/config.json` (yours) and `.daedalus/config.json` (this project's, not committed). *CLI:* `daedalus config --schema`, `daedalus config <key> <value>`
