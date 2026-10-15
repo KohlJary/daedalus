@@ -77,7 +77,13 @@ def watched_files(project_dir: Path) -> list[Path]:
         except OSError:
             continue
     files += [d / "reflection" / "pending.json", d / "reflection" / "due.json", d / "sources" / "state.json",
-              d / "dreams" / "due.json", root / "docs" / "status.md"]
+              d / "dreams" / "due.json", d / "dreams" / "log.jsonl", d / "dreams" / "themes.json",
+              d / "reflection" / "experiment-log.jsonl", root / "docs" / "status.md"]
+    try:  # each dream's own files (meta, parts) feed the Dream screen
+        if (d / "dreams").is_dir():
+            files += [p for sub in (d / "dreams").iterdir() if sub.is_dir() for p in sub.iterdir() if p.is_file()]
+    except OSError:
+        pass
     gitdir = root / ".git"
     common = gitdir
     if gitdir.is_file():  # a worktree: .git points at its git dir; refs live in the common dir

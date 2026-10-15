@@ -1,5 +1,7 @@
 """The Dream screen (edict 0012 on edict 0013, docs/design/tui/dream.oph): read-only, opened with `D`."""
 
+import json
+import os
 import re
 from datetime import date
 
@@ -155,19 +157,21 @@ async def test_dream_screen_tabs_label_and_no_mode(dreamt):
         assert screen.query_one(SpeculativeLabel).display
         texts.append(seen)
 
-        # Nothing on the dream tabs says which mode made a dream
-        for text in texts:
-            assert not re.search(r"\b(narrative|plain|mode)\b", text, re.I), text
-
-        # Due: computed, not written; review state and the experiment lines
+        # Due: computed, not written; review state and the experiment's totals only
         due_file = store.due_path(p)
         before = due_file.read_text() if due_file.exists() else None
         await pilot.press("4")
         await pilot.pause()
         seen = _text(screen)
         assert "A dream is due" in seen and "Dream review: not due (0 of 4" in seen
-        assert "Dreams per mode" in seen and "untested" in seen
+        assert "Dreams: 2 · picks: 6 · synced 0 · applied 0 · built 1" in seen
+        assert "`daedalus dream log`" in seen and "Forced" not in seen
         assert (due_file.read_text() if due_file.exists() else None) == before
+        texts.append(seen)
+
+        # Nothing on any tab, Due included, says or counts which mode made a dream
+        for text in texts:
+            assert not re.search(r"\b(narrative|plain|modes?)\b", text, re.I), text  # catches "per-mode" too
 
         # s: a due dream comes first
         await pilot.press("s")
@@ -176,6 +180,9 @@ async def test_dream_screen_tabs_label_and_no_mode(dreamt):
         await pilot.press("escape")
         await pilot.pause()
 
+        from daedalus.tui.cards import PANEL_CARDS
+
+        assert PANEL_CARDS["Dream"] == "Dream"
         await pilot.press("question_mark")
         await pilot.pause()
         assert isinstance(app.screen, ExplainCard)
@@ -252,3 +259,118 @@ async def test_dream_text_is_never_markup(dreaming, monkeypatch):
         await pilot.press("3")
         await pilot.pause()
         assert "[/oops]" in _text(screen)
+
+
+async def test_s_on_a_selected_pick_or_theme_is_about_that_row_even_when_a_dream_is_due(dreamt):
+    p, old, new = dreamt
+    app = make_app(p)
+    async with app.run_test(size=(140, 40)) as pilot:
+        screen = await open_dream(app, pilot)
+        assert screen.due.get("due")
+        # Dreams: a due dream still comes first
+        assert screen.send_prompt() == ("Dream due", "A dream is due. Run /dream.")
+        await pilot.press("2")
+        await pilot.pause()
+        assert screen.picks[0].id == f"{new}.p1"
+        title, prompt = screen.send_prompt()
+        assert title == f"Pick {new}.p1" and "built" in prompt
+        # an unsynced pick: its sync, not the due dream
+        while screen.picks[screen._index()].status != "not synced yet":
+            await pilot.press("down")
+            await pilot.pause()
+        assert "`daedalus source sync dream`" in screen.send_prompt()[1]
+        await pilot.press("3")
+        await pilot.pause()
+        title, prompt = screen.send_prompt()
+        assert title == "Theme t1" and "came back in 2 dreams" in prompt
+        await pilot.press("4")
+        await pilot.pause()
+        assert screen.send_prompt() == ("Dream due", "A dream is due. Run /dream.")
+
+
+def _themes_file(p):
+    return review.themes_path(p)
+
+
+def _edit_themes(p, change):
+    path = _themes_file(p)
+    data = json.loads(path.read_text())
+    change(data)
+    path.write_text(json.dumps(data))
+
+
+def _each_theme(key, value):
+    def change(data):
+        for t in data["themes"].values():
+            t[key] = value
+    return change
+
+
+MALFORMED = {
+    "waking.md not UTF-8": lambda p, new: (store.dream_dir(p, new) / "waking.md").write_bytes(b"## Picks\n\n1. \xff\xfe bad\n"),
+    "dream.md not UTF-8": lambda p, new: (store.dream_dir(p, new) / "dream.md").write_bytes(b"\xff\xfe"),
+    "themes a list": lambda p, new: _edit_themes(p, lambda d: d.update(themes=[])),
+    "themes a list of non-dicts": lambda p, new: _edit_themes(p, lambda d: d.update(themes=["x", 1])),
+    "registry not a dict": lambda p, new: _themes_file(p).write_text("[1, 2]"),
+    "dreams not a number": lambda p, new: _edit_themes(p, _each_theme("dreams", "many")),
+    "seed sets not a number": lambda p, new: _edit_themes(p, _each_theme("distinct_top_seeds", [1])),
+    "ideas not a list": lambda p, new: _edit_themes(p, _each_theme("ideas", 5)),
+}
+
+
+@pytest.mark.parametrize("case", sorted(MALFORMED))
+async def test_a_malformed_store_never_takes_the_screen_down(dreamt, case):
+    p, old, new = dreamt
+    MALFORMED[case](p, new)
+    app = make_app(p)
+    async with app.run_test(size=(140, 40)) as pilot:
+        screen = await open_dream(app, pilot)
+        for key in ("1", "down", "up", "2", "down", "3", "s", "escape", "4", "1"):
+            await pilot.press(key)
+            await pilot.pause()
+        assert app.screen is screen and screen.tab == "dreams"
+        assert screen.query_one("#dream-tabs").display
+
+
+def _snapshot(root):
+    out = {}
+    for folder, dirs, names in os.walk(root):
+        if ".git" in folder.split(os.sep):
+            continue
+        for d in dirs:
+            out[os.path.join(folder, d) + "/"] = None
+        for name in names:
+            path = os.path.join(folder, name)
+            with open(path, "rb") as fh:
+                out[path] = (os.stat(path).st_mtime_ns, fh.read())
+    return out
+
+
+async def test_using_the_screen_changes_nothing_on_disk(dreamt):
+    p, old, new = dreamt
+    app = make_app(p)
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+        app.reload()  # the shell's own first-load writes (board/, .gitignore) happen before the snapshot
+        await pilot.pause()
+        before = _snapshot(p)
+        await open_dream(app, pilot)
+        for key in ("1", "down", "s", "escape", "2", "down", "s", "escape", "3", "s", "escape", "4", "s",
+                    "escape", "question_mark", "escape", "left", "right", "h", "l"):
+            await pilot.press(key)
+            await pilot.pause()
+        app.reload()
+        await pilot.pause()
+        after = _snapshot(p)
+    changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+    assert changed == []
+
+
+async def test_the_shell_watches_what_the_dream_screen_reads(dreamt):
+    from daedalus.reflection import explog
+    from daedalus.tui.app import watched_files
+
+    p, old, new = dreamt
+    files = set(watched_files(p))
+    assert store.log_path(p) in files and review.themes_path(p) in files and explog.log_path(p) in files
+    assert store.dream_dir(p, new) / "meta.json" in files and store.dream_dir(p, old) / "waking.md" in files

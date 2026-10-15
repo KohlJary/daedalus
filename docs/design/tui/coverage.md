@@ -42,17 +42,20 @@ experiment), Dream (`D`: dreams, picks, themes, due), and the plugin menu (`m`).
 | config | config | | | | |
 | source | list, status | | sync | | login |
 | reflect | due, digest, runner, log export, pending apply, pending drop, model history, model edit, model delete, model forget, model stable | arm | bundle, check, render, done, pending import, model aspire, log correct | | tick, inhale |
-| dream | show, due, log | review show | start, prompt, turn, write, done, bundle, keep, review bundle, review record | seeds | |
+| dream | show, due | log, review show | start, prompt, turn, write, done, bundle, keep, review bundle, review record | seeds | |
 | digest (Wonderland runs) | | | | digest | |
 | init, hook, tui | | | | | init, hook board/capture/session-start, tui |
 | **Total** | **33** | **4** | **40** | **6** | **9** |
 
 Notes on the marks:
 - `dream` (edict 0013, merged after the TUI was designed): the steps /dream drives are → (Claude runs them).
-  The Dream screen (`D`, `dream.oph`) shows `show` (Dreams), `due` (Due, computed without writing
-  due.json) and `log` (Due: the experiment lines) as ●. `review show` is ◐: the Themes tab lists the
-  review's theme registry, not the rendered review. A dream's seeds are still only the CLI's (○). The
-  screen never names a dream's mode, and syncing picks (`source sync dream`) is handed to Claude.
+  The Dream screen (`D`, `dream.oph`) shows `show` (Dreams) and `due` (Due, computed without writing
+  due.json) as ●. `log` is ◐: the Due tab shows the experiment's totals across every dream and points
+  to `daedalus dream log` for the per-mode breakdown. `review show` is ◐: the Themes tab lists the
+  review's theme registry, not the rendered review. A dream's seeds are still only the CLI's (○). No
+  tab, Due included, names or counts a dream's mode: a per-mode figure that moves as picks are applied
+  or built would let a reader attribute a dream's mode. Syncing picks (`source sync dream`) is handed
+  to Claude.
 - `init` stays –: it's setup, though Health can run it as an allowlisted fix.
 - `source sync` is →: `sources.oph` draws `r sync now`, but syncing isn't one
   of edict 0012's v1 writes, so the Sources screen hands it to Claude.
@@ -86,9 +89,9 @@ Notes on the marks:
 
 | | ● | ◐ | ○ | Direct coverage (● / ●+◐) |
 |---|---|---|---|---|
-| CLI (43 in scope) | 33 | 4 | 6 | 77% / 86% |
+| CLI (43 in scope) | 32 | 5 | 6 | 74% / 86% |
 | Beyond CLI (11 in scope) | 5 | 2 | 4 | 45% / 64% |
-| **All (54 in scope)** | **38** | **6** | **10** | **70% / 81%** |
+| **All (54 in scope)** | **37** | **7** | **10** | **69% / 81%** |
 
 ## Legibility
 
@@ -128,7 +131,7 @@ how many concepts have an Explain card in `glossary.md`.
 | 2026-10-14 | 48 | 46 (incl. #38, #39) | 67% / 83% | 21 | Reflection screen; RF and AR kinds in NeedsYou |
 | 2026-10-15 | 48 | 49 | 71% / 82% | 25 | What edict 0012 v1 ships (not just designs): reflection and source commands counted, AR kind not built, plugin menu, A/B experiment and TUI plugin cards |
 | 2026-10-15 | 48 | 54 | 65% / 74% | 25 | Edict 0013 (dreaming) merged before the TUI: 14 `dream` commands, 9 driven through Claude (→), 5 not visible (○): no Dream screen in v1 |
-| 2026-10-15 | 54 | 54 | 70% / 81% | 26 | Dream screen (`dream.oph`, `D`): dreams, picks with their roadmap status, themes, due; `dream show`, `due`, `log` ●, `review show` ◐; Dream card |
+| 2026-10-15 | 54 | 54 | 69% / 81% | 26 | Dream screen (`dream.oph`, `D`): dreams, picks with their roadmap status, themes, due; `dream show`, `due` ●, `log` and `review show` ◐ (Due shows totals only, no per-mode lines); Dream card |
 
 ## Refreshing the CLI inventory
 

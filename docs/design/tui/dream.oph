@@ -91,19 +91,19 @@ recurring only when it came back from different material.
 │ Waiting: the dream from 2026-10-15-2 has picks not synced yet.                                   │
 │ Dream review: not due (2 of 4 dreams since the last review).                                     │
 │                                                                                                  │
-│ Experiment (daedalus dream log)                                                                  │
-│ Dreams per mode (picks: synced / applied / dropped / built):                                     │
-│   …                                                                                              │
-│ Baseline: non-dream roadmap items built 12/40 (30%).                                             │
-│ Whether dreaming beats its baseline is untested until each mode has enough dreams.               │
+│ Experiment                                                                                       │
+│ Dreams: 6 · picks: 22 · synced 9 · applied 5 · built 2                                           │
+│ Totals across every dream. The experiment's breakdown is `daedalus dream log`.                   │
 │                                                                                                  │
 │ s ask Claude to run /dream · ? explain                                                           │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │ ◆KeyBar                                                                                          │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 note: computed when shown (`dream due` without writing due.json). The
-experiment lines are the log's per-mode aggregates, the same as the CLI; no
-single dream's mode is shown.
+experiment lines are totals across every dream, never split by mode: a
+per-mode count would move with one mode as picks are applied or built, and
+next to the Dreams and Picks tabs that would tell a reader which mode made a
+dream. The per-mode breakdown stays in `daedalus dream log`.
 
 @off
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐

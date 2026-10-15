@@ -5,11 +5,13 @@ Dream (docs/design/tui/dream.oph): what dreaming (edict 0013) has made, read-onl
 - Picks: every waking pick across dreams, with what became of it in the roadmap (its item is
   `dream-<dream-id>.p<n>`): built, in review, waiting, proposed, dropped, or not synced yet.
 - Themes: the dream review's theme registry: elevated, covered, superseded, with dream and seed-set counts.
-- Due: whether a dream and a dream review are due (computed, never written), and the experiment's lines.
+- Due: whether a dream and a dream review are due (computed, never written), and the experiment's totals.
 
-Every dream text sits under the speculative label (◆SpeculativeLabel). Nothing here names the mode a
-dream was made in: the edict keeps that from every reader. Running a dream and syncing picks are Claude's
-job, so `s` hands them over; this screen writes nothing.
+Every dream text sits under the speculative label (◆SpeculativeLabel). Nothing on any tab, Due included,
+names or counts the mode a dream was made in: the Due tab shows totals across all dreams only, and points
+to `daedalus dream log` for the per-mode breakdown, so no figure here moves with one mode and a dream's
+mode can't be read off by watching counts change. Running a dream and syncing picks are Claude's job, so
+`s` hands them over; this screen writes nothing.
 """
 
 from __future__ import annotations
@@ -95,6 +97,22 @@ def _settings(project_dir: Path) -> dict:
         return {}
 
 
+def _int(value) -> int:
+    """A count from a hand-editable store: anything that isn't a number reads as 0."""
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+# What a damaged store can raise while it is read: OSError, a DreamError, and ValueError (which covers
+# UnicodeDecodeError, from a part that isn't valid UTF-8, and bad JSON).
+def _read_errors():
+    from ...dreams import store
+
+    return (OSError, ValueError, store.DreamError)
+
+
 def enabled(project_dir: Path) -> bool:
     from ...dreams import store
 
@@ -109,13 +127,14 @@ def dream_rows(project_dir: Path) -> list[dict]:
     for dream_id in reversed(store.list_dreams(project_dir)):
         try:
             meta = store.load_meta(project_dir, dream_id)
-        except store.DreamError:
+        except _read_errors():
             continue
         try:
             n = len(store.picks(project_dir, dream_id))
-        except (OSError, store.DreamError):
+        except _read_errors():
             n = 0
-        out.append({"id": dream_id, "status": str(meta.get("status") or "started"), "picks": n})
+        status = meta.get("status") if isinstance(meta, dict) else None
+        out.append({"id": dream_id, "status": str(status or "started"), "picks": n})
     return out
 
 
@@ -155,7 +174,7 @@ def all_picks(project_dir: Path) -> list[Pick]:
     for row in dream_rows(project_dir):
         try:
             found = store.picks(project_dir, row["id"])
-        except (OSError, store.DreamError):
+        except _read_errors():
             continue
         for p in found:
             item = items.get(p["id"])
@@ -169,12 +188,19 @@ def themes(project_dir: Path) -> list[dict]:
     from ...dreams import review
 
     try:
-        registry = review.load_themes(project_dir)["themes"]
+        data = review.load_themes(project_dir)
+        registry = data.get("themes") if isinstance(data, dict) else None
+        if not isinstance(registry, dict):
+            return []
+        rows = [{**t, "id": str(tid)} for tid, t in registry.items() if isinstance(t, dict)]
     except Exception:
         return []
-    rows = [{"id": tid, **t} for tid, t in registry.items() if isinstance(t, dict)]
+    for t in rows:  # a hand-edited registry: counts that aren't numbers read as 0, ideas only as a list
+        t["dreams"] = _int(t.get("dreams"))
+        t["distinct_top_seeds"] = _int(t.get("distinct_top_seeds"))
+        t["ideas"] = t["ideas"] if isinstance(t.get("ideas"), list) else []
     return sorted(rows, key=lambda t: (bool(t.get("superseded")), not t.get("elevated"),
-                                       -int(t.get("distinct_top_seeds") or 0), str(t["id"])))
+                                       -t["distinct_top_seeds"], t["id"]))
 
 
 def theme_state(t: dict) -> str:
@@ -187,9 +213,40 @@ def theme_state(t: dict) -> str:
     return "not elevated"
 
 
+def experiment_totals(project_dir: Path) -> list[str]:
+    """The experiment's totals across every dream, never split by mode (`daedalus dream log` has that)."""
+    from ... import roadmap
+    from ...dreams import store
+
+    records = [r for r in store.load_log(project_dir) if isinstance(r, dict)]
+    runs = [r for r in records if r.get("record") == "run"]
+    if not runs:
+        return ["No dreams finished yet."]
+    outcomes: dict[str, str] = {}
+    for r in records:
+        if r.get("record") == "resolution" and r.get("item"):
+            outcomes[str(r["item"])] = str(r.get("outcome"))  # the latest outcome wins
+    picks_out = {ext: o for ext, o in outcomes.items()
+                 if (m := store.ITEM_ID.match(ext)) and m.group(2) == "p"}
+    try:
+        items = roadmap.load_index(project_dir).get("items", [])
+    except roadmap.RoadmapError:
+        items = []
+    built = 0
+    for item in items:
+        o = roadmap.origin(item)
+        m = store.ITEM_ID.match(str(o.get("external_id")))
+        if o["source"] == "dream" and item.get("status") == "done" and m and m.group(2) == "p":
+            built += 1
+    counts = {k: sum(1 for o in picks_out.values() if o == k) for k in ("synced", "applied")}
+    return [f"Dreams: {len(runs)} · picks: {sum(_int(r.get('picks')) for r in runs)} · "
+            f"synced {counts['synced']} · applied {counts['applied']} · built {built}",
+            "Totals across every dream. The experiment's breakdown is `daedalus dream log`."]
+
+
 def due_lines(project_dir: Path) -> tuple[list[str], dict]:
     """What is due, from the same functions `dream due`, `dream review` and `dream log` use. Never writes."""
-    from ...dreams import report, review, store
+    from ...dreams import review, store
 
     settings = _settings(project_dir)
     try:
@@ -213,9 +270,9 @@ def due_lines(project_dir: Path) -> tuple[list[str], dict]:
         lines.append(f"Dream review: {state} ({since} of {need} dreams since the last review).")
     except Exception:
         pass
-    lines += ["", "Experiment (`daedalus dream log`)"]
+    lines += ["", "Experiment"]
     try:
-        lines += report.summary(project_dir)
+        lines += experiment_totals(project_dir)
     except Exception as e:
         lines.append(f"Couldn't read the dream log: {e}")
     return lines, due
@@ -329,8 +386,8 @@ class DreamScreen(Screen):
                     for d in self.dreams]
         if self.tab == "picks":
             return [f"{p.id:<17} {p.status}" for p in self.picks]
-        return [f"{t['id']:<4} {theme_state(t)[:12]:<12} {int(t.get('dreams') or 0)} dreams · "
-                f"{int(t.get('distinct_top_seeds') or 0)} sets" for t in self.themes]
+        return [f"{t['id']:<4} {theme_state(t)[:12]:<12} {t['dreams']} dreams · "
+                f"{t['distinct_top_seeds']} sets" for t in self.themes]
 
     def _unsynced(self) -> list[Pick]:
         return [p for p in self.picks if p.status == "not synced yet"]
@@ -358,7 +415,7 @@ class DreamScreen(Screen):
         if self.tab == "dreams":
             try:
                 self._detail(store.show(self.project_dir, self.dreams[idx]["id"]))
-            except (OSError, store.DreamError) as e:
+            except _read_errors() as e:
                 self._detail(None, f"Couldn't read this dream: {e}")
         elif self.tab == "picks":
             p = self.picks[idx]
@@ -369,9 +426,9 @@ class DreamScreen(Screen):
         else:
             t = self.themes[idx]
             lines = [f"{t['id']} · {t.get('title', '')}", theme_state(t),
-                     f"in {int(t.get('dreams') or 0)} dreams, {int(t.get('distinct_top_seeds') or 0)} distinct "
-                     "seed sets", "", str(t.get("summary") or ""), "",
-                     "ideas: " + ", ".join(map(str, t.get("ideas") or [])),
+                     f"in {t['dreams']} dreams, {t['distinct_top_seeds']} distinct seed sets", "",
+                     str(t.get("summary") or ""), "",
+                     "ideas: " + ", ".join(map(str, t["ideas"])),
                      f"last review: {t.get('last_review') or '-'}", "",
                      "How often an idea came back says nothing about whether it's right."]
             self._detail(None, "\n".join(lines))
@@ -400,35 +457,43 @@ class DreamScreen(Screen):
         self.app.pop_screen()
 
     def action_explain(self) -> None:
-        self.app.push_screen(ExplainCard("Dream"))
+        from ..cards import PANEL_CARDS
+
+        self.app.push_screen(ExplainCard(PANEL_CARDS.get("Dream", "Dream")))
 
     def send_prompt(self) -> Optional[tuple[str, str]]:
-        """What `s` hands Claude: a due dream first, then unsynced picks, then the selection."""
+        """What `s` hands Claude. A selected pick or theme is about that row (an unsynced pick: its sync).
+        On Dreams and Due: a due dream first, then unsynced picks, then the selected dream."""
         if not self.on:
             return ("Dreaming", "Explain what dreaming (edict 0013) would do in this project and help me decide "
                                 "whether to turn it on (`daedalus config dream.enabled true`).")
-        if self.due.get("due"):
-            return ("Dream due", "A dream is due. Run /dream.")
         idx = self._index() if self.tab != "due" else None
-        if self.tab == "picks" and idx is not None and self.picks[idx].status != "not synced yet":
+        if self.tab == "picks" and idx is not None:
             p = self.picks[idx]
+            if p.status == "not synced yet":
+                return self._sync_prompt()
             return (f"Pick {p.id}", f"Pick {p.id} (\"{p.title}\") is speculative, from a dream "
                                     f"(`daedalus dream show {p.dream}`). It is {p.status}. Tell me what building it "
                                     "would take; don't treat it as a plan.")
-        unsynced = self._unsynced()
-        if unsynced:
-            return ("Unsynced dream picks", f"Run `{SYNC}` to bring {len(unsynced)} dream pick(s) in as roadmap "
-                                            "proposals, then tell me what came in so I can apply or drop each.")
+        if self.tab == "themes" and idx is not None:
+            t = self.themes[idx]
+            return (f"Theme {t['id']}", f"Dream theme {t['id']} (\"{t.get('title', '')}\") came back in "
+                                        f"{t['dreams']} dreams. Read `daedalus dream review show` and tell me "
+                                        "whether anything in the plan already covers it.")
+        if self.due.get("due"):
+            return ("Dream due", "A dream is due. Run /dream.")
+        if self._unsynced():
+            return self._sync_prompt()
         if self.tab == "dreams" and idx is not None:
             d = self.dreams[idx]["id"]
             return (f"Dream {d}", f"Read `daedalus dream show {d}` and talk its picks through with me. It's "
                                   "speculative: not a proposal and not evidence.")
-        if self.tab == "themes" and idx is not None:
-            t = self.themes[idx]
-            return (f"Theme {t['id']}", f"Dream theme {t['id']} (\"{t.get('title', '')}\") came back in "
-                                        f"{t.get('dreams')} dreams. Read `daedalus dream review show` and tell me "
-                                        "whether anything in the plan already covers it.")
         return None
+
+    def _sync_prompt(self) -> tuple[str, str]:
+        unsynced = self._unsynced()
+        return ("Unsynced dream picks", f"Run `{SYNC}` to bring {len(unsynced)} dream pick(s) in as roadmap "
+                                        "proposals, then tell me what came in so I can apply or drop each.")
 
     def action_send(self) -> None:
         found = self.send_prompt()
