@@ -27,6 +27,8 @@ agents:
     description: Mind Palace MUD navigation - spatial codebase understanding
   - name: memory
     description: Project memory management across sessions
+  - name: morpheus
+    description: The dreamer (edict 0013) - writes a dream from a complete prompt; reads nothing, judges nothing
   - name: mnemosyne
     description: Memory reconstruction - proposes gameplan entries for an unrecorded period, from git evidence
   - name: momus
@@ -63,3 +65,5 @@ skills:
     description: Rebuild a period the gameplan never recorded, from git (gather, mnemosyne, check, Momus)
   - name: reflect
     description: Run a due reflection over session logs (bundle, delphi, check, Momus); never applies proposals
+  - name: dream
+    description: Dream (edict 0013) - seeds, a dream generated before it is judged, a cold waking pass; picks reach the plan only as proposals

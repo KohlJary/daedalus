@@ -86,6 +86,19 @@ def same_observation(data: dict, observation: str, exclude_id: Optional[str] = N
     return None
 
 
+# A dream is never evidence (edict 0013): no model entry may rest on one. Written out here rather than
+# imported, so this module needs nothing from the dream package.
+DREAM_REFERENCE = re.compile(r"(\.daedalus/dreams/|docs/dreams/|\b\d{4}-\d{2}-\d{2}(?:-\d+)?\.[ip]\d+\b|"
+                             r"\bdream-\d{4}-\d{2}-\d{2}|\bsrc:dream:)", re.I)
+
+
+def check_evidence(evidence: Any) -> None:
+    """Refuse evidence that rests on a dream: a path or ID of one, anywhere in an evidence item."""
+    for item in evidence or []:
+        if DREAM_REFERENCE.search(json.dumps(item, ensure_ascii=False)):
+            raise ModelError("A dream is never evidence (edict 0013): this entry cites one")
+
+
 def normalise(text: str) -> str:
     return re.sub(r"\W+", " ", (text or "").lower()).strip()
 
@@ -264,6 +277,8 @@ def apply_change(model: str, change: dict, by: str, proposal_id: Optional[str] =
     with file_lock(path):
         data = _load_locked(model, root)
         op = change.get("op")
+        check_evidence((change.get("entry") or {}).get("evidence"))
+        check_evidence(change.get("evidence"))
         if op == "add":
             entry = dict(change["entry"])
             if is_tombstoned(data, entry.get("id"), entry.get("observation")):

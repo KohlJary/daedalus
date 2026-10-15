@@ -68,6 +68,24 @@ def _first_line(text: str, width: int = 160) -> str:
     return line if len(line) <= width else line[: width - 1] + "…"
 
 
+def _dream_line(project_dir: Path) -> str:
+    """One line about dreams (edict 0013), from .daedalus/dreams/due.json read as raw JSON: the hook imports
+    no dream module and never shows dream content."""
+    try:
+        state = json.loads((Path(project_dir) / ".daedalus" / "dreams" / "due.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    if not isinstance(state, dict):
+        return ""
+    parts = []
+    if state.get("due") is True:
+        parts.append("a dream is due (/dream)")
+    waiting = str(state.get("waiting") or "")
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}(?:-\d+)?", waiting):
+        parts.append(f"the dream from {waiting} is waiting (`daedalus dream show`)")
+    return "**Dream:** " + "; ".join(parts) if parts else ""
+
+
 def session_start_brief(project_dir: Path) -> str:
     """Active goal and next task, doctor findings, then the latest session note. Under 40 lines."""
     from .doctor import run_checks
@@ -122,6 +140,10 @@ def session_start_brief(project_dir: Path) -> str:
     synced = brief_line(project_dir)
     if synced:
         lines.append(f"**{synced.split(':', 1)[0]}:**{synced.split(':', 1)[1]}")
+
+    dream = _dream_line(project_dir)
+    if dream:
+        lines.append(dream)
 
     findings, _ = run_checks(project_dir)
     if findings:

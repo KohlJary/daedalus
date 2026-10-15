@@ -64,6 +64,7 @@ context-estimator = "daedalus.tools.context_estimator:main"
 [project.entry-points."daedalus.sources"]
 github = "daedalus.sources.github:GitHubSource"
 ado = "daedalus.sources.ado:AdoSource"
+dream = "daedalus.sources.dream:DreamSource"
 
 [project.urls]
 Homepage = "https://github.com/KohlJary/daedalus"
