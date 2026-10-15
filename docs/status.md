@@ -5,7 +5,7 @@ committed gameplan, `.daedalus/roadmap/gameplan.json`: run `daedalus gameplan sh
 and `daedalus doctor`. This file carries what the gameplan can't say. See
 `docs/edicts/README.md`.*
 
-**Last updated:** 2026-10-15 ~05:30 EDT (overnight: edicts 0012, 0013; PRs #68-#70 for review); earlier: the night shift (edict 0011); earlier: the reflection session (edict 0010); the TUI-design, Ariadne/experiment and memory-side sessions' notes follow
+**Last updated:** 2026-10-15 ~05:30 EDT (overnight: edicts 0012, 0013; PRs #68-#71 for review); earlier: the night shift (edict 0011); earlier: the reflection session (edict 0010); the TUI-design, Ariadne/experiment and memory-side sessions' notes follow
 
 ## Reflection session (2026-10-14)
 - **Edict 0010 written with Kohl** (in chat and with Claude in chat), amended twice: user/self
@@ -62,6 +62,15 @@ Everything merged tonight went through Momus and green CI first. Audit trail:
   - **The TUI Dream screen: PR #68, for review.** It opens on `D`, is read-only and is fully mode-blind. Momus's
     fixes are in, his verdict is ship, and CI is green.
     - Kohl to decide: whether the TUI may show the per-mode counts that 0013 allows in `dream log`.
+  - **The TUI send form (dream pick 2): PR #71, for review.** It is stacked on #70; retarget it to main once #70
+    merges.
+    - `tui.send_form` takes `prose` (the default: unchanged, writes nothing), `text`, `ophanic` or `ab`.
+    - `ab` draws between `text` and `ophanic`, which carry the same facts: labels are cut once, before either is
+      rendered.
+    - Each send's form goes to `.daedalus/tui/sends.jsonl`, with no content. `daedalus tui sends` summarises it.
+    - Momus: three rounds, verdict ship. CI is green.
+    - Kohl to decide: five panels, where 0017 amendment 6 says Gameplan only.
+    - Not met: 0017's reflection-digest join. Until it exists, the A/B can't say which form helped.
   - **Coordination with the other session (daedalus-42):** it has 0015 (context map) and 0016 (toolbox hooks). The
     Ophanic edict was renumbered 0017. The file split is agreed, and the TUI's panel shapes are written into its
     edicts.
