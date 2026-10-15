@@ -438,6 +438,94 @@ def _same_version(a: str, b: str) -> bool:
     return norm(a) == norm(b)
 
 
+def _marker_holds(marker: str) -> bool:
+    """Whether a PEP 508 environment marker holds here; unknown markers count as holding."""
+    try:
+        from packaging.markers import Marker
+
+        return Marker(marker.strip()).evaluate()
+    except Exception:
+        return True
+
+
+def _declared(source: Path) -> tuple[dict[str, set], set]:
+    """({entry-point group: names}, dependency distribution names) that the checkout's pyproject.toml declares."""
+    try:
+        text = (source / "pyproject.toml").read_text(encoding="utf-8")
+    except OSError:
+        return {}, set()
+    try:
+        import tomllib  # Python 3.11+: real TOML, any formatting
+
+        project = tomllib.loads(text).get("project", {})
+        groups = {g: set(eps) for g, eps in (project.get("entry-points") or {}).items()}
+        deps = set()
+        for spec in project.get("dependencies") or []:
+            name, _, marker = spec.partition(";")
+            if marker.strip() and not _marker_holds(marker):
+                continue  # e.g. tomli; python_version < '3.11' on a newer Python
+            deps.add(re.split(r"[\s<>=!~\[(]", name.strip(), maxsplit=1)[0].lower().replace("_", "-"))
+        return groups, deps
+    except ImportError:
+        pass
+    except Exception:
+        return {}, set()
+    groups: dict[str, set] = {}
+    for m in re.finditer(r'^\[project\.entry-points\."([^"]+)"\]\s*$(.*?)(?=^\[|\Z)', text, re.M | re.S):
+        groups[m.group(1)] = set(re.findall(r"^([A-Za-z0-9_.-]+)\s*=", m.group(2), re.M))
+    deps = set()
+    block = re.search(r"^dependencies\s*=\s*\[(.*?)^\]", text, re.M | re.S)
+    for m in re.finditer(r'^\s*"([A-Za-z0-9_.-]+)', block.group(1) if block else "", re.M):
+        deps.add(m.group(1).lower().replace("_", "-"))
+    return groups, deps
+
+
+def check_install_metadata(source: Path, dist_name: str = "daedalus-cli") -> list[Finding]:
+    """What the install's metadata lacks that the checkout declares (an editable install's metadata goes
+    stale when entry points or dependencies are added later: same version, missing plugins), and any other
+    distribution that also provides the `daedalus` package (an old install shadowing the new one)."""
+    from importlib import metadata
+
+    findings: list[Finding] = []
+    groups, deps = _declared(source)
+    try:
+        installed = {(e.group, e.name) for e in metadata.distribution(dist_name).entry_points}
+    except metadata.PackageNotFoundError:
+        installed = set()
+    missing_eps = sorted(f"{g}:{n}" for g, names in groups.items() for n in names if (g, n) not in installed)
+    missing_deps = []
+    for dep in sorted(deps):
+        try:
+            metadata.distribution(dep)
+        except metadata.PackageNotFoundError:
+            missing_deps.append(dep)
+    if missing_eps or missing_deps:
+        parts = []
+        if missing_eps:
+            parts.append(f"entry points {', '.join(missing_eps[:6])}" + (" ..." if len(missing_eps) > 6 else ""))
+        if missing_deps:
+            parts.append(f"dependencies {', '.join(missing_deps)}")
+        findings.append(Finding(
+            "install-stale",
+            f"The installed daedalus-cli lacks {' and '.join(parts)} that {source}/pyproject.toml declares, so "
+            f"plugins (sources, the TUI) won't load. Reinstall from {source} (pipx install --force --editable, "
+            "or pip install -e in a venv)."))
+    try:
+        others = [d for d in metadata.packages_distributions().get("daedalus", []) if d != dist_name]
+    except Exception:
+        others = []
+    for other in sorted(set(others)):
+        try:
+            ver = metadata.distribution(other).version
+        except metadata.PackageNotFoundError:
+            ver = "?"
+        findings.append(Finding(
+            "install-shadowed",
+            f"Another distribution, '{other}' {ver}, also provides the daedalus package and can shadow daedalus-cli "
+            f"(an old install). Uninstall it: pip uninstall {other} (add --break-system-packages on a system Python)."))
+    return findings
+
+
 def check_install(installed_from=_installed_from) -> list[Finding]:
     """The installed daedalus-cli is out of step with the local checkout it was installed from (a later
     `git pull` doesn't reinstall), or its palace grammars are missing."""
@@ -455,6 +543,8 @@ def check_install(installed_from=_installed_from) -> list[Finding]:
                 why = f"Reinstall to pick up its code and dependencies: pip install \"{source}\""
             findings.append(Finding(
                 "install-stale", f"daedalus-cli {version} is installed from {source}, which is now at {current}. {why}"))
+    if version and source is not None:
+        findings += check_install_metadata(source)
     if version and importlib.util.find_spec("tree_sitter") is None:
         findings.append(Finding(
             "palace-grammars-missing",
