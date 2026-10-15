@@ -69,8 +69,8 @@
     {
       "id": "dream-2026-10-15.p3",
       "title": "Intake from the codebase's own pain",
-      "description": "From a dream (speculative): `daedalus dream show 2026-10-15`.\n\n**Intake from the codebase's own pain** (from i23). Sources made intake pluggable tonight. The most honest tracker Daedalus has access to is itself: reflection's digests already count retries and failures, Theseus scores complexity, and doctor finds drift. *What would make it real:* a first-party `self` source whose `fetch()` reads those local files. That's no network and no new permissions, just one more plugin through the seam that shipped tonight. Its items are labelled as Daedalus's observations, and land as proposals like everything else. It also gives aspirations (18) a principled home: aspirations as a second kind from the same source, entropy marked as entropy.",
-      "status": "backlog",
+      "description": "Built in PR #64 (open, for Kohl's review): the `self` source.\n\nFrom a dream (speculative): `daedalus dream show 2026-10-15`.\n\n**Intake from the codebase's own pain** (from i23). Sources made intake pluggable tonight. The most honest tracker Daedalus has access to is itself: reflection's digests already count retries and failures, Theseus scores complexity, and doctor finds drift. *What would make it real:* a first-party `self` source whose `fetch()` reads those local files. That's no network and no new permissions, just one more plugin through the seam that shipped tonight. Its items are labelled as Daedalus's observations, and land as proposals like everything else. It also gives aspirations (18) a principled home: aspirations as a second kind from the same source, entropy marked as entropy.",
+      "status": "review",
       "priority": "P2",
       "item_type": "idea",
       "created_at": "2026-10-15T06:22:45Z",
@@ -85,7 +85,8 @@
           "title": "Intake from the codebase's own pain"
         },
         "remote_updated": ""
-      }
+      },
+      "status_changed_at": "2026-10-15T02:26:36"
     },
     {
       "id": "dream-2026-10-15.p4",
