@@ -99,3 +99,20 @@ def test_check_accepts_a_turn_citation(tmp_path):
     b, first, _ = _session(tmp_path)
     d = dg.build_digest(write_session(tmp_path / "t", b.session_id, b.events))
     assert first in _event_uuids(d) and "cb-1" in _event_uuids(d)
+
+
+def test_messages_before_the_first_prompt_count_in_a_period(tmp_path):
+    b = Builder(str(tmp_path))
+    b.reply("a hook-driven reply before anything was typed")
+    b.prompt("now a prompt")
+    b.reply("answer")
+    d = dg.build_digest(write_session(tmp_path / "t", b.session_id, b.events))
+    assert d["turns"][0]["uuid"] is None
+    day = date(2026, 10, 5)
+    assert sp.summarize([d], day, day)["units"] == sp.summarize([d])["units"] > 0
+
+
+def test_old_digests_without_spend_are_reported():
+    old = {"session_id": "old", "start": "2026-10-05T12:00:00Z", "tokens": {"output": 5}}
+    s = sp.summarize([old])
+    assert s["digests_without_spend"] == 1 and any("predate" in n for n in s["notes"])

@@ -87,13 +87,17 @@ def summarize(digests: Iterable[dict], start: Optional[date] = None, end: Option
     by_agent: dict[str, dict] = {}
     by_project: dict[str, float] = {}
     turns, compactions, sessions = [], [], set()
+    no_spend = 0
     reported = 0
     hit = {"cache_read": 0, "denominator": 0}
     for d in digests:
         sid = d.get("session_id")
         project = (project_of or {}).get(sid)
+        if "turns" not in d:
+            no_spend += 1  # an older digest whose transcript is gone: no spend data to count
         for t in d.get("turns") or []:
-            if not _in(local_day(t.get("at") or ""), start, end):
+            # A turn's day is its prompt's; messages before the first prompt take the session's start
+            if not _in(local_day(t.get("at") or d.get("start") or ""), start, end):
                 continue
             sessions.add(sid)
             for model, tokens in (t.get("tokens_by_model") or {}).items():
@@ -161,11 +165,14 @@ def summarize(digests: Iterable[dict], start: Optional[date] = None, end: Option
             "label": "inferred"},
         "top_turns": sorted(turns, key=lambda t: -float(t.get("units") or 0))[:top],
         "subagent_reported_tokens": reported,
+        "digests_without_spend": no_spend,
         "notes": ["units are an estimate of relative spend from API list-price ratios, not a price "
                   "or a usage-limit figure",
                   "subagent output tokens come from their transcripts and are a lower bound",
                   "a turn is a typed prompt and everything until the next one, including replies to "
-                  "background-agent notifications"],
+                  "background-agent notifications; it counts on its prompt's day, even past midnight",
+                  "subagent_reported_tokens is per whole session, not cut to the period"]
+                 + ([f"{no_spend} digest(s) predate spend data and are not counted"] if no_spend else []),
     }
 
 
