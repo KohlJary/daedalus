@@ -5,7 +5,7 @@ committed gameplan, `.daedalus/roadmap/gameplan.json`: run `daedalus gameplan sh
 and `daedalus doctor`. This file carries what the gameplan can't say. See
 `docs/edicts/README.md`.*
 
-**Last updated:** 2026-10-15 ~05:30 EDT (overnight: edicts 0012, 0013; PRs #68-#71 for review); earlier: the night shift (edict 0011); earlier: the reflection session (edict 0010); the TUI-design, Ariadne/experiment and memory-side sessions' notes follow
+**Last updated:** 2026-10-15 ~07:15 EDT (overnight: edicts 0012, 0013; PRs #68-#71 for review); earlier: the night shift (edict 0011); earlier: the reflection session (edict 0010); the TUI-design, Ariadne/experiment and memory-side sessions' notes follow
 
 ## Reflection session (2026-10-14)
 - **Edict 0010 written with Kohl** (in chat and with Claude in chat), amended twice: user/self
@@ -51,14 +51,26 @@ Everything merged tonight went through Momus and green CI first. Audit trail:
     - All 8 are fixed in 5ab9cf3, and Momus's re-verification is "shown".
     - Untested: the skill hasn't been tried in a real session.
     - `oph.components` has no committed project default, so doctor checks components only when you set it.
-  - **The Ophanic perception pilot: PR #69, for review.** It ran on qwen3:8b with thinking off and is descriptive
-    only.
-    - Layout spatial questions: tied with the text encodings.
-    - Proportions: Ophanic scored worse than always guessing "25"; the text encodings state the percentages outright.
-    - Containment: a real gap for this model, 1 vs 29 on paired questions against JSON.
-    - Graphs: at the floor in every encoding.
-    - It says little about Claude. DESIGN.md has amendments A1-A9, informed by the pilot and awaiting Kohl's
-      confirmation before any confirmatory run.
+  - **The Ophanic perception experiment: PR #69, for review.** It holds the pre-registration, the harness and three
+    pilots, all descriptive. Momus reviewed each round.
+    - **Pilot 1 (qwen3:8b):**
+      - Containment: a real gap. Paired against JSON on the same questions, Ophanic alone was right once and JSON
+        alone 29 times.
+      - Layout spatial: tied with the text encodings.
+      - Proportions: not comparable, because the text encodings stated the percentages.
+      - Graphs: at the floor in every encoding.
+    - **Pilot 2 (qwen3:8b, the amended harness):** looping is gone, and the containment gap remains. 8b can't do
+      the share arithmetic.
+    - **Pilot 3 (qwen3:14b):**
+      - Without thinking, it divides.
+      - With thinking, every encoding is near the ceiling. But 7 of the 10 calls that ran out of tokens were Ophanic
+        ones, so dropping them flatters Ophanic.
+    - **Kohl to decide:**
+      - confirm amendments A1-A13;
+      - choose how unanswered calls count;
+      - freeze the conventions (a placeholder in DESIGN.md);
+      - give the go-ahead for a nine-call Haiku smoke test after 2026-10-23.
+    - Power: a true 10-point effect is caught only 36-52% of the time at 40 structures per cell (power.py).
   - **The TUI Dream screen: PR #68, for review.** It opens on `D`, is read-only and is fully mode-blind. Momus's
     fixes are in, his verdict is ship, and CI is green.
     - Kohl to decide: whether the TUI may show the per-mode counts that 0013 allows in `dream log`.
