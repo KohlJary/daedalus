@@ -156,3 +156,49 @@ most conservative, and it is marked **proposed — Kohl to confirm**.*
   confirmatory run until it is built and reviewed.
 
 Harness implements the proposed options as of f869c22; Kohl's confirmation still pending.
+
+## A10-A13, proposed — Kohl to confirm (from the pilot-2 review)
+
+*Written after pilot 2 (`REPORT-pilot2.md`) and Momus's review of the harness and that pilot
+(`.daedalus/momus/trials/2026-10-15-ophanic-perception-pilot2.md`, local to the main checkout), and after the
+qwen3:14b floor pilot (`REPORT-pilot3-14b.md`). Like A1-A9 they were informed by pilot data, are recorded
+separately from the hypotheses, and are **proposed — Kohl to confirm**. No confirmatory data exists yet.*
+
+- **A10. Decision rules.** These are what score.py already does, written down.
+  - *H1a, H1b, H2:* an arm difference "meets" the 10-point threshold when the point estimate is at least 10 points
+    **and** the lower bound of its 95% cluster-bootstrap interval is above zero. H1 (a or b) is supported when
+    ophanic meets it against both prose and list; H2 is falsified when ophanic meets it against both json and list.
+  - *H3:* the slope (large advantage − small advantage, advantage = ophanic minus the better of prose and list)
+    "grows" when its interval's lower bound is above zero; it is falsified when the point estimate is below zero;
+    otherwise it is "not shown".
+  - *H4, three ways:* "holds" when the whole interval of noisy minus clean lies inside ±5 points; "falsified" when
+    the whole interval lies at or below −5; otherwise "unresolved".
+  - Every test is run per model and thinking condition (see A8 revision); nothing is pooled across conditions.
+- **A11. Floor rule.** Before the confirmatory run, a floor pilot (3 structures per cell, fresh seed) is run for
+  each confirmatory model and thinking condition. Any question kind that every main arm (ophanic@100, ophanic@60,
+  prose, json, list) gets wrong on more than half of that pilot's items is reported descriptively for that
+  condition and excluded from the hypothesis it belongs to (H1b for `share`, H2 for `path_length`; `no_incoming`
+  belongs to no hypothesis). The exclusions are written here, with the pilot that justified them, before the
+  confirmatory data exist.
+- **A12. Lookup ceiling for share.** A `list-lookup` control arm on layouts states each column's share as a
+  percentage, the pilot-1 list. It is reported next to H1b and is never a comparator in a test: it shows how well
+  the model does when no arithmetic is needed, so a text-arm loss on H1b can be read as "dividing" rather than
+  "reading". H1b pairs the text arms with ophanic@60, the drawing whose widths they state (ophanic@100 draws the
+  same shares at other widths).
+- **A13. Matched framing.** Every arm of a structure type gets the same framing sentence: the same description of
+  the structure and, for layouts, the same rule for a share (a column's width divided by its row's width), differing
+  only in the name of the form and how that form marks things. Pilot 2's separately written sentences
+  (`--framing pilot2`) said different things to different arms (the prose sentence never said how to compute a
+  share).
+- **A8, revised.** Thinking status is part of the model's identity.
+  - Local arm: **qwen3:14b with thinking** (`--think`, max-tokens 4096, no blank-line stop).
+  - Paid arm: **Claude with thinking on and effort pinned per model** (`EFFORT_PIN` in run.py, medium for Haiku,
+    Sonnet and Opus 5.5, recorded in every row), once Kohl starts paid runs after 2026-10-23.
+  - qwen3:8b and qwen3:14b without thinking are a separate **no-reasoning condition**, reported on their own and
+    never pooled with a thinking model in any test.
+
+Harness implements A10-A13's proposed options, the A8 revision and the Anthropic safeguards as of the commit that
+adds this section; Kohl's confirmation still pending.
+
+**Conventions freeze (A7).** To freeze: record the commit hash here when Kohl starts the confirmatory run.
+Frozen at: *(not yet frozen)*.

@@ -29,7 +29,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 TOLERANCE = 5
 ENC_ORDER = ["ophanic@100", "ophanic@60", "ophanic-noise@100", "ophanic-noise@60", "prose", "json", "json-compact",
-             "list"]
+             "list", "list-lookup"]
 MOD_ORDER = ["", "fenced", "unframed", "fenced+unframed"]
 TYPE_ORDER = ["layout", "graph", "containment"]
 SIZE_ORDER = ["small", "medium", "large"]
@@ -38,6 +38,7 @@ EQUIV_MARGIN = 5      # H4 (A5): points
 COST_RATIO = 1.5      # H5
 # A2: in these drawings most graph edges are listed, not drawn, so the ophanic graph arm is relabelled
 GRAPH_ARM = "partial-edge list plus picture"
+SHARE_PAIR = "ophanic@60"   # generate.SHARE_PAIR: the drawing whose widths the text arms state
 
 
 def enc_key(e: str):
@@ -112,6 +113,22 @@ def cell(rows) -> str:
     return f"{100 * k / n:.0f}% ({100 * lo:.0f}–{100 * hi:.0f}) n={n}"
 
 
+def load_all(run_dirs) -> tuple[list[dict], list[dict]]:
+    """(scored rows, error rows) over one or more run directories. A row with an error (including a call that
+    gave no answer) is never scored."""
+    rows, errors = [], []
+    for d in run_dirs:
+        with (Path(d) / "calls.jsonl").open(encoding="utf-8") as f:
+            for line in f:
+                r = json.loads(line)
+                if r.get("error"):
+                    errors.append(r)
+                else:
+                    r["correct"] = correct(r, r["answer"])
+                    rows.append(r)
+    return rows, errors
+
+
 def load(run_dir: Path) -> list[dict]:
     rows = []
     with (run_dir / "calls.jsonl").open(encoding="utf-8") as f:
@@ -157,7 +174,7 @@ def fmt(x: float) -> str:
 
 def review_checks(rows: list[dict], encs: list[str], tokens: list[dict]) -> list[str]:
     """The splits and baselines Momus asked for in the pilot review (trial 2026-10-15-ophanic-perception-pilot)."""
-    main_arms = [e for e in encs if "noise" not in e]
+    main_arms = [e for e in encs if "noise" not in e and not e.startswith("list-lookup")]
     text_arms = [e for e in ("prose", "json", "list") if e in encs]
     by = defaultdict(list)
     for r in rows:
@@ -370,8 +387,14 @@ def bootstrap(clusters: dict, stat, B: int = 2000, seed: int = 0):
     return point, lo, hi
 
 
+def condition(r) -> str:
+    """A model and its thinking status, which together are the unit of analysis (A8 revision): conditions are
+    reported and tested separately, never pooled."""
+    return r["model"] + (" (thinking)" if r.get("think") else "")
+
+
 def pkey(r):
-    return (r["task"], r["question_id"], r["model"])
+    return (r["task"], r["question_id"], condition(r))
 
 
 def paired_clusters(rows, a, b, keep=lambda r: True):
@@ -466,8 +489,12 @@ def hypotheses(rows: list[dict], encs: list[str], tokens: list[dict], label: str
                 "each structure's arms, questions and models together.", ""]
     else:
         out += [f"Intervals are percentile 95% intervals from a cluster bootstrap over structures ({B} replicates, "
-                f"seed {seed}), resampling within each type × size cell and keeping each structure's arms, "
-                "questions and models together. Models are pooled.", ""]
+                f"seed {seed}), resampling within each type × size cell and keeping each structure's arms and "
+                "questions together. Each section is one model and thinking condition; conditions are never "
+                "pooled.", ""]
+    conds = sorted({condition(r) for r in rows})
+    if len(conds) > 1:
+        raise ValueError(f"hypotheses() takes one model and thinking condition, got {conds}")
     out += [f"The ophanic arm tested is `{primary}`.", ""]
     if primary not in have:
         return out + [f"`{primary}` is not in this run, so no hypothesis statistic is computed.", ""]
@@ -478,12 +505,22 @@ def hypotheses(rows: list[dict], encs: list[str], tokens: list[dict], label: str
     def beats(res):
         return res is not None and res[0] >= THRESHOLD and res[1] > 0
 
-    # H1a, H1b (A1)
-    for name, kind, desc in (("H1a", "spatial", "layout `right_of` and `below`"),
-                             ("H1b", "proportion", "layout `share`")):
+    # H1a, H1b (A1). H1b pairs the text arms with the drawing whose widths they state (SHARE_PAIR, ophanic@60)
+    mods = primary.split("+")[1:]
+    share_arm = "+".join([SHARE_PAIR, *mods])
+    if share_arm not in have:
+        share_arm = primary
+    for name, kind, desc, arm in (("H1a", "spatial", "layout `right_of` and `below`", primary),
+                                  ("H1b", "proportion", "layout `share`", share_arm)):
         keep = (lambda k: lambda r: r["type"] == "layout" and r["size"] == "medium" and r["kind"] == k)(kind)
-        res = {b: paired_diff(rows, primary, b, keep, B, seed) for b in ("prose", "list") if b in have}
-        out += [f"**{name}** ({desc}, medium size): {primary} minus each text arm.", ""]
+        res = {b: paired_diff(rows, arm, b, keep, B, seed) for b in ("prose", "list") if b in have}
+        note = ""
+        if kind == "proportion":
+            note = (f" The text arms state the widths {SHARE_PAIR} draws, so H1b pairs them with `{arm}`."
+                    if arm.startswith(SHARE_PAIR) else
+                    f" `{SHARE_PAIR}`, whose widths the text arms state, is not in this run: `{arm}` stands in, "
+                    "and its widths differ from the stated ones.")
+        out += [f"**{name}** ({desc}, medium size): {arm} minus each text arm.{note}", ""]
         out += [f"- vs {b}: {fmt_ci(v)}" for b, v in res.items()]
         if res:
             ok = all(beats(v) for v in res.values()) and len(res) == 2
@@ -496,10 +533,14 @@ def hypotheses(rows: list[dict], encs: list[str], tokens: list[dict], label: str
                 hits = {c: sum(abs(c - g) <= TOLERANCE for g in golds) for c in range(0, 101)}
                 c = max(hits, key=lambda x: (hits[x], -abs(x - 25)))
                 acc = {e: [r["correct"] for r in rows if r["encoding"] == e and r["sub"] == "share"
-                           and r["size"] == "medium"] for e in (primary, "prose", "json", "list") if e in have}
+                           and r["size"] == "medium"] for e in (arm, "prose", "json", "list", "list-lookup")
+                       if e in have}
                 out += [f"- Constant-guess baseline: always answering {c} scores {hits[c]}/{len(golds)} = "
                         f"{100 * hits[c] / len(golds):.0f}% on these questions. Accuracy: "
                         + ", ".join(f"{e} {100 * sum(v) / len(v):.0f}%" for e, v in acc.items() if v) + "."]
+                if "list-lookup" in have:
+                    out += ["- `list-lookup` is the lookup ceiling (A12): the same question with the percentage "
+                            "stated. It is a control, never a comparator in a test."]
         out += [""]
 
     # H2 (A2)
@@ -558,7 +599,7 @@ def hypotheses(rows: list[dict], encs: list[str], tokens: list[dict], label: str
           if r.get("prompt_eval_count")}
     for r in rows:   # an unframed, unmodified call is the same prompt measure_tokens.py sends
         k = (r["task"], r["question_id"], r["encoding"])
-        if not r.get("framing") and "+" not in r["encoding"] and r.get("prompt_eval_count") and k not in tk:
+        if r.get("framing") in (None, False, "off") and "+" not in r["encoding"] and r.get("prompt_eval_count") and k not in tk:
             tk[k] = r["prompt_eval_count"]
     out += [f"**H5** (cost, A6): encoding-only input tokens (each model's own count minus a bare question prompt, "
             f"unframed), mean of paired per-question ratios by structure type. Primary comparator compact json, "
@@ -593,7 +634,22 @@ def hypotheses(rows: list[dict], encs: list[str], tokens: list[dict], label: str
 
 
 def report(run_dir: Path, rows: list[dict], label: str, tokens: list[dict] | None = None,
-           primary: str = "ophanic@100", B: int = 2000, seed: int = 0) -> str:
+           primary: str = "ophanic@100", B: int = 2000, seed: int = 0, errors: list[dict] | None = None) -> str:
+    if errors is None:
+        errors = [r for r in load_all([run_dir])[1]]
+    conds = sorted({condition(r) for r in rows} | {condition(r) for r in errors})
+    if len(conds) > 1:
+        # One full report per model and thinking condition, never pooled (A8 revision)
+        out = [f"# {label}: no hypothesis tested" if "PILOT" in label.upper() else f"# {label}", "",
+               f"This run holds {len(conds)} model and thinking conditions: {', '.join(conds)}. Each is reported "
+               "and tested on its own below; no number pools them.", ""]
+        for c in conds:
+            sub = report(run_dir, [r for r in rows if condition(r) == c], label,
+                         [t for t in (tokens or []) if t.get("model") == c.split(" (")[0]], primary, B, seed,
+                         [r for r in errors if condition(r) == c])
+            body = sub.split("\n", 1)[1]
+            out += [f"# Condition: {c}", ""] + ["#" + x if x.startswith("#") else x for x in body.splitlines()]
+        return "\n".join(out)
     encs = sorted({r["encoding"] for r in rows}, key=enc_key)
     group = defaultdict(list)
     for r in rows:
@@ -608,7 +664,7 @@ def report(run_dir: Path, rows: list[dict], label: str, tokens: list[dict] | Non
     out = [f"# {label}: no hypothesis tested", "",
            f"**{label}.** This run exists to find harness bugs. Its numbers are descriptive only and test none of "
            "DESIGN.md's hypotheses; the confirmatory run uses fresh seeds and 40 structures per cell.", "",
-           f"- Run: `{run_dir.name}`; model(s): {', '.join(models)}; tasks: {', '.join(tasks_files)}",
+           f"- Run: `{run_dir.name}`{' and others' if len({r['run'] for r in rows if 'run' in r}) > 1 else ''}; condition: {', '.join(conds)}; tasks: {', '.join(tasks_files)}",
            f"- Calls scored: {len(rows)}; num_ctx: {num_ctx}",
            f"- Cells show accuracy, the Wilson 95% interval, and n. Proportions are scored within ±{TOLERANCE} points.",
            f"- Each structure × size cell has {per_cell(rows)} structures, each asked 3 questions. The intervals "
@@ -621,10 +677,6 @@ def report(run_dir: Path, rows: list[dict], label: str, tokens: list[dict] | Non
     out += hypotheses(rows, encs, tokens or [], label, primary, B, seed)
     out += review_checks(rows, encs, tokens or [])
 
-    if len(models) > 1:
-        out += ["## Accuracy by model and encoding", ""]
-        out += table(["model"] + encs, [[m] + [cell([r for r in group[(e,)] if r["model"] == m]) for e in encs]
-                                        for m in models])
 
     out += ["## Accuracy by encoding", ""]
     out += table(["encoding", "accuracy"], [[e, cell(group[(e,)])] for e in encs])
@@ -683,9 +735,10 @@ def report(run_dir: Path, rows: list[dict], label: str, tokens: list[dict] | Non
     out += table(["structure", "size"] + encs, body)
 
     out += ["## Harness checks", ""]
-    errs = run_dir / "calls.jsonl"
-    all_lines = [json.loads(x) for x in errs.read_text(encoding="utf-8").splitlines() if x.strip()]
-    n_err = sum(1 for r in all_lines if r.get("error"))
+    n_err = len(errors)
+    err_by = defaultdict(int)
+    for r in errors:
+        err_by[(r["encoding"], r.get("sub", "?"))] += 1
     empty = sum(1 for r in rows if not clean(r["answer"]))
     trunc = sum(1 for r in rows if r.get("prompt_eval_count") and r.get("num_ctx")
                 and r["prompt_eval_count"] >= r["num_ctx"] - 8)
@@ -695,13 +748,15 @@ def report(run_dir: Path, rows: list[dict], label: str, tokens: list[dict] | Non
     settings = sorted({(r.get("harness", 1), r.get("framing", False), repr(r.get("stop")), r.get("max_tokens"),
                         r.get("think", False)) for r in rows})
     lat = [r["latency_s"] for r in rows if r.get("latency_s") is not None]
-    out += [f"- Calls with an error: {n_err}",
+    out += [f"- Calls with an error (left out of scoring; a call with no answer is one): {n_err}"
+            + (" — " + ", ".join(f"{e} {q} ×{n}" for (e, q), n in sorted(err_by.items())) if err_by else ""),
             f"- Empty answers: {empty}",
             f"- Prompts at or over num_ctx (would be truncated): {trunc}",
             f"- Answers over 200 characters: {long_answers}",
             f"- Answers cut off by the token limit: {cut}" + ("" if stopped else " (done_reason not recorded)"),
             "- Settings (harness, framing, stop, max tokens, think): "
-            + "; ".join(f"{h}, {'framed' if f else 'unframed'}, {st}, {m}, {th}" for h, f, st, m, th in settings),
+            + "; ".join(f"{h}, {fr}, {st}, {m}, {th}" for h, f, st, m, th in settings
+                        for fr in [{True: "pilot2", False: "off", None: "off"}.get(f, f)]),
             f"- Latency: total {sum(lat) / 60:.1f} min, median {statistics.median(lat):.2f} s, "
             f"max {max(lat):.1f} s" if lat else "- Latency: —", ""]
     out += ["## All cells", ""]
@@ -713,7 +768,7 @@ def report(run_dir: Path, rows: list[dict], label: str, tokens: list[dict] | Non
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("run_dir")
+    ap.add_argument("run_dir", nargs="+", help="one or more results/<run> directories, reported per condition")
     ap.add_argument("--report", default=None, help="output path (default: <run_dir>/REPORT.md)")
     ap.add_argument("--label", default="PILOT")
     ap.add_argument("--notes", default=None, help="a Markdown file of hand-written findings, inserted after the header")
@@ -721,12 +776,15 @@ def main(argv=None):
     ap.add_argument("--boot", type=int, default=2000, help="bootstrap replicates")
     ap.add_argument("--boot-seed", type=int, default=0)
     a = ap.parse_args(argv)
-    run_dir = Path(a.run_dir)
-    rows = load(run_dir)
-    tok_path = run_dir / "tokens.jsonl"
-    tokens = ([json.loads(x) for x in tok_path.read_text(encoding="utf-8").splitlines() if x.strip()]
-              if tok_path.exists() else [])
-    text = report(run_dir, rows, a.label, tokens, a.primary, a.boot, a.boot_seed)
+    run_dirs = [Path(d) for d in a.run_dir]
+    run_dir = run_dirs[0]
+    rows, errors = load_all(run_dirs)
+    tokens = []
+    for d in run_dirs:
+        tok_path = d / "tokens.jsonl"
+        if tok_path.exists():
+            tokens += [json.loads(x) for x in tok_path.read_text(encoding="utf-8").splitlines() if x.strip()]
+    text = report(run_dir, rows, a.label, tokens, a.primary, a.boot, a.boot_seed, errors)
     if a.notes:
         # the notes go after the header, before the first section
         head, rest = text.split("\n## ", 1)

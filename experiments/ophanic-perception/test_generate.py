@@ -57,7 +57,8 @@ def test_cells_and_sizes(tasks):
         lo, hi = generate.SIZES[t["size"]]
         assert lo <= t["elements"] <= hi, t["id"]
         assert set(t["encodings"]) == {"ophanic@100", "ophanic@60", "ophanic-noise@100", "ophanic-noise@60",
-                                       "prose", "json", "json-compact", "list"}
+                                       "prose", "json", "json-compact", "list"} | (
+                                           {"list-lookup"} if t["type"] == "layout" else set())
         assert json.loads(t["encodings"]["json-compact"]) == t["data"]
 
 
@@ -432,28 +433,44 @@ def test_no_dependents_only_in_harness1(tasks, tasks_v1):
 
 # ---- framing (A3) ------------------------------------------------------------------------------------------
 
-def test_every_arm_and_type_has_a_framing_sentence(tasks):
+@pytest.mark.parametrize("style", ["matched", "pilot2"])
+def test_every_arm_and_type_has_a_framing_sentence(tasks, style):
     for t in tasks:
-        for arm in ("ophanic@100", "ophanic-noise@60", "prose", "json", "json-compact", "list"):
-            p = generate.build_prompt(t, arm, "Q?")
-            frame = generate.framing_for(t, arm)
+        arms = ["ophanic@100", "ophanic-noise@60", "prose", "json", "json-compact", "list"]
+        arms += ["list-lookup"] if t["type"] == "layout" else []
+        for arm in arms:
+            p = generate.build_prompt(t, arm, "Q?", style)
+            frame = generate.framing_for(t, arm, style)
             assert p.startswith(frame + "\n\n" + t["encodings"][arm] + "\n\nQ?\n")
             assert frame.count(". ") == 0, frame     # one sentence
 
 
-def test_framing_is_neutral_on_the_answer(tasks):
+def test_matched_framing_says_the_same_thing_to_every_arm(tasks):
+    """A13: within a structure type, every arm's sentence has the same description and the same share rule; only
+    the name of the form and how it marks things differ."""
+    for t in tasks:
+        body = generate.MATCHED_BODY[t["type"]].split("{key}")[0]
+        for arm in ("ophanic@100", "prose", "json", "list"):
+            frame = generate.framing_for(t, arm, "matched")
+            assert body in frame, (t["id"], arm)
+            if t["type"] == "layout":
+                assert "divided by the row's width in characters" in frame
+
+
+@pytest.mark.parametrize("style", ["matched", "pilot2"])
+def test_framing_is_neutral_on_the_answer(tasks, style):
     """A framing sentence names no panel, node, group or item, and no number."""
     for t in tasks:
         for arm in ("ophanic@100", "prose", "json", "list"):
-            frame = generate.framing_for(t, arm)
+            frame = generate.framing_for(t, arm, style)
             for n in names_of(t):
                 assert not re.search(rf"\b{re.escape(n)}\b", frame), (t["id"], arm, n)
-            assert not re.search(r"\d", frame.replace("R01", "")), frame
+            assert not re.search(r"\d", re.sub(r"R(01|nn)", "", frame)), frame
 
 
 def test_unframed_unfenced_prompt_is_the_pilots(tasks):
     t, q = tasks[0], tasks[0]["questions"][0]
-    assert generate.build_prompt(t, "ophanic@100", q["text"], framing=False) == \
+    assert generate.build_prompt(t, "ophanic@100", q["text"], framing="off") == \
         generate.prompt(t["encodings"]["ophanic@100"], q["text"])
     assert generate.build_prompt(t, "json+unframed", q["text"]) == generate.prompt(t["encodings"]["json"], q["text"])
 
@@ -472,6 +489,25 @@ def test_v1_tasks_get_percentage_framing(tasks_v1):
     t = next(t for t in tasks_v1 if t["type"] == "layout")
     assert "percentage" in generate.framing_for(t, "list")
     assert "characters" in generate.framing_for({**t, "harness": 2}, "list")
+    assert "percentage" in generate.framing_for(t, "list", "matched")
+
+
+def test_harness2_reproduces_pilot2_tasks():
+    import hashlib
+    text = "".join(json.dumps(t, ensure_ascii=False) + "\n" for t in generate.generate(5016, 3, harness=2))
+    assert hashlib.sha256(text.encode()).hexdigest().startswith("185e2651")
+
+
+def test_lookup_control_states_the_share(tasks):
+    """A12: list-lookup is the pilot's list, the share stated as a percentage, on layouts only; and the text arms
+    record which drawing their widths come from."""
+    for t in tasks:
+        if t["type"] != "layout":
+            assert "list-lookup" not in t["encodings"] and "share_pair" not in t
+            continue
+        assert t["share_pair"] == "ophanic@60" == generate.SHARE_PAIR
+        qq = next(q for q in t["questions"] if q["sub"] == "share")
+        assert re.search(rf"- {re.escape(qq['args']['x'])}: {qq['gold']}%$", t["encodings"]["list-lookup"], re.M)
 
 
 # ---- run.py (A2, A3, A5, A8) -------------------------------------------------------------------------------
@@ -532,7 +568,8 @@ def fake_rows(seed=1, n_tasks=12):
                 for arm, p in (("ophanic@100", 0.6), ("prose", 0.5), ("list", 0.4), ("ophanic-noise@100", 0.6)):
                     rows.append({"task": f"L-{size}-{i}", "question_id": qid, "model": "m", "encoding": arm,
                                  "type": "layout", "size": size, "kind": "spatial" if qid != "q2" else "proportion",
-                                 "sub": "x", "correct": rng.random() < p})
+                                 "sub": "x", "correct": rng.random() < p, "gold": "x", "answer": "x",
+                                 "answer_type": "name", "tasks_file": "f.jsonl", "run": "fake"})
     return rows
 
 
@@ -604,3 +641,72 @@ def test_arm_order():
 def test_no_incoming_scoring():
     q = {"answer_type": "int", "gold": 3}
     assert score.correct(q, "3") and score.correct(q, "3 nodes") and not score.correct(q, "Auth, Store, Cache")
+
+
+# ---- pilot-2 review (Momus): anthropic safeguards, no-answer handling, per-condition reporting -------------------
+
+def test_anthropic_token_floor_and_effort_pin(tmp_path, monkeypatch):
+    monkeypatch.delenv("OPX_ALLOW_PAID", raising=False)
+    with pytest.raises(SystemExit) as e:
+        run.main(["--tasks", str(tmp_path / "none.jsonl"), "--run", "x", "--model", "claude-haiku-5-5",
+                  "--backend", "anthropic", "--max-tokens", "256"])
+    assert "--max-tokens 256" in str(e.value)
+    with pytest.raises(SystemExit) as e:
+        run.main(["--tasks", str(tmp_path / "none.jsonl"), "--run", "x", "--model", "claude-unknown",
+                  "--backend", "anthropic"])
+    assert "pinned effort" in str(e.value)
+    for m in ("claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"):
+        assert run.anthropic_body(run_args(model=m), "x")["output_config"] == {"effort": run.EFFORT_PIN[m]}
+    assert run.ANTHROPIC_DEFAULT_TOKENS >= run.ANTHROPIC_MIN_TOKENS == 2048
+
+
+def test_no_answer_is_retried_then_an_error_never_wrong(tasks, tmp_path, monkeypatch):
+    """A call that ends while thinking (or with nothing) is retried, then recorded as an error, and the scorer
+    leaves it out."""
+    calls = []
+
+    def fake(a, text):
+        calls.append(text)
+        return {"answer": "", "done_reason": "length", "prompt_eval_count": 10, "eval_count": a.max_tokens}
+    monkeypatch.setattr(run, "call_ollama", fake)
+    monkeypatch.setattr(run, "HERE", tmp_path)
+    path = tmp_path / "t.jsonl"
+    path.write_text(json.dumps(tasks[0]) + "\n")
+    run.main(["--tasks", str(path), "--run", "r", "--model", "m", "--think", "--max-tokens", "4096",
+              "--encodings", "prose", "--noise-every", "0", "--limit", "1", "--retries", "2"])
+    rows = [json.loads(x) for x in (tmp_path / "results" / "r" / "calls.jsonl").read_text().splitlines()]
+    assert len(calls) == 3 and len(rows) == 1
+    assert rows[0]["error"].startswith("no answer after 3 attempts") and "correct" not in rows[0]
+    scored, errors = score.load_all([tmp_path / "results" / "r"])
+    assert scored == [] and len(errors) == 1
+    # a non-thinking answer cut off by the limit is an answer (a looping list), and is scored
+    assert not run.is_non_answer(run_args(backend="ollama"), {"answer": "A, B, A, B", "done_reason": "length"})
+    assert run.is_non_answer(run_args(backend="anthropic"), {"answer": "A", "done_reason": "max_tokens"})
+
+
+def test_conditions_are_never_pooled():
+    rows = fake_rows()
+    thinking = [{**r, "think": True, "correct": not r["correct"]} for r in rows]
+    with pytest.raises(ValueError):
+        score.hypotheses(rows + thinking, ["ophanic@100", "prose", "list"], [], "PILOT", B=50)
+    # pairs never cross conditions: the same task and question under two conditions are two pairs
+    assert score.pkey(rows[0]) != score.pkey(thinking[0])
+    text = score.report(Path("results/x"), rows + thinking, "PILOT", [], B=50, errors=[])
+    assert text.count("# Condition: ") == 2 and "# Condition: m (thinking)" in text
+
+
+def test_floors_ignore_the_lookup_control():
+    rows = fake_rows()
+    lookup = [{**r, "encoding": "list-lookup", "correct": True} for r in rows if r["encoding"] == "prose"]
+    text = "\n".join(score.review_checks(rows + lookup, ["ophanic@100", "prose", "list", "list-lookup"], []))
+    assert "list, list-lookup answered" not in text and "of 108" in text
+
+
+def test_power_simulation_is_deterministic_and_sane():
+    import power
+    diffs = [0.5, -0.5, 0.0, 1.0, -1.0, 0.0, 0.5, 0.0]
+    a = power.simulate(diffs, 40, 20, power.meets, 300, random.Random(4))
+    b = power.simulate(diffs, 40, 20, power.meets, 300, random.Random(4))
+    assert a == b
+    assert power.simulate(diffs, 40, 0, power.meets, 300, random.Random(4)) < 0.1 < a
+    assert power.within(0, -1, 1) and not power.within(-4, -6, -2)

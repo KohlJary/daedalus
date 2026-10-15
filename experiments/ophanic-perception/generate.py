@@ -11,9 +11,11 @@ For each structure type (layout, graph, containment) and size (small, medium, la
   json-compact);
 - `questions`: one per question kind for the type, each with its gold answer and answer type.
 
-`--harness 1` reproduces the pilot's tasks byte for byte. `--harness 2` (the default) implements DESIGN.md's
+`--harness 1` reproduces pilot 1's tasks byte for byte and `--harness 2` pilot 2's. Harness 2 implements DESIGN.md's
 proposed amendments: layouts state character widths instead of percentages in the text arms (A1), and the graph's
-aggregate question is "how many nodes have no incoming edge" (A2). The prompt framing (A3) is in `build_prompt`.
+aggregate question is "how many nodes have no incoming edge" (A2). Harness 3 (the default) adds, for layouts, the
+`list-lookup` control arm with the share stated as a percentage (A12) and records `share_pair`, the ophanic arm
+whose drawn widths the text arms state. The prompt framing (A3, A13) is in `build_prompt`.
 
 Everything comes from `random.Random("<seed>:<type>:<size>:<i>")`, so the same seed gives the same file.
 Every clean ophanic diagram must pass the Ophanic lint (oph_lint.py); every noisy one must fail it with
@@ -40,8 +42,12 @@ SIZES = {"small": (5, 8), "medium": (15, 25), "large": (40, 60)}
 WIDTHS = (100, 60)
 EDGE_LABELS = ("needs", "calls", "feeds", "extends")
 INSTRUCTION = "Answer with only the answer."
-HARNESS = 2          # the default task format; 1 is the pilot's
-PROPORTION_WIDTH = 60  # harness 2: the text arms state widths from the 60-column drawing (span 59, not 100)
+HARNESS = 3          # the default task format; 1 is pilot 1's, 2 is pilot 2's
+PROPORTION_WIDTH = 60  # harness 2+: the text arms state widths from the 60-column drawing (span 59, not 100)
+# The ophanic arm whose drawn widths the text arms state: H1b pairs the text arms with this one (Momus, pilot 2)
+SHARE_PAIR = f"ophanic@{PROPORTION_WIDTH}"
+# Harness 3 (A12): a lookup-ceiling control for the share question, the list with the percentage stated
+LOOKUP_ARM = "list-lookup"
 
 LAYOUT_NAMES = """Header Footer Sidebar Nav Search Logo Menu Tabs Toolbar Status Editor Preview Console
 Inbox Profile Avatar Badge Cart Filter Map Legend Chart Table Log Help Alerts Notes Calendar Tasks Files
@@ -371,7 +377,7 @@ def make_layout(rng, n, harness=HARNESS):
         qs.append(q("proportion", "share", f"What percentage of its row's width does {x} take up? Answer with a "
                     f"number.", s, "percent", x=x))
         data = ordered(root) if harness == 1 else ordered_widths(root, node_spans(root, PROPORTION_WIDTH))
-        return data, drawings, qs, len(leaves(root))
+        return data, drawings, qs, len(leaves(root)), ordered(root)
     raise HarnessBug("could not draw a layout in 400 tries")
 
 
@@ -809,7 +815,7 @@ def make_structure(seed, typ, size, i, harness=HARNESS):
     rng = random.Random(f"{seed}:{typ}:{size}:{i}")
     n = rng.randint(*SIZES[size])
     if typ == "layout":
-        data, drawings, qs, count = make_layout(rng, n, harness)
+        data, drawings, qs, count, pct = make_layout(rng, n, harness)
         drawn = {W: (rows, notes, {}) for W, (rows, notes) in drawings.items()}
         prose, lst = layout_prose(data), layout_list(data)
     elif typ == "graph":
@@ -838,6 +844,8 @@ def make_structure(seed, typ, size, i, harness=HARNESS):
     enc["prose"] = prose
     enc["json"] = json.dumps(data, indent=2, ensure_ascii=False)
     enc["list"] = lst
+    if harness >= 3 and typ == "layout":
+        enc[LOOKUP_ARM] = layout_list(pct)   # the pilot's list: shares stated as percentages
     if harness >= 2:
         enc["json-compact"] = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
     for k, qq in enumerate(qs):
@@ -846,6 +854,8 @@ def make_structure(seed, typ, size, i, harness=HARNESS):
            "data": data, "encodings": enc, "draw_info": meta, "questions": qs}
     if harness >= 2:
         out["harness"] = harness
+    if harness >= 3 and typ == "layout":
+        out["share_pair"] = SHARE_PAIR
     return out
 
 
@@ -858,6 +868,7 @@ def prompt(encoding_text, question_text):
 # Framing (A3): one neutral sentence per arm saying what the structure is and how to read it
 # ---------------------------------------------------------------------------------------------------------
 
+# Pilot 2's framing (harness 2, `--framing pilot2`): one sentence per arm, written separately for each
 FRAMING = {
     ("ophanic", "layout"): "The diagram below is a screen layout drawn with box-drawing characters: each box is a "
         "panel labelled with its name, and a box's width in characters, border to border, measured against the "
@@ -899,6 +910,39 @@ FRAMING_V1_LAYOUT = {
     "list": "The outline below describes a screen layout: indentation shows nesting, rows run top to bottom and "
         "columns left to right, and each column's share of its row is given as a percentage.",
 }
+# A13: matched framing. Every arm of a structure type gets the same sentence: the same description of the
+# structure and the same rule for the share, differing only in the name of the form and how that form marks
+# things (a box, a sentence, a key, an indented line).
+MATCHED_FORM = {"ophanic": "The diagram below, drawn with box-drawing characters,", "prose": "The text below",
+                "json": "The JSON below", "list": "The outline below", "list-lookup": "The outline below"}
+MATCHED_BODY = {
+    "layout": "describes a screen layout of named panels in nested rows, top to bottom, and columns, left to "
+              "right; a column's share of its row is its width in characters divided by the row's width in "
+              "characters, {key}.",
+    "graph": "describes a directed graph of named nodes joined by labelled edges; {key}.",
+    "containment": "describes named groups, the items each group holds directly, and subgroups inside groups; an "
+                   "item can belong to more than one group, and {key}.",
+}
+MATCHED_KEY = {
+    ("ophanic", "layout"): "each box is a panel, and widths are measured border to border in the drawing (a label "
+                           "cut short with … is spelled out in a note under it)",
+    ("prose", "layout"): "and the text states each column's width and its row's width",
+    ("json", "layout"): "and \"width\" gives each column's width and its row's width",
+    ("list", "layout"): "and each column's line states its width and its row's width",
+    ("list-lookup", "layout"): "and each column's line states that share as a percentage",
+    ("ophanic", "graph"): "each box is a node, an arrow ─█Rnn─▶ is an edge from the box on its left to the box on "
+                          "its right with its label in the legend under the diagram, and every other edge is listed "
+                          "there as note: A ─▶ B (label)",
+    ("prose", "graph"): "each edge is a sentence \"A label B\", an edge from A to B",
+    ("json", "graph"): "each edge has a from node, a to node and a label",
+    ("list", "graph"): "each edge is a line A -> B (label), an edge from A to B",
+    ("ophanic", "containment"): "each box is a group with its name above the divider, its items below it, and its "
+                                "subgroups as boxes inside it",
+    ("prose", "containment"): "each sentence says what one group holds",
+    ("json", "containment"): "each group has a name, its items, and any groups inside it",
+    ("list", "containment"): "an entry marked (group) is a group and the entries indented under it are what it holds",
+}
+FRAMING_STYLES = ("matched", "pilot2", "off")
 MODIFIERS = ("fenced", "unframed")
 
 
@@ -917,14 +961,26 @@ def family(base: str) -> str:
     return "ophanic" if base.startswith("ophanic") else "json" if base.startswith("json") else base
 
 
-def framing_for(task: dict, base: str) -> str:
+def matched_framing(task: dict, base: str) -> str:
     fam = family(base)
+    key = MATCHED_KEY[(fam, task["type"])]
+    if task["type"] == "layout" and fam not in ("ophanic", "list-lookup") and task.get("harness", 1) == 1:
+        key = "and the text states each column's share as a percentage"
+    return f"{MATCHED_FORM[fam]} " + MATCHED_BODY[task["type"]].format(key=key)
+
+
+def framing_for(task: dict, base: str, style: str = "pilot2") -> str:
+    if style == "matched":
+        return matched_framing(task, base)
+    fam = family(base)
+    if fam == "list-lookup":
+        return FRAMING_V1_LAYOUT["list"]
     if task["type"] == "layout" and fam != "ophanic" and task.get("harness", 1) == 1:
         return FRAMING_V1_LAYOUT[fam]
     return FRAMING[(fam, task["type"])]
 
 
-def build_prompt(task: dict, arm: str, question_text: str, framing: bool = True) -> str:
+def build_prompt(task: dict, arm: str, question_text: str, framing="matched") -> str:
     """The prompt for one call. With framing (A3) it starts with the arm's framing sentence; `+fenced` wraps an
     ophanic diagram in a ``` fence; `+unframed` drops the framing for that arm. Unframed and unfenced, this is
     exactly the pilot's prompt()."""
@@ -932,8 +988,11 @@ def build_prompt(task: dict, arm: str, question_text: str, framing: bool = True)
     text = task["encodings"][base]
     if "fenced" in mods:
         text = f"```\n{text}\n```"
-    if framing and "unframed" not in mods:
-        return f"{framing_for(task, base)}\n\n{text}\n\n{question_text}\n{INSTRUCTION}"
+    style = {True: "pilot2", False: "off"}.get(framing, framing)
+    if style not in FRAMING_STYLES:
+        raise ValueError(f"unknown framing style {framing!r}")
+    if style != "off" and "unframed" not in mods:
+        return f"{framing_for(task, base, style)}\n\n{text}\n\n{question_text}\n{INSTRUCTION}"
     return prompt(text, question_text)
 
 
@@ -946,8 +1005,8 @@ def main(argv=None):
     ap.add_argument("--seed", type=int, required=True)
     ap.add_argument("--per-cell", type=int, default=10)
     ap.add_argument("--out", default=str(HERE / "tasks"))
-    ap.add_argument("--harness", type=int, choices=[1, 2], default=HARNESS,
-                    help="task format: 1 reproduces the pilot's tasks, 2 implements the proposed amendments")
+    ap.add_argument("--harness", type=int, choices=[1, 2, 3], default=HARNESS,
+                    help="task format: 1 and 2 reproduce pilots 1 and 2; 3 adds the share lookup control (A12)")
     a = ap.parse_args(argv)
     if CONFIRMATORY_SEEDS[0] <= a.seed <= CONFIRMATORY_SEEDS[1]:
         print(f"note: seed {a.seed} is in the range reserved for confirmatory runs (README, Seeds)", file=sys.stderr)

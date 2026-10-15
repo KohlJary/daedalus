@@ -39,6 +39,14 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from generate import build_prompt, parse_arm  # noqa: E402
+
+# Effort pinned per Claude model (A11, proposed, Kohl to confirm): one value, recorded in every row. The API's own
+# defaults differ (Opus and Haiku medium, Sonnet high), so the run never relies on them.
+EFFORT_PIN = {"claude-haiku-5-5": "medium", "claude-sonnet-5-5": "medium", "claude-opus-5-5": "medium"}
+ANTHROPIC_MIN_TOKENS = 2048     # thinking shares max_tokens on current Claude models
+ANTHROPIC_DEFAULT_TOKENS = 4096
+OLLAMA_DEFAULT_TOKENS = 256
+NON_ANSWER = ("max_tokens", "length")   # a stop reason that means the answer was cut off
 from score import correct  # noqa: E402
 
 DEFAULT_ENCODINGS = "ophanic@100,ophanic@60,prose,json,list"
@@ -73,9 +81,20 @@ def anthropic_body(a, text):
         body["temperature"] = a.temperature
     if a.stop and a.stop.strip():   # a whitespace-only stop sequence is not sent to the Messages API
         body["stop_sequences"] = [a.stop]
-    if a.effort:
-        body["output_config"] = {"effort": a.effort}
+    effort = a.effort or EFFORT_PIN.get(a.model)
+    if effort:
+        body["output_config"] = {"effort": effort}
     return body
+
+
+def is_non_answer(a, res) -> bool:
+    """A call that produced no answer to score: empty, or cut off by the token limit while thinking (Claude, or an
+    Ollama model with --think). Such a call is retried, then recorded as an error and left out of scoring, never
+    scored as wrong. A non-thinking Ollama answer cut off by the limit is a (looping) answer and is scored."""
+    from score import clean
+    if not clean(res.get("answer", "")):
+        return True
+    return res.get("done_reason") in NON_ANSWER and (a.backend == "anthropic" or a.think)
 
 
 def call_anthropic(a, text):
@@ -99,8 +118,10 @@ def noise_arm(encodings):
 
 
 def plan(tasks, encodings, noise_every):
+    """Every (task, arm, question). An arm whose encoding a task doesn't have (list-lookup outside layouts) is
+    skipped for that task."""
     for t in tasks:
-        encs = list(encodings)
+        encs = [e for e in encodings if parse_arm(e)[0] in t["encodings"]]
         if noise_every and t["index"] % noise_every == 0:
             encs.append(noise_arm(encodings))
         for e in encs:
@@ -128,23 +149,38 @@ def main(argv=None):
     ap.add_argument("--noise-every", type=int, default=1,
                     help="add ophanic-noise@100 for structures whose index is a multiple of this (1: all, the A5 "
                          "default; 2: every other, as the pilot ran; 0: none)")
-    ap.add_argument("--framing", choices=["on", "off"], default="on",
-                    help="A3: a neutral sentence per arm saying what the structure is and how to read it")
+    ap.add_argument("--framing", choices=["matched", "pilot2", "on", "off"], default="matched",
+                    help="A3/A13: matched (the same sentence for every arm of a type, the default); pilot2 (pilot "
+                         "2's per-arm sentences; 'on' is an alias); off (the pilot's unframed prompt)")
     ap.add_argument("--fenced", action="store_true", help="wrap every ophanic arm in a ``` fence (+fenced)")
     ap.add_argument("--num-ctx", type=int, default=0, help="0: the next 2048 above the largest prompt's estimate")
-    ap.add_argument("--max-tokens", type=int, default=256,
-                    help="num_predict / max_tokens: room for any short answer (raise it with --think)")
+    ap.add_argument("--max-tokens", type=int, default=None,
+                    help=f"num_predict / max_tokens (default {OLLAMA_DEFAULT_TOKENS} for ollama, "
+                         f"{ANTHROPIC_DEFAULT_TOKENS} for anthropic, which refuses less than {ANTHROPIC_MIN_TOKENS})")
+    ap.add_argument("--retries", type=int, default=2,
+                    help="retries for a call that gives no answer (empty, or cut off while thinking)")
     ap.add_argument("--stop", default="\n\n", help="stop sequence (default: a blank line); '' for none")
     ap.add_argument("--think", action="store_true", help="ollama: let a reasoning model think (default off)")
     ap.add_argument("--temperature", type=float, default=None,
                     help="ollama default 0; anthropic: sent only if given")
-    ap.add_argument("--effort", default=None, help="anthropic: output_config.effort (low, medium, high...)")
+    ap.add_argument("--effort", default=None,
+                    help="anthropic: output_config.effort; default the pinned value in EFFORT_PIN (overriding it "
+                         "departs from the pre-registration and is recorded in each row)")
     ap.add_argument("--ollama-url", default="http://localhost:11434")
     ap.add_argument("--limit", type=int, default=0, help="stop after this many new calls (0: all)")
     ap.add_argument("--dry-run", action="store_true", help="print the plan and the num_ctx, call nothing")
     a = ap.parse_args(argv)
 
+    if a.max_tokens is None:
+        a.max_tokens = ANTHROPIC_DEFAULT_TOKENS if a.backend == "anthropic" else OLLAMA_DEFAULT_TOKENS
+    if a.framing == "on":
+        a.framing = "pilot2"
     if a.backend == "anthropic":
+        if a.max_tokens < ANTHROPIC_MIN_TOKENS:
+            sys.exit(f"refusing: --max-tokens {a.max_tokens} for anthropic; thinking shares max_tokens, so use at "
+                     f"least {ANTHROPIC_MIN_TOKENS} (default {ANTHROPIC_DEFAULT_TOKENS})")
+        if not a.effort and a.model not in EFFORT_PIN:
+            sys.exit(f"refusing: no pinned effort for {a.model}; add it to EFFORT_PIN or pass --effort")
         if os.environ.get("OPX_ALLOW_PAID") != "1":
             sys.exit("refusing: the anthropic backend is a paid run; set OPX_ALLOW_PAID=1 only when Kohl has "
                      "started paid runs (none before 2026-10-23)")
@@ -156,7 +192,7 @@ def main(argv=None):
     a.stop = a.stop.encode().decode("unicode_escape") if "\\" in a.stop else a.stop
     encodings = arms(a.encodings, a.fenced)
     calls = list(plan(tasks, encodings, a.noise_every))
-    framing = a.framing == "on"
+    framing = a.framing
     prompts = [build_prompt(t, e, qq["text"], framing) for t, e, qq in calls]
     if not a.num_ctx:
         # A box-drawing character can cost a token on its own: estimate one token per character, with room
@@ -189,10 +225,20 @@ def main(argv=None):
                    "sub": qq["sub"], "question": qq["text"], "answer_type": qq["answer_type"], "gold": qq["gold"],
                    "model": a.model, "backend": a.backend, "num_ctx": a.num_ctx if a.backend == "ollama" else None,
                    "prompt_chars": len(text), "harness": t.get("harness", 1), "framing": framing,
-                   "max_tokens": a.max_tokens, "stop": a.stop, "think": a.think}
+                   "max_tokens": a.max_tokens, "stop": a.stop, "think": a.think,
+                   "effort": (a.effort or EFFORT_PIN.get(a.model)) if a.backend == "anthropic" else None}
             try:
-                row.update(fn(a, text))
-                row["correct"] = correct(qq, row["answer"])
+                for attempt in range(1, a.retries + 2):
+                    res = fn(a, text)
+                    row["attempts"] = attempt
+                    if not is_non_answer(a, res):
+                        break
+                row.update(res)
+                if is_non_answer(a, res):
+                    row["error"] = (f"no answer after {row['attempts']} attempts "
+                                    f"(done_reason {res.get('done_reason')!r}, {len(res.get('answer', ''))} chars)")
+                else:
+                    row["correct"] = correct(qq, row["answer"])
             except (urllib.error.URLError, TimeoutError, KeyError, ValueError) as ex:
                 row.update({"answer": "", "error": f"{type(ex).__name__}: {ex}"})
             row["latency_s"] = round(time.time() - t0, 3)
