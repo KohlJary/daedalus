@@ -58,9 +58,19 @@ class CheckResult:
 # Numbers in a finding's text: each must be backed by a figure (edict 0010: figures are checked).
 # Citations, IDs, dates, times, versions and paths are not numbers in this sense.
 NUMBER = re.compile(r"(?<![\w.:/#-])(\d+(?:\.\d+)?)(%?)(?![\w:/-]|\.\d)")
-SPELLED = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-           "eleven": 11, "twelve": 12, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "hundred": 100}
+SPELLED = {"two": 2, "twice": 2, "three": 3, "thrice": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+           "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "dozen": 12, "thirteen": 13, "fourteen": 14,
+           "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20, "thirty": 30,
+           "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90, "hundred": 100}
+# Numbers that sit next to a symbol the plain pattern skips: ratios (4/109), ranges (10-20), units (3x, 12KB)
+RATIO = re.compile(r"(?<![\w./])(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)(?![\w./])")
+RANGE = re.compile(r"(?<![\w.-])(\d+)\s*[-–]\s*(\d+)(?![\w.-])")  # integers only: 3.10-3.12 is versions
+UNIT = re.compile(r"(?<![\w.-])(\d+(?:\.\d+)?)(x|kb|mb|gb|k|ms|s|m|h)\b", re.IGNORECASE)
 SPELLED_RE = re.compile(r"\b(" + "|".join(SPELLED) + r")\b", re.IGNORECASE)
+
+
+# Digest fields that describe the session as a whole and stay true for any day of it
+WHOLE_SESSION_OK = {"session_id", "models", "claude_code_versions", "branches", "start", "end", "cwd", "labels"}
 
 
 def bare_numbers(text: str) -> list[tuple[float, bool, str]]:
@@ -73,7 +83,15 @@ def bare_numbers(text: str) -> list[tuple[float, bool, str]]:
     text = re.sub(r"\b(?:edicts?|PR|issue|phase|exit(?:ing|ed|s)?(?: code)?|Opus|Sonnet|Haiku|Fable|Claude)"
                   r"\s+\d+(?:\.\d+)*", " ", text, flags=re.I)
     text = re.sub(r"(?<=\d),(?=\d{3}\b)", "", text)  # 1,234 is one number
-    out = [(float(n), pct == "%", n + pct) for n, pct in NUMBER.findall(text)]
+    extra: list[tuple[float, bool, str]] = []
+    for pattern in (RATIO, RANGE):
+        for m in pattern.finditer(text):
+            extra += [(float(m.group(1)), False, m.group(1)), (float(m.group(2)), False, m.group(2))]
+        text = pattern.sub(" ", text)
+    for m in UNIT.finditer(text):
+        extra.append((float(m.group(1)), False, m.group(0)))
+    text = UNIT.sub(" ", text)
+    out = extra + [(float(n), pct == "%", n + pct) for n, pct in NUMBER.findall(text)]
     out += [(float(SPELLED[w.lower()]), False, w) for w in SPELLED_RE.findall(text)]
     return out
 
@@ -162,6 +180,12 @@ def check_report(project_dir: Path, report: dict, models_root: Optional[Path] = 
                     field_value(digest, ref)
                 except KeyError:
                     err(f"{where}: cites digest field {ref}, which session {session}'s digest doesn't have")
+                    continue
+                days = set((digest.get("event_days") or {}).values())
+                if period and days and not all(period[0] <= d <= period[1] for d in days) \
+                        and ref.split(".")[0] not in WHOLE_SESSION_OK:
+                    err(f"{where}: cites {ref}, a whole-session total, but session {session} also ran outside the "
+                        f"{level} period; cite its events in the period instead (the bundle's in_period)")
         return found
 
     for i, f in enumerate(report.get("findings") or []):
@@ -196,6 +220,11 @@ def check_report(project_dir: Path, report: dict, models_root: Optional[Path] = 
                 continue
             if not _same(actual, fig.get("value")):
                 err(f"{where}: figure says {fig.get('value')} for {ref}, the digest says {actual}")
+            days = set((digests[session].get("event_days") or {}).values())
+            if period and days and not all(period[0] <= d <= period[1] for d in days) \
+                    and ref.split(".")[0] not in WHOLE_SESSION_OK:
+                err(f"{where}: figure cites {ref}, a whole-session total, but session {session} also ran outside the "
+                    f"{level} period; count the period's events instead (the bundle's in_period)")
 
     # A dream is never evidence (edict 0013): the report may not cite or lean on one anywhere
     import json as _json

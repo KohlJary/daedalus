@@ -1,5 +1,5 @@
 {
-  "description": "Multi-phase plans currently in flight. Each phase references roadmap item ids; the activePhase section breaks the current phase into concrete tasks with status. Survives conversation compactions \u2014 a fresh session can pick up by reading this file.",
+  "description": "Multi-phase plans currently in flight. Each phase references roadmap item ids; the activePhase section breaks the current phase into concrete tasks with status. Survives conversation compactions — a fresh session can pick up by reading this file.",
   "phases": [
     {
       "id": "p9-sources",
@@ -95,7 +95,7 @@
   "owner": {
     "id": "sources",
     "kind": "session",
-    "git_author": null
+    "git_author": "Daedalus"
   },
   "claims": []
 }

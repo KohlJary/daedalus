@@ -1,0 +1,137 @@
+# Dream
+
+Edict 0013. Dreaming is a protected phase where Daedalus generates widely about
+where the project could go, judged only afterwards and only by you. A dream is
+seeds, the dream, and a cold waking pass that picks three to five ideas. Picks
+reach the roadmap only through the `dream` source, as proposals you apply or
+drop. Read-only: running a dream and syncing its picks are Claude's job.
+
+@dreams
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Dream                                                                     speculative · esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ [Dreams] · Picks · Themes · Due                                                                  │
+├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
+│▸ 2026-10-15-2  done    3 picks       │ ◆SpeculativeLabel                                         │
+│  2026-10-15    done    5 picks       │                                                           │
+│  2026-10-12    started               │ # Dream 2026-10-15-2                                      │
+│                                      │                                                           │
+│                                      │ ## Ideas                                                  │
+│                                      │ 1. A glass labyrinth the owner can walk                   │
+│                                      │ 2. Wings for the CLI                                      │
+│                                      │ …                                                         │
+│                                      │ ## On waking                                              │
+│                                      │ (daedalus dream show 2026-10-15-2, scrollable)            │
+│                                      ├───────────────────────────────────────────────────────────┤
+│                                      │ s send to Claude · ? explain                              │
+├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: newest first. The detail is exactly `daedalus dream show`. Nothing says
+which mode made a dream: edict 0013 keeps that from every reader, so the A/B
+stays blind.
+
+@picks
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Dream                                                                     speculative · esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Dreams · [Picks] · Themes · Due                                                                  │
+├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
+│▸ 2026-10-15-2.p1  built              │ ◆SpeculativeLabel                                         │
+│  2026-10-15-2.p2  in review          │                                                           │
+│  2026-10-15-2.p3  not synced yet     │ 2026-10-15-2.p1 · Glass labyrinth                         │
+│  2026-10-15.p1    waiting            │ roadmap: dream-2026-10-15-2.p1 · built (done)             │
+│  2026-10-15.p2    proposed           │                                                           │
+│  2026-10-15.p3    dropped            │ **Glass labyrinth**: from i3. It grew from the            │
+│                                      │ stalled task; make it real with a map view.               │
+│                                      │                                                           │
+│                                      │                                                           │
+│                                      │                                                           │
+│                                      ├───────────────────────────────────────────────────────────┤
+│                                      │ s source sync dream (unsynced picks) · ? explain          │
+├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: every pick across dreams with its roadmap item `dream-<dream-id>.p<n>`:
+built (done), in review, waiting (backlog), proposed (pending in Needs you),
+dropped, or not synced yet. Syncing isn't a v1 write, so s hands it to Claude.
+
+@themes
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Dream                                                                     speculative · esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Dreams · Picks · [Themes] · Due                                                                  │
+├──────────────────────────────────────┬───────────────────────────────────────────────────────────┤
+│▸ t2  elevated    4 dreams · 3 sets   │ ◆SpeculativeLabel                                         │
+│  t1  covered     3 dreams · 3 sets   │                                                           │
+│  t3  recurring   2 dreams · 1 set    │ t2 · A map of the labyrinth                               │
+│  t0  superseded by t2                │ elevated: proposed through the dream source               │
+│                                      │ in 4 dreams, 3 distinct seed sets                         │
+│                                      │                                                           │
+│                                      │ (the theme's summary)                                     │
+│                                      │ ideas: 2026-10-12.i4, 2026-10-15.i9, …                    │
+│                                      │ How often an idea came back says nothing                  │
+│                                      │ about whether it's right.                                 │
+│                                      ├───────────────────────────────────────────────────────────┤
+│                                      │ ? explain                                                 │
+├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: from the dream review's theme registry. Distinct seed sets matter
+because unchanged project state gives the same seeds: a theme counts as
+recurring only when it came back from different material.
+
+@due
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Dream                                                                     speculative · esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Dreams · Picks · Themes · [Due]                                                                  │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ A dream is due: a reflection ran since the last dream. Run /dream in the Claude pane.            │
+│ Waiting: the dream from 2026-10-15-2 has picks not synced yet.                                   │
+│ Dream review: not due (2 of 4 dreams since the last review).                                     │
+│                                                                                                  │
+│ Experiment                                                                                       │
+│ Dreams: 6 · picks: 22 · synced 9 · applied 5 · built 2                                           │
+│ Totals across every dream. The experiment's breakdown is `daedalus dream log`.                   │
+│                                                                                                  │
+│ s ask Claude to run /dream · ? explain                                                           │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: computed when shown (`dream due` without writing due.json). The
+experiment lines are totals across every dream, never split by mode: a
+per-mode count would move with one mode as picks are applied or built, and
+next to the Dreams and Picks tabs that would tell a reader which mode made a
+dream. The per-mode breakdown stays in `daedalus dream log`.
+
+@off
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Dream                                                                     speculative · esc back │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Dreaming is off.                                                                                 │
+│                                                                                                  │
+│ A dream is a protected phase where Daedalus generates widely about where this project            │
+│ could go: seeds from what it already keeps, the dream, then a cold waking pass that picks        │
+│ three to five ideas. You judge them afterwards; picks reach the roadmap only as proposals        │
+│ you apply or drop. A dream is never evidence.                                                    │
+│                                                                                                  │
+│ Turn it on:  daedalus config dream.enabled true   (add --project for this project only)          │
+│ Then a dream is due after each reflection run, or ask for one with /dream [theme].               │
+│                                                                                                  │
+│ s ask Claude about dreaming · ? explain                                                          │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ ◆KeyBar                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+note: dream.enabled unset means off. The screen teaches instead of showing
+nothing.
+
+## ◆SpeculativeLabel
+
+@label
+┌───────────────────────────────────────────────────────────┐
+│ ◇ speculative: a dream, not a proposal, not evidence, not │
+│   reviewed. Nothing in Daedalus reads it as fact.         │
+└───────────────────────────────────────────────────────────┘
+note: above every dream text on Dreams, Picks and Themes. A text tag, not a
+colour, so it survives any theme.

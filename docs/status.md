@@ -5,7 +5,7 @@ committed gameplan, `.daedalus/roadmap/gameplan.json`: run `daedalus gameplan sh
 and `daedalus doctor`. This file carries what the gameplan can't say. See
 `docs/edicts/README.md`.*
 
-**Last updated:** 2026-10-15 overnight (edicts 0012, 0013); earlier: the night shift (edict 0011); earlier: the reflection session (edict 0010); the TUI-design, Ariadne/experiment and memory-side sessions' notes follow
+**Last updated:** 2026-10-15 ~07:15 EDT (overnight: edicts 0012, 0013; PRs #68-#71 for review); earlier: the night shift (edict 0011); earlier: the reflection session (edict 0010); the TUI-design, Ariadne/experiment and memory-side sessions' notes follow
 
 ## Reflection session (2026-10-14)
 - **Edict 0010 written with Kohl** (in chat and with Claude in chat), amended twice: user/self
@@ -37,6 +37,57 @@ Everything merged tonight went through Momus and green CI first. Audit trail:
   install below to run here. Momus's open lows: cramped narrow layouts on some screens, no Dream screen, modified
   Enter is only a newline on terminals that report it.
 - **Hermes → the Chorus** (#59, another session's PR, renamed at Kohl's call); "Chorus portents" is on the roadmap.
+- **Later the same night (Kohl awake on and off; merge grant still on):**
+  - **Merged:**
+    - #65: doctor sees a stale or shadowed install (T-e27), which is what broke `source list` here.
+    - #66: reflection-check leaks. Ratios and ranges now count as numbers; multi-day totals are refused, figures
+      included; old tombstones still match, so forgetting stays forgotten.
+  - **Dream-log PRs:** #56, #57, #58 and #62 were merged by Kohl. #64 (the `self` source) is open for review. The
+    first dream moved to `.daedalus/dreams/2026-10-15/`, and its picks are roadmap `idea` items whose status tracks
+    what's built (`daedalus roadmap list`).
+  - **Edict 0017 (Ophanic, `proposed`): PR #70, for Kohl to accept or not; not merged.**
+    - Momus's build review found 8 problems. The lint was overfitted to the TUI's diagrams, and the maps had edge
+      and rendering bugs.
+    - All 8 are fixed in 5ab9cf3, and Momus's re-verification is "shown".
+    - Untested: the skill hasn't been tried in a real session.
+    - `oph.components` has no committed project default, so doctor checks components only when you set it.
+  - **The Ophanic perception experiment: PR #69, for review.** It holds the pre-registration, the harness and three
+    pilots, all descriptive. Momus reviewed each round.
+    - **Pilot 1 (qwen3:8b):**
+      - Containment: a real gap. Paired against JSON on the same questions, Ophanic alone was right once and JSON
+        alone 29 times.
+      - Layout spatial: tied with the text encodings.
+      - Proportions: not comparable, because the text encodings stated the percentages.
+      - Graphs: at the floor in every encoding.
+    - **Pilot 2 (qwen3:8b, the amended harness):** looping is gone, and the containment gap remains. 8b can't do
+      the share arithmetic.
+    - **Pilot 3 (qwen3:14b):**
+      - Without thinking, it divides.
+      - With thinking, every encoding is near the ceiling. But 7 of the 10 calls that ran out of tokens were Ophanic
+        ones, so dropping them flatters Ophanic.
+    - **Kohl to decide:**
+      - confirm amendments A1-A13;
+      - choose how unanswered calls count;
+      - freeze the conventions (a placeholder in DESIGN.md);
+      - give the go-ahead for a nine-call Haiku smoke test after 2026-10-23.
+    - Power: a true 10-point effect is caught only 36-52% of the time at 40 structures per cell (power.py).
+  - **The TUI Dream screen: PR #68, for review.** It opens on `D`, is read-only and is fully mode-blind. Momus's
+    fixes are in, his verdict is ship, and CI is green.
+    - Kohl to decide: whether the TUI may show the per-mode counts that 0013 allows in `dream log`.
+  - **The TUI send form (dream pick 2): PR #71, for review.** It is stacked on #70; retarget it to main once #70
+    merges.
+    - `tui.send_form` takes `prose` (the default: unchanged, writes nothing), `text`, `ophanic` or `ab`.
+    - `ab` draws between `text` and `ophanic`, which carry the same facts: labels are cut once, before either is
+      rendered.
+    - Each send's form goes to `.daedalus/tui/sends.jsonl`, with no content. `daedalus tui sends` summarises it.
+    - Momus: three rounds, verdict ship. CI is green.
+    - Kohl to decide: five panels, where 0017 amendment 6 says Gameplan only.
+    - Not met: 0017's reflection-digest join. Until it exists, the A/B can't say which form helped.
+  - **Coordination with the other session (daedalus-42):** it has 0015 (context map) and 0016 (toolbox hooks). The
+    Ophanic edict was renumbered 0017. The file split is agreed, and the TUI's panel shapes are written into its
+    edicts.
+  - **A stand-in clock hook** is in this checkout's `.claude/settings.local.json` (`.claude/hooks/clock.sh`). Remove
+    it when 0016's kit or 0014 provides the clock.
 - **Dream-log ideas, as PRs for review, not merged:** #56 edicts with tests attached (pick 38); #57 `daedalus page`
   (pick 33).
 - **A test leaked into real data:** one TUI test run wrote 4 test entries into `~/.config/daedalus/models/` (the

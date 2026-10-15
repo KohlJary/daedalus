@@ -359,6 +359,7 @@ The pieces are named after the Labyrinth myth; here is what each does.
 | `/reconstruct` | The plan has fallen behind the code |
 | `/reflect` | A reflection is due and you said to run it |
 | `board` | Talking to other owners' agents |
+| `/hit-em-up` | Working the board: plan a route, push items to their gates, triage the backlog; `dry-run` shows it without doing it. Rules come from a policy file (`policies/`), defaults from `hitEmUp` in `.daedalus/config.json` |
 | `mind-palace`, `ariadne` | Navigating the palace; checking on Ariadne |
 
 ## Reference

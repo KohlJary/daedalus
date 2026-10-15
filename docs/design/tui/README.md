@@ -40,6 +40,7 @@ PR #38, edict 0011 and the board threads don't exist.
 | `sources.oph` | Source plugins (ADO, Jira, …): sync health, mapping, write-back |
 | `config.oph` | Every setting, the layer it comes from, editing, and secrets |
 | `reflection.oph` | Reflection (edict 0010, PR #39): due, reports, user and self models, the A/B experiment |
+| `dream.oph` | Dreaming (edict 0013): dreams, picks and their roadmap status, recurring themes, what's due |
 | `coverage.md` | How much of Daedalus the design shows, tracked over time |
 
 ## Screen map
@@ -55,6 +56,7 @@ shell ── 1 / enter ─▶ needs-you (expanded) ── PR/ED/DS/BD item ─�
       ── ? (any panel) ─▶ explain card ── g ─▶ glossary
       ── , ─────────▶ config (also from Sources: c configure)
       ── R ─────────▶ reflection ── tabs: due · reports · user model · self model · experiment
+      ── D ─────────▶ dream ── tabs: dreams · picks · themes · due
 esc returns to the shell from any expanded screen.
 ```
 
