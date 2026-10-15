@@ -87,6 +87,7 @@ class HooksConfig:
     board: bool = True          # UserPromptSubmit: note new posts in followed board threads (throttled)
     budget_per_hour: int = 6    # edict 0016: at most this many nudge lines per session-hour
     efficacy_window: int = 20   # a nudge counts as followed if its tool is used within this many events
+    momus_gate: str = "gate"    # edict 0016: gate | nudge | off for Daedalus's own `gh pr merge`
 
 
 @dataclass
@@ -167,6 +168,7 @@ class TuiConfig:
 # Allowed values for string settings (the registry in config_schema.py reads these)
 SETTING_CHOICES = {
     "git.authorship": ("daedalus", "user"),
+    "hooks.momus_gate": ("gate", "nudge", "off"),
     "ariadne.autonomy": ("supervised", "hybrid", "full"),
     "tui.prs": ("local", "gh"),
     "tui.backend": ("auto", "tmux", "pty"),
