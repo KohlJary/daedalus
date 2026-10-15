@@ -13,10 +13,12 @@ widely about where the project and its own work could go, judged only afterwards
 owner.
 
 Two findings from 2026-10-15 lead here:
-- **"Dream" is the word that works.** Asked for ideas, Claude judges each one while writing it, so
-  the list shrinks to whatever is safe to defend. Asked to dream, in a slot labelled speculative
-  and kept out of the plan, it generated 39 ideas and then picked five worth building. Kohl saw
-  the same with Cass.
+- **The first dream worked, but it was one run.** It came from one session, under an explicit
+  quota (thirty or more ideas) and a two-pass instruction. It produced 39 ideas and five picks
+  that Kohl liked. Kohl has seen the dream framing work with Cass (in conversation, 2026-10-15).
+  Whether the frame itself matters, apart from the quota, the label and a fresh context, is
+  **untested**. So this edict builds dreaming as an experiment that includes a no-dream arm (see
+  Experiment).
 - **Evidence-only reflection converges.** Edict 0010 says so itself, and answers with
   aspirations. Dreaming is the larger answer: a second phase of the same sleep, which works on the
   same material in a different way.
@@ -261,3 +263,96 @@ Whether dreaming earns its slot is an open question, so it is recorded like 0010
   - the prompt names `get_dream`/`discuss_dream`, but the tools are `recall_dream` and
     `add_dream_reflection`;
   - the 00:05 cron may never trigger integration.
+
+## Amendments
+- **2026-10-15: readiness fixes from Momus**
+  (`.daedalus/momus/trials/2026-10-15-edict-0013-readiness.md`). Where these differ from the text
+  above, these govern. Daedalus made them under Kohl's grant of autonomy for that night (see
+  `docs/status.md`).
+  1. **Runners and temperature (F1).**
+     - No runner today can set a temperature. `dream.temperature` and `dream.waking_temperature`
+       are logged as `unset` until a runner supports them, and no acceptance criterion depends on
+       them.
+     - In v1, dreams run under `inhale` or on request only. `reflect tick` never runs a dream, and
+       `local` and `headless` dreams are out of scope until T-e5 lands and a later amendment
+       specifies them.
+  2. **Context and cost (F2).**
+     - Only `list` mode runs entirely inside subagents. In `narrative` mode the main session relays
+       each turn, so the dream text enters its context.
+     - `dream.max_tokens` (default 60000) caps a dream. One that would exceed it stops at the end of
+       the current turn and is recorded as `truncated`.
+     - Morpheus has no file tools. The session passes the bundle inline and writes output through
+       `daedalus dream` commands.
+  3. **Log writers and outcomes (F3).**
+     - `daedalus dream start` draws the mode in code, logs the draw's seed, and creates the dream's
+       directory.
+     - `daedalus dream done <id>` takes the model IDs, tokens, temperature case, and idea and pick
+       counts, and appends one `run` record.
+     - Sync, apply and drop of `dream` items append `resolution` records, as in 0010.
+     - `dream log` joins the records with the roadmap's current state when it is read.
+     - Pick IDs are `<dream-id>.p<n>`, and idea IDs `<dream-id>.i<n>`, assigned by code parsing
+       `dream.md` and `waking.md`. No `#`.
+     - "Built" means the item's status is `done`, timed by `status_changed_at`. The roadmap writes
+       that on every status change (core, not only the two sites that write it today).
+     - The monthly "dream-origin items built" line is added to the report by code (`reflect
+       render`), not written by delphi.
+  4. **A no-dream arm (F4).**
+     - `dream.mode` gains `plain`: the same seeds, asked for "ideas worth building", with no dream
+       frame and no speculative label in the prompt. The output is still stored and labelled as
+       speculative.
+     - `ab` draws among `list`, `narrative` and `plain`.
+     - `dream show`, the waking pass and the proposal text never reveal the mode.
+     - `dream log` also reports the built-rate of non-dream roadmap intake as a baseline.
+     - Whether dreaming beats its baseline is `untested` until each arm has the number of dreams the
+       benchmark sets.
+  5. **The `dream` source on the 0011 seam (F5).**
+     - `Source` gains `priority(remote)` (default `P2`). `idea` becomes a valid roadmap `item_type`.
+       The `recurring (<n> dreams)` label is the first line of the item's description.
+     - Drops are recorded as `{key: {count, last_dropped_at, recurrences_at_drop}}`. Core skips a
+       dropped key unless the source returns it with `reproposable: true`.
+     - The `dream` source sets that only when the drop count is 1 and the theme has recurred
+       `dream.recur_min` times since the drop. At a count of 2 the key is retired.
+     - A pick's link is the command `daedalus dream show <id>`, never a path. Applying a pick
+       publishes its text into the committed roadmap, and `dream show` says so.
+     - The `dream` source is not implicit. `init` enables it only when dreaming is on.
+  6. **Seeds, v1 (F6).** The seed kinds are:
+     - stale tasks;
+     - open dissents;
+     - backlog items, aged by `created_at`;
+     - `○` rows in `coverage.md`'s detail tables;
+     - the latest reflection report's `findings`;
+     - bullets under a `## Open questions` heading in `docs/status.md`, aged by the file's last
+       commit.
+
+     Drop counts, contradictions and unmoved aspirations become seeds once their sources exist.
+
+     Readiness is `0.4·age + 0.3·recurrence + 0.2·activity + 0.1·convergence`. Each term is
+     normalised to 0..1 within the candidate set. Convergence counts the other seed kinds that share
+     a roadmap item ID, task ID or path with the seed. Ties break by seed ID. A theme seed always
+     ranks first. The clock is injectable.
+  7. **Recurrence (F7).**
+     - The review agent groups idea IDs into themes. It is not told `recur_min`.
+     - Code counts the distinct dreams per theme, and checks that every idea ID and roadmap ID it
+       names exists. A theme naming an unknown ID is dropped from the review.
+     - A theme is elevated only if it appears in at least `recur_min` dreams that don't share a top
+       seed. The review reports both the dream count and the distinct-top-seed count.
+     - Theme IDs are assigned by `daedalus dream review record`. It matches a new theme to an
+       earlier one only by shared idea IDs.
+     - Only an *applied* dream-origin item counts as integrating a theme; a pending one doesn't.
+     - Reviews are written to `reviews/<date>.md`.
+  8. **Testable guardrails (F8).**
+     - The model-write API in `reflection/models.py` rejects evidence whose source isn't a session
+       digest, an identity file or a memory note. A static test asserts that `reflection/models.py`
+       and `reflection/pending.py` import nothing from the dream package.
+     - `reflect check` scans a report's text and proposals for `.daedalus/dreams/`, `docs/dreams/`,
+       dream, idea and pick IDs, and the IDs of `dream`-origin items. It rejects any it finds.
+     - The inhale brief reads `.daedalus/dreams/due.json` as raw JSON and imports no dream module.
+       It shows one combined line, covering both "due" and "waiting".
+  9. **Minor points.**
+     - "After a reflection run" means after any `run` record in 0010's experiment log dated after
+       the last dream.
+     - The `dream.*` keys register in 0011's config registry, with descriptions.
+     - `keep` refuses a dream whose seeds include a `private`-scoped item in a `work` project,
+       unless `--include-private` is given.
+     - The first dream is kept by merging branch `docs/dream-2026-10-15`.
+     - Cass's wake check matches four words; the point stands that keyword waking is dropped.
