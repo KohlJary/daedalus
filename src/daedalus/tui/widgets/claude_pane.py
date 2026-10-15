@@ -182,7 +182,10 @@ class ClaudePane(Widget, can_focus=True):
         out = Text(self._title() + "\n", style="bold")
         if self.session is None:
             found = self.existing()
-            msg = (f"\n  No Claude session for this project.\n\n  n  new session in {self.cwd}\n"
+            from pathlib import Path
+
+            where = str(Path(self.cwd).resolve()).replace(str(Path.home()), "~", 1)
+            msg = (f"\n  No Claude session for this project.\n\n  n  new session in {where}\n"
                    f"  a  attach an existing one ({len(found)} found)\n")
             if self.error:
                 msg += f"\n  ⚠ {self.error}\n"

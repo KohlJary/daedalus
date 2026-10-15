@@ -108,3 +108,11 @@ async def test_the_fallback_says_the_session_wont_outlive_the_tui(tui_project):
         pane.start_session()
         await pilot.pause()
         assert "this session ends when the TUI quits" in str(pane.render())
+
+
+async def test_the_header_names_the_branch_and_phase(tui_project):
+    app = make_app(tui_project)
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+        text = str(app.query_one("Header").render())
+        assert "p1 ▸ T-1" in text and "needs" in text

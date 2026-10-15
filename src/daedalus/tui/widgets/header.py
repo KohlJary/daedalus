@@ -15,12 +15,19 @@ class Header(Static):
     }
     """
 
+    _state = None
+
+    def on_resize(self, event) -> None:
+        if self._state is not None:
+            self.refresh_state(self._state)
+
     def refresh_state(self, state) -> None:
+        self._state = state
         h = state.header
         plan = f"{h.get('phase')} ▸ {h.get('task')}" if h.get("phase") and h.get("task") else (h.get("phase") or "no active phase")
         claude = "● claude " + (state.claude_status or "no session")
         right = f"needs {len(state.needs)} · drift {len(state.findings)} · {claude}"
         left = f"{h.get('project', '')}  {h.get('branch', '')}  {plan}"
-        width = max(self.size.width - 2, 40)
+        width = max((self.size.width or self.app.size.width) - 2, 40)
         gap = max(2, width - len(left) - len(right))
         self.update(left[: max(10, width - len(right) - 2)] + " " * gap + right)

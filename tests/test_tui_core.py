@@ -95,3 +95,10 @@ def test_fake_backend_persistence_matches_the_interface():
     s.close()
     assert FakeBackend(persistent=True, store=store).list() == ["x"]
     assert FakeBackend(persistent=False).list() == []
+
+
+def test_the_suite_never_writes_the_real_config_dir():
+    """Guard for the conftest redirect: the config dir every test sees is under its tmp dir."""
+    from daedalus.config import get_config_dir
+
+    assert "xdg-config" in str(get_config_dir())
