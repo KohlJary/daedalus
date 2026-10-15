@@ -224,6 +224,10 @@ def test_task_markers_and_branch_changes(tmp_path):
     ('git -C sub commit -m "T-g1"', ["T-g1"]),
     ("git commit -mT-g2", ["T-g2"]),
     ("if true; then git commit -qm 'T-g3'; fi", ["T-g3"]),
+    ("git commit -aF - <<'E'\nT-g4 all\nE", ["T-g4 all"]),
+    ('n=$((1+1)); git commit -m "T-g5"', ["T-g5"]),
+    ("git status # it's fine\ngit commit -m 'T-g6'", ["T-g6"]),
+    ('git log -m "T-g7"', []),
     ("cat > f <<'EOF'\nT-q7\nEOF", []),
     ("echo 'git commit -m T-z1'", []),
 ])

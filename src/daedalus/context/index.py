@@ -79,8 +79,9 @@ def marker_texts(command: str) -> list:
                     out.append(_resolve(w.split("=", 1)[1], cmd))
                 elif w.startswith("-m") and len(w) > 2:
                     out.append(_resolve(w[2:], cmd))
-                elif ((w in ("-F", "--file") and i + 1 < len(args) and args[i + 1] == "-") or w == "--file=-") \
-                        and cmd.heredocs:
+                elif ((w in ("-F", "--file") or (w.startswith("-") and not w.startswith("--") and w.endswith("F")
+                                                 and w[1:].isalpha()))
+                      and i + 1 < len(args) and args[i + 1] == "-" or w == "--file=-") and cmd.heredocs:
                     out.append(cmd.heredocs[0])
                 i += 1
         elif words[:2] == ["daedalus", "gameplan"]:
