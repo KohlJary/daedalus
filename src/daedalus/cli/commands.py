@@ -367,15 +367,12 @@ def _ensure_ask_rule(project_dir: Path, rule: str, dry_run: bool = False):
 
 
 def _register_hooks(project_dir: Path, dry_run: bool = False):
-    """Register the hooks enabled in config (hooks.session_start, hooks.capture) in .claude/settings.json."""
+    """Register the hooks enabled in config (every hooks.* key) in .claude/settings.json."""
     from ..config import get_project_settings
     from ..hooks import register_hooks
 
     settings = get_project_settings(project_dir, "hooks")
-    added, removed, error = register_hooks(
-        project_dir, session_start=settings["session_start"], capture=settings["capture"], dry_run=dry_run,
-        board=settings.get("board", True),
-    )
+    added, removed, error = register_hooks(project_dir, dry_run=dry_run, enabled=dict(settings))
     if error:
         click.echo(f"  Warning: {error}", err=True)
         return

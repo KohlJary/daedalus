@@ -182,33 +182,41 @@ def _remove_command(settings: dict, event: str, command: str) -> None:
         del settings["hooks"][event]
 
 
-def wanted_hooks(session_start: bool, capture: bool, board: bool = False) -> dict[str, str]:
-    """{event: command} that should be registered."""
-    wanted = {}
-    if board:
-        wanted["UserPromptSubmit"] = BOARD_COMMAND
-    if session_start:
-        wanted["SessionStart"] = SESSION_START_COMMAND
-    if capture:
-        wanted["SessionEnd"] = CAPTURE_COMMAND
-        wanted["PreCompact"] = CAPTURE_COMMAND
-    return wanted
+# Every hook Daedalus registers: (event, command, the hooks.* config key that turns it on). Several
+# commands may share an event; each is added and removed on its own, and other hooks are never touched.
+HOOKS: list[tuple[str, str, str]] = [
+    ("SessionStart", SESSION_START_COMMAND, "session_start"),
+    ("SessionEnd", CAPTURE_COMMAND, "capture"),
+    ("PreCompact", CAPTURE_COMMAND, "capture"),
+    ("UserPromptSubmit", BOARD_COMMAND, "board"),
+]
 
 
-ALL_HOOKS = {"SessionStart": SESSION_START_COMMAND, "SessionEnd": CAPTURE_COMMAND, "PreCompact": CAPTURE_COMMAND,
-             "UserPromptSubmit": BOARD_COMMAND}
+def wanted_hooks(session_start: bool, capture: bool, board: bool = False,
+                 enabled: Optional[dict] = None) -> set[tuple[str, str]]:
+    """{(event, command)} that should be registered. `enabled` maps hooks.* keys to on/off and wins over
+    the named flags (it is how a new hook's key reaches here without a new parameter)."""
+    flags = {"session_start": session_start, "capture": capture, "board": board, **(enabled or {})}
+    return {(event, command) for event, command, key in HOOKS if flags.get(key)}
+
+
+def _label(event: str, command: str) -> str:
+    """The event's name, or 'event: command' when Daedalus has several commands on that event."""
+    shared = sum(1 for e, _, _ in HOOKS if e == event) > 1
+    return f"{event}: {command}" if shared else event
 
 
 def register_hooks(
     project_dir: Path, session_start: bool = True, capture: bool = False, dry_run: bool = False,
-    board: bool = False,
+    board: bool = False, enabled: Optional[dict] = None,
 ) -> tuple[list[str], list[str], Optional[str]]:
     """
     Bring the Daedalus hooks in .claude/settings.json in line with config, keeping everything else.
 
     Adds enabled hooks that are missing and removes Daedalus's own entries for disabled ones (other
-    hooks are never touched). Returns (events added, events removed, error). A settings file that
-    isn't valid JSON or isn't the shape Claude Code uses is never rewritten: it is reported instead.
+    hooks are never touched). Returns (hooks added, hooks removed, error), each named by its event (and
+    command, where Daedalus has several on one event). A settings file that isn't valid JSON or isn't the
+    shape Claude Code uses is never rewritten: it is reported instead.
     """
     path = Path(project_dir) / ".claude" / "settings.json"
     settings: dict = {}
@@ -224,23 +232,27 @@ def register_hooks(
     if shape_error:
         return [], [], f"{path}: {shape_error}; hooks not registered"
 
-    wanted = wanted_hooks(session_start, capture, board)
+    wanted = wanted_hooks(session_start, capture, board, enabled)
     added, removed = [], []
-    for event, command in ALL_HOOKS.items():
+    for event, command, _ in HOOKS:
         present = command in _hook_commands(settings, event)
-        if wanted.get(event) == command and not present:
+        if (event, command) in wanted and not present:
             settings.setdefault("hooks", {}).setdefault(event, []).append(
                 {"hooks": [{"type": "command", "command": command}]}
             )
-            added.append(event)
-        elif event not in wanted and present:
+            added.append(_label(event, command))
+        elif (event, command) not in wanted and present:
             _remove_command(settings, event, command)
-            removed.append(event)
+            removed.append(_label(event, command))
 
     if (added or removed) and not dry_run:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     return added, removed, None
+
+
+# Kept for callers that read it: {event: command} of the first command per event
+ALL_HOOKS = {event: command for event, command, _ in reversed(HOOKS)}
 
 
 # ---------- capture: propose gameplan updates from commits ----------
