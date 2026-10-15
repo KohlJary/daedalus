@@ -263,6 +263,13 @@
         "status": "pending",
         "details": "Kohl 2026-10-14: .NET is an important target. Scope (Kohl): C# only; ASP.NET Core APIs, Blazor/Razor, libraries/services, Unity; xUnit; dotnet build gate on by default.",
         "updated": "2026-10-14"
+      },
+      {
+        "id": "T-e26",
+        "title": "Palace: dispatch edges from publish sites to handlers (MediatR, Hangfire, Celery, in-house queues)",
+        "status": "pending",
+        "details": "Issue #47 (Kohl, 2026-10-15): the call graph stops at framework dispatch, so handlers show 0 callers and impact --tests misses everything upstream of a queue. Built-in rules for MediatR/MassTransit/NServiceBus (message type -> handler), Hangfire (lambda targets), Celery (task.delay -> @task); in-house rules from palace.dispatch config. Dispatch edges are labelled in callers/path/impact output. Stacked on #44 (receiver types).",
+        "updated": "2026-10-14"
       }
     ],
     "deferred": []

@@ -125,6 +125,9 @@ def _collect_nodes(project_root: Path, imports: Optional[Dict[str, dict]] = None
                             "is_test": el.is_test, "signature": el.signature,
                             "call_sites": [tuple(site) for site in el.call_sites],
                             "receiver_types": dict(el.receiver_types), "bases": list(el.bases),
+                            "extension_method": el.extension_method, "element_types": dict(el.element_types),
+                            "decorators": list(el.decorators), "generic_bases": list(el.generic_bases),
+                            "messages": [tuple(m) for m in el.messages], "dispatch_calls": dict(el.dispatch_calls),
                             "docstring": (el.docstring or "")[:200], "calls": list(el.calls)}
     return raw
 
@@ -178,12 +181,25 @@ def build_query_graph(project_root: Path, max_candidates: int = 10) -> QueryGrap
                 else:
                     skipped[call.split(".")[-1]] = len(candidates)
         resolved[node_id] = targets
+    framework_labels: Dict[Tuple[str, str], str] = {}
     for node_id, node in raw.items():  # Foo() carries on into its constructor (Foo.__init__, Foo.constructor, ...)
         if node["type"] == "class":
             language = _language(node["file"])
             for ctor in (language.constructor_of(node["simple_name"]) if language else ("__init__",)):
                 if f"{node_id}.{ctor}" in raw:
                     resolved[node_id].add(f"{node_id}.{ctor}")
+            # Methods the framework calls on an instance: a test that only constructs the class still runs
+            # them. Only where that's certain (C#): `override`s, and the message methods of a framework base
+            # the class names (MonoBehaviour's Update, ComponentBase's OnInitializedAsync, IDisposable's
+            # Dispose). Python classes already carry their methods' calls.
+            if language is not None and language.name in ("C#", "Razor"):
+                called = _framework_called(node_id, node, raw)
+                resolved[node_id] |= called
+                for target in called:
+                    framework_labels[(node_id, target)] = "framework: " + (
+                        "override" if re.search(r"\boverride\b", raw[target].get("signature", "")) else "lifecycle")
+
+    labels = {**framework_labels, **_dispatch_edges(raw, resolved, resolver)}
 
     graph = CallGraph()
     for node_id, node in raw.items():
@@ -196,10 +212,23 @@ def build_query_graph(project_root: Path, max_candidates: int = 10) -> QueryGrap
     graph.project = project_root.name
     graph.end_lines = {nid: n.get("end_line") for nid, n in raw.items()}  # type: ignore[attr-defined]
     graph.raw_calls = {nid: list(n.get("calls", [])) for nid, n in raw.items()}  # type: ignore[attr-defined]
+    # Edges a framework makes rather than a direct call: (caller, callee) -> "MediatR Send", "Hangfire Enqueue",
+    # "Celery delay", "framework: override" (issue #47). They count like any edge; output marks them.
+    graph.edge_labels = {k: v for k, v in labels.items() if k[1] in graph.nodes.get(k[0], GraphNode.from_dict({})).calls}  # type: ignore[attr-defined]
     return QueryGraph(graph=graph, ambiguous_links=ambiguous, skipped=skipped)
 
 
 JS_EXTS = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts")
+# Methods whose lambda gets the mocked type: Moq's Mock<T>.Setup(x => x.Find(1)) and friends
+MOQ_LAMBDA_METHODS = {"Setup", "SetupGet", "SetupSet", "SetupSequence", "SetupProperty", "Verify", "VerifyGet",
+                      "VerifySet", "Callback", "Raise"}
+# Methods whose lambda gets a collection's element: orders.Where(o => o.IsPaid())
+SEQUENCE_LAMBDA_METHODS = {"Where", "Select", "SelectMany", "Any", "All", "First", "FirstOrDefault", "Single",
+                           "SingleOrDefault", "Last", "LastOrDefault", "Count", "LongCount", "OrderBy",
+                           "OrderByDescending", "ThenBy", "ThenByDescending", "GroupBy", "ToDictionary", "ToLookup",
+                           "Sum", "Min", "Max", "Average", "MinBy", "MaxBy", "DistinctBy", "TakeWhile", "SkipWhile",
+                           "ForEach", "Find", "FindAll", "FindIndex", "FindLast", "Exists", "TrueForAll", "RemoveAll",
+                           "Aggregate", "Zip", "Join", "GroupJoin", "Contains"}
 NODE_BUILTINS = {"assert", "buffer", "child_process", "cluster", "crypto", "dgram", "dns", "events", "fs", "http",
                  "http2", "https", "net", "os", "path", "perf_hooks", "process", "querystring", "readline",
                  "stream", "string_decoder", "timers", "tls", "tty", "url", "util", "v8", "vm", "worker_threads",
@@ -257,6 +286,16 @@ class ImportResolver:
         self.cs_parents: Dict[str, Set[str]] = {}
         self.cs_by_name: Dict[str, List[str]] = {}
         self.cs_extensions: Set[str] = set()
+        # Every name a C# file declares as a type, whatever the analyzer made of it (enums, delegates, ...)
+        self.cs_declared_names: Set[str] = set()
+        for f in imports:
+            if f.endswith((".cs", ".razor", ".cshtml")):
+                try:
+                    text = (project_root / f).read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    continue
+                self.cs_declared_names |= set(re.findall(
+                    r"\b(?:class|interface|struct|record|enum|delegate\s+\S+)\s+([A-Z_]\w*)", text))
         for node_id, node in raw.items():
             if not node["file"].endswith(".cs"):
                 continue
@@ -265,7 +304,7 @@ class ImportResolver:
                 for base in node.get("bases", ()):
                     self.cs_parents.setdefault(node["simple_name"], set()).add(base)
                     self.cs_children.setdefault(base, set()).add(node["simple_name"])
-            elif "(this " in node.get("signature", ""):
+            elif node.get("extension_method"):
                 self.cs_extensions.add(node["simple_name"])
 
     def _cs_namespace(self, file: str) -> str:
@@ -307,24 +346,63 @@ class ImportResolver:
         own = {f"{t}.{call}" for t in type_ids if f"{t}.{call}" in self.raw}
         below = {f"{t}.{call}" for n in self._cs_walk(names, self.cs_children) for t in self.cs_by_name.get(n, ())
                  if f"{t}.{call}" in self.raw}
-        if own:
-            return own | below
+        # The nearest ancestor defining the name is a target too: either the method is inherited, or the
+        # type's own Call is an overload of it (node ids carry no signature, so arguments can't tell them
+        # apart). Interfaces above a concrete type are left out: a call through a class doesn't call them.
         for ancestor in self._cs_walk(names, self.cs_parents):
-            inherited = {f"{t}.{call}" for t in self.cs_by_name.get(ancestor, ()) if f"{t}.{call}" in self.raw}
+            inherited = {f"{t}.{call}" for t in self.cs_by_name.get(ancestor, ()) if f"{t}.{call}" in self.raw
+                         and not (own and self._cs_is_interface(t))}
             if inherited:
-                return inherited | below
-        return below
+                return own | inherited | below
+        return own | below
+
+    def _cs_is_interface(self, type_id: str) -> bool:
+        return re.search(r"\binterface\b", self.raw[type_id].get("signature", "").split("{")[0]) is not None
 
     def _resolve_cs_receiver(self, node: dict, receiver: str, call: str) -> Optional[Set[str]]:
         """`inventory.Find()` where `inventory` is declared `IInventoryStore`: that interface's Find and the
         Find of every type in its hierarchy. A declared type outside the project links nothing, unless the
         project has an extension method of that name. Anything uncertain is left to the name-based rules."""
-        type_name = node.get("receiver_types", {}).get(receiver)
+        return self._resolve_cs_type(node, node.get("receiver_types", {}).get(receiver), call)
+
+    def _resolve_cs_element(self, node: dict, qualifier: str, call: str) -> Optional[Set[str]]:
+        """Calls on what a mock or a collection hands to a lambda, or on mock.Object:
+        `_inventory.Setup(s => s.Find(42))` with `Mock<IInventoryStore> _inventory` -> IInventoryStore.Find;
+        `orders.Where(o => o.IsPaid())` with `List<Order> orders` -> Order.IsPaid."""
+        kind, _, rest = qualifier.partition(":")
+        if kind == "mockobj":
+            receiver, method = rest, None
+        else:
+            receiver, _, method = rest.rpartition(":")
+        element = node.get("element_types", {}).get(receiver, "")
+        holder, _, type_name = element.partition(":")
         if not type_name:
             return None
-        types = self._cs_types(node["file"], type_name)
+        if holder == "mock" and (method is None or method in MOQ_LAMBDA_METHODS):
+            return self._resolve_cs_type(node, type_name, call)
+        if holder == "seq" and method in SEQUENCE_LAMBDA_METHODS:
+            return self._resolve_cs_type(node, type_name, call)
+        return None
+
+    def _resolve_cs_type(self, node: dict, type_name: Optional[str], call: str) -> Optional[Set[str]]:
+        if not type_name:
+            return None
+        if "." in type_name:  # written qualified: System.Threading.Tasks.Task, Shop.Billing.Money
+            namespace, _, simple = type_name.rpartition(".")
+            types = list(self.cs_types.get((namespace, simple), []))
+            if not types and namespace.split(".")[-1] in self.cs_type_names:
+                types = list(self.cs_by_name.get(simple, []))  # Outer.Node: a nested type, not a namespace
+                if not types:
+                    return None
+            if not types:
+                if any(ns == namespace or ns.startswith(namespace + ".") for ns, _ in self.cs_types):
+                    return None  # a project namespace: the type is ours, we just didn't index it
+                return None if call in self.cs_extensions else set()  # System.Threading.Tasks.Task: not ours
+        else:
+            simple = type_name
+            types = self._cs_types(node["file"], type_name)
         if not types:
-            if type_name in self.cs_type_names or call in self.cs_extensions:
+            if simple in self.cs_type_names or call in self.cs_extensions or simple in self.cs_declared_names:
                 return None  # a project type this file doesn't see by its usings, or an extension method
             return set()  # ILogger.LogInformation, List.Add: not the project's code
         return self._cs_method_targets(types, call) or None
@@ -342,8 +420,12 @@ class ImportResolver:
             return set(types) or None
         if qualifier in ("?", "self"):
             return None
-        if qualifier.startswith("self."):  # this._orders.Find()
-            return self._resolve_cs_receiver(node, qualifier[5:], call)
+        if qualifier.startswith("self."):  # this._orders.Find(): the field, even if a local shares its name
+            return self._resolve_cs_receiver(node, qualifier, call)
+        if qualifier.startswith(("lambda:", "mockobj:")):
+            return self._resolve_cs_element(node, qualifier, call)
+        if qualifier.startswith("lambdatype:"):  # Enqueue<IInvoiceMailer>(m => m.SendOverdue())
+            return self._resolve_cs_type(node, qualifier.split(":", 1)[1], call)
         if qualifier in node.get("receiver_types", {}):  # a parameter, local, field or property
             return self._resolve_cs_receiver(node, qualifier, call)
         hits = {f"{t}.{call}" for t in self._cs_types(node["file"], qualifier) if f"{t}.{call}" in self.raw}
@@ -511,6 +593,107 @@ class ImportResolver:
             else:
                 decided |= result
         return decided, undecided
+
+
+# Message handlers: generic interface -> the methods the bus calls with a message of the type argument
+HANDLER_INTERFACES = {
+    "IRequestHandler": ("Handle",), "INotificationHandler": ("Handle",), "IStreamRequestHandler": ("Handle",),  # MediatR
+    "IConsumer": ("Consume",),                                                                                  # MassTransit
+    "IHandleMessages": ("Handle",), "IHandleTimeouts": ("Timeout",),                                            # NServiceBus
+    "IEventHandler": ("Handle", "HandleAsync"), "ICommandHandler": ("Handle", "HandleAsync"),
+    "IMessageHandler": ("Handle", "HandleAsync"), "IIntegrationEventHandler": ("Handle", "HandleAsync"),
+}
+BUS_NAMES = {"Send": "Send", "SendAsync": "Send", "Publish": "Publish", "PublishAsync": "Publish",
+             "SendLocal": "SendLocal", "CreateStream": "CreateStream", "Request": "Request",
+             "Schedule": "Schedule", "SchedulePublish": "Schedule", "ScheduleSend": "Schedule"}
+CELERY_CALLS = {"delay", "apply_async", "s", "si", "signature", "apply"}
+
+
+def _dispatch_edges(raw: Dict[str, dict], resolved: Dict[str, Set[str]], resolver: "ImportResolver") -> Dict[Tuple[str, str], str]:
+    """Edges across framework dispatch (issue #47), added to `resolved`; returns their labels.
+
+    - Message buses (MediatR, MassTransit, NServiceBus, ...): a method that sends or publishes a ShipOrder
+      reaches the Handle/Consume of every class implementing a handler interface for ShipOrder.
+    - Hangfire: calls inside an Enqueue/Schedule lambda are already edges; they're labelled as dispatch.
+    - Celery: task.delay(...) / apply_async / .s() reaches the @task function.
+    """
+    labels: Dict[Tuple[str, str], str] = {}
+    handlers: Dict[str, List[Tuple[str, str]]] = {}  # message type -> [(handler method id, interface)]
+    for node_id, node in raw.items():
+        for entry in node.get("generic_bases", ()):
+            interface, _, message = entry.partition(":")
+            for method in HANDLER_INTERFACES.get(interface, ()):
+                for candidate in (f"{node_id}.{method}", f"{node_id}.{method}Async"):
+                    if candidate in raw:
+                        handlers.setdefault(message, []).append((candidate, interface))
+    for node_id, node in raw.items():
+        for method, message in node.get("messages", ()):
+            for handler, interface in handlers.get(message, ()):
+                resolved[node_id].add(handler)
+                labels[(node_id, handler)] = f"{BUS_NAMES.get(method, method)} {message} -> {interface}"
+        for name, label in node.get("dispatch_calls", {}).items():
+            for target in resolved.get(node_id, ()):
+                if raw[target]["simple_name"] == name:
+                    labels[(node_id, target)] = label
+        if node["file"].endswith(PYTHON_EXTS):
+            for qualifier, call in node.get("call_sites", ()):
+                if call in CELERY_CALLS and qualifier not in ("", "?", "self"):
+                    for task in _celery_tasks(node, qualifier, raw, resolver):
+                        resolved[node_id].add(task)
+                        labels[(node_id, task)] = f"Celery {call}"
+    return labels
+
+
+def _celery_tasks(node: dict, qualifier: str, raw: Dict[str, dict], resolver: "ImportResolver") -> List[str]:
+    """The task function `qualifier` names in `qualifier.delay(...)`: imported, or defined in the same module,
+    and decorated as a task (@app.task, @shared_task, @celery.task(...))."""
+    candidates: Set[str] = set()
+    local = f"{node['module']}.{qualifier}"
+    if local in raw:
+        candidates.add(local)
+    binding = resolver.imports.get(node["file"], {}).get(qualifier)
+    if binding and binding[1] is not None:
+        candidates |= resolver.symbol(binding[0], binding[1], qualifier, node["file"]) or set()
+    return sorted(c for c in candidates if c in raw and any(
+        re.search(r"(^|\.)(shared_task|task)\b", d) for d in raw[c].get("decorators", ())))
+
+
+# C# framework bases and the methods they call on a subclass, by name (Unity messages aren't overrides)
+UNITY_MESSAGES = {"Awake", "Start", "Update", "FixedUpdate", "LateUpdate", "OnEnable", "OnDisable", "OnDestroy",
+                  "OnValidate", "Reset", "OnGUI", "OnDrawGizmos", "OnDrawGizmosSelected", "OnApplicationQuit",
+                  "OnApplicationPause", "OnApplicationFocus", "OnBecameVisible", "OnBecameInvisible",
+                  "OnTriggerEnter", "OnTriggerExit", "OnTriggerStay", "OnTriggerEnter2D", "OnTriggerExit2D",
+                  "OnTriggerStay2D", "OnCollisionEnter", "OnCollisionExit", "OnCollisionStay", "OnCollisionEnter2D",
+                  "OnCollisionExit2D", "OnCollisionStay2D", "OnMouseDown", "OnMouseUp", "OnMouseEnter", "OnMouseExit",
+                  "OnAnimatorMove", "OnAnimatorIK", "OnRenderObject", "OnPreRender", "OnPostRender"}
+BLAZOR_LIFECYCLE = {"OnInitialized", "OnInitializedAsync", "OnParametersSet", "OnParametersSetAsync", "OnAfterRender",
+                    "OnAfterRenderAsync", "SetParametersAsync", "ShouldRender", "BuildRenderTree", "Dispose",
+                    "DisposeAsync"}
+CS_FRAMEWORK_BASES = {
+    **{b: UNITY_MESSAGES for b in ("MonoBehaviour", "NetworkBehaviour", "ScriptableObject", "StateMachineBehaviour",
+                                    "Editor", "EditorWindow")},
+    **{b: BLAZOR_LIFECYCLE for b in ("ComponentBase", "LayoutComponentBase", "OwningComponentBase")},
+    "IDisposable": {"Dispose"}, "IAsyncDisposable": {"DisposeAsync"},
+    "BackgroundService": {"ExecuteAsync", "StartAsync", "StopAsync", "Dispose"},
+    "IHostedService": {"StartAsync", "StopAsync"},
+}
+
+
+def _framework_called(class_id: str, node: dict, raw: Dict[str, dict]) -> Set[str]:
+    """A C# class's own methods its framework calls: overrides, and the messages of a framework base it
+    names. A Razor component counts as a ComponentBase."""
+    names: Set[str] = set()
+    for base in node.get("bases", ()):
+        names |= CS_FRAMEWORK_BASES.get(base.split(".")[-1], set())
+    if node["file"].endswith((".razor", ".cshtml")):
+        names |= BLAZOR_LIFECYCLE
+    prefix = class_id + "."
+    out = set()
+    for other_id, other in raw.items():
+        if other_id.startswith(prefix) and "." not in other_id[len(prefix):] and other["type"] == "method":
+            if other["simple_name"] in names or re.search(r"\boverride\b", other.get("signature", "")):
+                out.add(other_id)
+    return out
 
 
 def resolve_symbol(graph: CallGraph, symbol: str) -> List[str]:

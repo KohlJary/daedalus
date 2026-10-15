@@ -382,8 +382,13 @@ def extract_elements(support: TreeSitterSupport, source: bytes, rel: str, tree=N
         el.is_test = _is_test(support, d, is_test_file) if callable_ else False
         if not callable_:
             el.bases = _bases(d.node)
+            el.generic_bases = _generic_bases(d.node)
         if support.grammar.typed_receivers:
-            el.receiver_types = _cs_receiver_types(d.node, container.node if container else None, callable_)
+            el.receiver_types = _cs_receiver_types(d.node, container.node if container else None, callable_,
+                                                   el.element_types)
+            el.extension_method = callable_ and _is_extension(d.node)
+            if callable_:
+                el.messages, el.dispatch_calls = _cs_dispatch_facts(d.node, el.receiver_types)
         elements.append(el)
         spans.append((d.node.start_byte, d.node.end_byte, el))
 
@@ -471,7 +476,90 @@ def _qualifier(ref, name_node) -> str:
     text = obj.text.decode("utf-8", "replace")
     if text in SELF_WORDS or obj.type in ("this", "self", "super"):
         return "self"
+    if obj.type == "identifier":
+        lam = _lambda_context(obj)
+        if lam is not None:
+            return lam
+    if obj.type == "member_access_expression":  # mock.Object.Find(): the mocked type
+        inner, member = obj.child_by_field_name("expression"), obj.child_by_field_name("name")
+        receiver = _receiver_name(inner)
+        if receiver and member is not None and _text(member) == "Object":
+            return f"mockobj:{receiver}"
+    if obj.type == "invocation_expression":  # NSubstitute: sub.Received().Find(), sub.DidNotReceive().Find()
+        fn = obj.child_by_field_name("function")
+        if fn is not None and fn.type == "member_access_expression" and _text(fn.child_by_field_name("name")) in (
+                "Received", "DidNotReceive", "ReceivedWithAnyArgs", "DidNotReceiveWithAnyArgs"):
+            receiver = _receiver_name(fn.child_by_field_name("expression"))
+            if receiver:
+                return receiver
     return text if obj.type in IDENTIFIER_TYPES else "?"
+
+
+# LINQ methods taking a second sequence: their later lambdas get its elements (or both), not the receiver's
+SECOND_SEQUENCE_METHODS = {"Join", "GroupJoin", "Zip", "SelectMany", "GroupBy", "Aggregate", "ToDictionary", "ToLookup"}
+
+
+def _method_name(fn) -> str:
+    if fn is None:
+        return ""
+    name = fn.child_by_field_name("name") if fn.type == "member_access_expression" else fn
+    return _text(name).split("<")[0]
+
+
+def _receiver_name(node) -> Optional[str]:
+    """`x` or `this.x` as a receiver name ("x" / "self.x"); None for anything else."""
+    if node is None:
+        return None
+    if node.type == "identifier":
+        return _text(node)
+    if node.type == "member_access_expression":
+        inner, member = node.child_by_field_name("expression"), node.child_by_field_name("name")
+        if inner is not None and _text(inner) in SELF_WORDS and member is not None:
+            return "self." + _text(member)
+    return None
+
+
+def _lambda_context(ident) -> Optional[str]:
+    """For `store` in `_inventory.Setup(store => store.Find(42))`: "lambda:<receiver>:<method>", naming the
+    receiver whose type parameter the lambda's parameter gets (Mock<T>.Setup, List<T>.Where). None when the
+    identifier isn't an untyped parameter of an enclosing lambda passed to a method on a named receiver."""
+    name = _text(ident)
+    node = ident.parent
+    while node is not None and node.type not in ("method_declaration", "constructor_declaration", "class_declaration"):
+        if node.type == "lambda_expression":
+            params = node.child_by_field_name("parameters")
+            declared = [params] if params is not None and params.type == "implicit_parameter" else (
+                [p for p in params.named_children if p.type == "implicit_parameter"] if params is not None else [])
+            if any(_text(p) == name for p in declared):
+                arg = node.parent if node.parent is not None and node.parent.type == "argument" else node
+                call = node.parent
+                while call is not None and call.type in ("argument", "argument_list"):
+                    call = call.parent
+                if call is not None and call.type == "invocation_expression":
+                    fn_name = _method_name(call.child_by_field_name("function"))
+                    if fn_name in SECOND_SEQUENCE_METHODS:
+                        # Join(inner, outerKey, innerKey, result): only the first lambda sees the receiver's element
+                        args = call.child_by_field_name("arguments")
+                        lambdas = [a for a in (args.named_children if args is not None else [])
+                                   if a.type == "argument" and a.named_children and a.named_children[0].type == "lambda_expression"]
+                        if not lambdas or lambdas[0] != arg:
+                            return None
+                fn = call.child_by_field_name("function") if call is not None and call.type == "invocation_expression" else None
+                if fn is None or fn.type != "member_access_expression":
+                    return None
+                receiver = _receiver_name(fn.child_by_field_name("expression"))
+                method = fn.child_by_field_name("name")
+                if method is not None and method.type == "generic_name":  # Enqueue<IInvoiceMailer>(m => ...)
+                    targs = next((c for c in method.named_children if c.type == "type_argument_list"), None)
+                    if targs is not None and len(targs.named_children) == 1:
+                        type_name = _simple_type(targs.named_children[0])
+                        if type_name:
+                            return f"lambdatype:{type_name}"
+                if receiver and method is not None:
+                    return f"lambda:{receiver}:{_text(method).split('<')[0]}"
+                return None
+        node = node.parent
+    return None
 
 
 def _text(node) -> str:
@@ -631,61 +719,263 @@ def _bases(class_node) -> List[str]:
     return out
 
 
+def _generic_bases(class_node) -> List[str]:
+    """"IRequestHandler:ShipOrder" for each generic base with a type argument (the first argument)."""
+    out: List[str] = []
+    for child in class_node.named_children:
+        if child.type in BASE_CLAUSES:
+            for item in _walk(child):
+                if item.type == "generic_name":
+                    name = _text(next((c for c in item.named_children if c.type == "identifier"), None))
+                    args = next((c for c in item.named_children if c.type == "type_argument_list"), None)
+                    first = _simple_type(args.named_children[0]) if args is not None and args.named_children else None
+                    if name and first:
+                        out.append(f"{name}:{first}")
+    return out
+
+
+# Message buses: the method sends or publishes its argument's type (MediatR, MassTransit, NServiceBus, ...)
+PUBLISH_METHODS = {"Send", "SendAsync", "Publish", "PublishAsync", "SendLocal", "CreateStream", "Request",
+                   "Schedule", "SchedulePublish", "ScheduleSend"}
+# Hangfire: the lambda's calls run later, in a job (BackgroundJob.Enqueue(() => mailer.Send(...)))
+JOB_METHODS = {"Enqueue", "Schedule", "AddOrUpdate", "ContinueJobWith", "Requeue"}
+
+
+def _cs_dispatch_facts(def_node, receiver_types: Dict[str, str]) -> Tuple[List[Tuple[str, str]], Dict[str, str]]:
+    """What a C# method publishes (Send(new ShipOrder(...)), Publish<OrderShipped>(...), Send(cmd) with cmd
+    typed) and which of its calls a job framework runs later (inside an Enqueue/Schedule lambda)."""
+    messages: List[Tuple[str, str]] = []
+    dispatch: Dict[str, str] = {}
+    for inv in (n for n in _walk(def_node) if n.type == "invocation_expression"):
+        fn = inv.child_by_field_name("function")
+        method = _method_name(fn)
+        args = inv.child_by_field_name("arguments")
+        first = next((a.named_children[0] for a in args.named_children if a.type == "argument" and a.named_children), None) \
+            if args is not None else None
+        if method in PUBLISH_METHODS:
+            type_name = None
+            name_node = fn.child_by_field_name("name") if fn is not None and fn.type == "member_access_expression" else fn
+            if name_node is not None and name_node.type == "generic_name":  # Publish<OrderShipped>(new { ... })
+                targs = next((c for c in name_node.named_children if c.type == "type_argument_list"), None)
+                if targs is not None and targs.named_children:
+                    type_name = _simple_type(targs.named_children[0])
+            if type_name is None and first is not None:
+                if first.type == "object_creation_expression":
+                    type_name = _simple_type(first.child_by_field_name("type"))
+                elif first.type == "identifier":
+                    type_name = receiver_types.get(_text(first))
+            if type_name:
+                messages.append((method, type_name))
+        if method in JOB_METHODS and args is not None:
+            for lam in (n for n in _walk(args) if n.type == "lambda_expression"):
+                for call in (n for n in _walk(lam) if n.type == "invocation_expression"):
+                    name = _method_name(call.child_by_field_name("function"))
+                    if name:
+                        dispatch.setdefault(name, f"Hangfire {method}")
+    return messages, dispatch
+
+
 def _declare(types: Dict[str, Optional[str]], name: str, type_name: Optional[str]) -> None:
-    """Record name -> type; a name declared with two different types is ambiguous (None)."""
-    if not name or not type_name:
+    """Record name -> type. An untyped declaration (`var x = Make()`, a lambda parameter) or a name declared
+    with two types is recorded as None: it shadows a typed field, and leaves the name to the name rule."""
+    if not name:
         return
-    types[name] = type_name if types.get(name, type_name) == type_name else None
+    types[name] = type_name if (type_name and types.get(name, type_name) == type_name) else None
 
 
-def _cs_declarations(node, types: Dict[str, Optional[str]], skip_nested=None) -> None:
-    """Parameters, locals and `var x = new T()` declared anywhere under `node` (not in nested members)."""
-    for n in _walk(node):
-        if skip_nested is not None and n is not node and n.type in skip_nested:
+def _type_text(node, type_params: Set[str]) -> Optional[str]:
+    """A declared type for receiver resolution: `IStore`, or `System.Threading.Tasks.Task` when written
+    qualified (so an outside type isn't mistaken for a project type of the same simple name); None for
+    `var`, built-ins and the enclosing generic parameters (`T item` says nothing certain)."""
+    if node is None:
+        return None
+    t = node.type
+    if t == "array_type":
+        return None  # an Order[] isn't an Order (its element type is in element_types)
+    if t in ("nullable_type", "pointer_type", "ref_type", "scoped_type"):
+        inner = node.child_by_field_name("type") or (node.named_children[0] if node.named_children else None)
+        return _type_text(inner, type_params)
+    if t in ("qualified_name", "alias_qualified_name"):
+        text = re.sub(r"<.*$", "", _text(node)).replace("global::", "")
+        return text if text.split(".")[-1] not in type_params else None
+    name = _simple_type(node)
+    return name if name and name not in type_params else None
+
+
+MOCK_TYPES = {"Mock"}
+SEQUENCE_TYPES = {"List", "IList", "IEnumerable", "ICollection", "IReadOnlyList", "IReadOnlyCollection", "HashSet",
+                  "ISet", "IQueryable", "Collection", "ObservableCollection", "ImmutableList", "ImmutableArray",
+                  "LinkedList", "Queue", "Stack", "ConcurrentBag", "IAsyncEnumerable"}
+# Generic factories whose result *is* the type argument: A.Fake<T>(), Substitute.For<T>(), Mock.Of<T>()
+FAKE_FACTORIES = {"Fake", "For", "Of"}
+
+
+def _element_type(node, type_params: Set[str]) -> Optional[str]:
+    """"mock:T" for Mock<T>, "seq:T" for a collection of T or T[]; None otherwise."""
+    if node is None:
+        return None
+    if node.type == "nullable_type":
+        return _element_type(node.child_by_field_name("type") or node.named_children[0], type_params)
+    if node.type == "array_type":
+        element = _type_text(node.child_by_field_name("type") or node.named_children[0], type_params)
+        return f"seq:{element}" if element else None
+    if node.type == "qualified_name":
+        return _element_type(node.child_by_field_name("name") or node.named_children[-1], type_params)
+    if node.type == "generic_name":
+        name = _text(next((c for c in node.named_children if c.type == "identifier"), None))
+        args = next((c for c in node.named_children if c.type == "type_argument_list"), None)
+        items = [a for a in args.named_children] if args is not None else []
+        if len(items) != 1:
+            return None
+        inner = _type_text(items[0], type_params)
+        if inner and name in MOCK_TYPES:
+            return f"mock:{inner}"
+        if inner and name in SEQUENCE_TYPES:
+            return f"seq:{inner}"
+    return None
+
+
+def _factory_type(value, type_params: Set[str]) -> Optional[str]:
+    """T for `A.Fake<T>()`, `Substitute.For<T>()`, `Mock.Of<T>()`."""
+    if value is None or value.type != "invocation_expression":
+        return None
+    fn = value.child_by_field_name("function")
+    name = fn.child_by_field_name("name") if fn is not None and fn.type == "member_access_expression" else fn
+    if name is None or name.type != "generic_name":
+        return None
+    method = _text(next((c for c in name.named_children if c.type == "identifier"), None))
+    args = next((c for c in name.named_children if c.type == "type_argument_list"), None)
+    if method in FAKE_FACTORIES and args is not None and len(args.named_children) == 1:
+        return _type_text(args.named_children[0], type_params)
+    return None
+
+
+def _type_parameters(*nodes) -> Set[str]:
+    out: Set[str] = set()
+    for node in nodes:
+        if node is None:
             continue
-        if n.type == "parameter":
-            _declare(types, _text(n.child_by_field_name("name")), _simple_type(n.child_by_field_name("type")))
-        elif n.type == "variable_declaration":
-            type_node = n.child_by_field_name("type")
-            declared = _simple_type(type_node)
+        for child in node.named_children:
+            if child.type == "type_parameter_list":
+                out |= {_text(tp.child_by_field_name("name") or tp) for tp in child.named_children
+                        if tp.type == "type_parameter"}
+    return out
+
+
+def _cs_declarations(node, types: Dict[str, Optional[str]], type_params: Set[str],
+                     elements: Optional[Dict[str, Optional[str]]] = None) -> None:
+    """Every name declared under `node`: parameters (lambda ones too), locals, `var x = new T()`, pattern
+    variables (`is B f`), `out var`, catch and foreach variables, tuple declarations."""
+    for n in _walk(node):
+        t = n.type
+        if t == "parameter":
+            _declare(types, _text(n.child_by_field_name("name")), _type_text(n.child_by_field_name("type"), type_params))
+            if elements is not None:
+                _declare(elements, _text(n.child_by_field_name("name")),
+                         _element_type(n.child_by_field_name("type"), type_params))
+        elif t == "implicit_parameter":
+            _declare(types, _text(n), None)
+        elif t == "variable_declaration":
+            declared = _type_text(n.child_by_field_name("type"), type_params)
             for decl in (c for c in n.named_children if c.type == "variable_declarator"):
+                pattern = next((c for c in decl.named_children if c.type == "tuple_pattern"), None)
+                if pattern is not None:  # var (x, y) = ...
+                    for ident in (x for x in _walk(pattern) if x.type == "identifier"):
+                        _declare(types, _text(ident), None)
+                    continue
                 name = _text(decl.child_by_field_name("name") or next(
                     (c for c in decl.named_children if c.type == "identifier"), None))
                 value = next((c for c in decl.named_children if c.type == "object_creation_expression"), None)
-                created = _simple_type(value.child_by_field_name("type")) if value is not None else None
-                _declare(types, name, declared or created)
+                created = _type_text(value.child_by_field_name("type"), type_params) if value is not None else None
+                factory = next((_factory_type(c, type_params) for c in decl.named_children
+                                if c.type == "invocation_expression"), None)
+                _declare(types, name, declared or created or factory)
+                if elements is not None:
+                    created_type = value.child_by_field_name("type") if value is not None else None
+                    _declare(elements, name, _element_type(n.child_by_field_name("type"), type_params)
+                             or _element_type(created_type, type_params))
+        elif t in ("declaration_pattern", "declaration_expression", "catch_declaration"):
+            name = n.child_by_field_name("name")
+            if name is not None and name.type == "identifier":
+                _declare(types, _text(name), _type_text(n.child_by_field_name("type"), type_params))
+            elif name is not None:  # var (x, y) = ...: every name in the designation, type unknown
+                for ident in (x for x in _walk(name) if x.type == "identifier"):
+                    _declare(types, _text(ident), None)
+        elif t == "foreach_statement":
+            left = n.child_by_field_name("left")
+            if left is not None and left.type == "identifier":
+                _declare(types, _text(left), _type_text(n.child_by_field_name("type"), type_params))
+            elif left is not None:
+                for ident in (x for x in _walk(left) if x.type == "identifier"):
+                    _declare(types, _text(ident), None)
+        elif t == "parenthesized_variable_designation":
+            for ident in (x for x in n.named_children if x.type == "identifier"):
+                _declare(types, _text(ident), None)
 
 
-def _cs_member_types(class_node) -> Dict[str, Optional[str]]:
-    """A C# class's fields, properties and primary-constructor parameters."""
+def _cs_member_types(class_node, type_params: Set[str],
+                     elements: Optional[Dict[str, Optional[str]]] = None) -> Dict[str, Optional[str]]:
+    """A C# type's fields, properties and primary-constructor parameters."""
     types: Dict[str, Optional[str]] = {}
     for child in class_node.named_children:
         if child.type == "parameter_list":  # primary constructor: class Restocker(IInventoryStore inventory)
             for param in (c for c in child.named_children if c.type == "parameter"):
-                _declare(types, _text(param.child_by_field_name("name")), _simple_type(param.child_by_field_name("type")))
+                _declare(types, _text(param.child_by_field_name("name")),
+                         _type_text(param.child_by_field_name("type"), type_params))
+                if elements is not None:
+                    _declare(elements, _text(param.child_by_field_name("name")),
+                             _element_type(param.child_by_field_name("type"), type_params))
         if child.type == "declaration_list":
             for member in child.named_children:
                 if member.type in ("field_declaration", "event_field_declaration"):
-                    _cs_declarations(member, types)
+                    _cs_declarations(member, types, type_params, elements)
                 elif member.type == "property_declaration":
                     _declare(types, _text(member.child_by_field_name("name")),
-                             _simple_type(member.child_by_field_name("type")))
+                             _type_text(member.child_by_field_name("type"), type_params))
+                    if elements is not None:
+                        _declare(elements, _text(member.child_by_field_name("name")),
+                                 _element_type(member.child_by_field_name("type"), type_params))
     return types
 
 
-def _cs_receiver_types(def_node, container_node, callable_: bool) -> Dict[str, str]:
-    """Declared types a C# definition can call through: its own parameters and locals over its class's
-    fields, properties and primary-constructor parameters. Ambiguous names are left out."""
-    types: Dict[str, Optional[str]] = {}
+def _cs_receiver_types(def_node, container_node, callable_: bool,
+                       element_types: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """Declared types a C# definition can call through. Its own parameters and locals shadow its type's
+    fields, properties and primary-constructor parameters; the members are also kept as "self.<name>" for
+    `this.x.Call()`. Names whose type isn't certain are left out, so they fall back to the name rule."""
+    owner = container_node if callable_ else def_node
+    type_params = _type_parameters(owner, def_node)
+    member_elements: Dict[str, Optional[str]] = {}
+    members = _cs_member_types(owner, type_params, member_elements) if owner is not None else {}
+    types: Dict[str, Optional[str]] = dict(members)
+    types.update({f"self.{k}": v for k, v in members.items()})
+    elements: Dict[str, Optional[str]] = {k: v for k, v in member_elements.items() if k in members}
+    elements.update({f"self.{k}": v for k, v in elements.items()})
     if callable_:
-        if container_node is not None:
-            types.update(_cs_member_types(container_node))
         local: Dict[str, Optional[str]] = {}
-        _cs_declarations(def_node, local)
-        types.update(local)  # a parameter or local shadows a field of the same name
-    else:
-        types.update(_cs_member_types(def_node))
+        local_elements: Dict[str, Optional[str]] = {}
+        _cs_declarations(def_node, local, type_params, local_elements)
+        types.update(local)  # a parameter or local, typed or not, shadows a field of the same name
+        for name in local:  # ...and its element type, if it has one
+            elements[name] = local_elements.get(name)
+    else:  # code on the type itself (field initializers, property bodies): their lambdas, locals, patterns
+        local: Dict[str, Optional[str]] = {}
+        for child in def_node.named_children:
+            if child.type == "declaration_list":
+                for member in child.named_children:
+                    if member.type in ("property_declaration", "field_declaration"):
+                        _cs_declarations(member, local, type_params)
+        types.update(local)
+    if element_types is not None:
+        element_types.update({k: v for k, v in elements.items() if v})
     return {k: v for k, v in types.items() if v}
+
+
+def _is_extension(def_node) -> bool:
+    """`static void Audit(this ILogger l)`: the first parameter carries the `this` modifier."""
+    params = def_node.child_by_field_name("parameters")
+    first = next((c for c in params.named_children if c.type == "parameter"), None) if params is not None else None
+    return first is not None and any(m.type == "modifier" and _text(m) == "this" for m in first.named_children)
 
 
 def _receiver(node) -> Optional[str]:

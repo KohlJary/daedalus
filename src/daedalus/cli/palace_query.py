@@ -42,21 +42,25 @@ def _one(graph, symbol: str) -> str:
 
 
 def _run_lines(root: Path, files: List[str]) -> List[str]:
-    """How to run these test files, with each language's runner (the same plan Ariadne's verifier uses)."""
+    """How to run these test files, with each language's runner (the same plan Ariadne's verifier uses).
+    The directory is named rather than `cd`-ed into, so the line works in any shell."""
     from ..ariadne.test_runners import plan_runs
 
     runs, problems = plan_runs(root, files, ["python", "-m", "pytest"])
     lines = []
     for run in runs:
-        prefix = "" if run.cwd in ("", ".") else f"(cd {run.cwd} && "
-        suffix = "" if not prefix else ")"
-        lines.append(f"Run: {prefix}{' '.join(_quote(a) for a in run.command)}{suffix}")
+        where = "" if run.cwd in ("", ".") else f" (in {run.cwd})"
+        lines.append(f"Run{where}: {_command_line(run.command)}")
     lines += [f"Note: {p}" for p in problems]
     return lines
 
 
-def _quote(arg: str) -> str:
-    return f'"{arg}"' if any(c in arg for c in " |;&") else arg
+def _command_line(args: List[str]) -> str:
+    """A command line quoted for this platform's shell (POSIX sh, or cmd.exe on Windows)."""
+    import os
+    import shlex
+    import subprocess
+    return subprocess.list2cmdline(args) if os.name == "nt" else shlex.join(args)
 
 
 FULL_SUITE = {"Python": "python -m pytest", "Go": "go test ./...", "Rust": "cargo test", "JavaScript": "npm test",
@@ -76,6 +80,17 @@ def _full_suite_commands(graph) -> List[str]:
     return seen or ["python -m pytest"]
 
 
+def _via(graph, caller: str, callee: str) -> str:
+    """"  [via dispatch: Send ShipOrder -> IRequestHandler]" for an edge a framework makes (issue #47)."""
+    label = getattr(graph, "edge_labels", {}).get((caller, callee))
+    return f"  [via {label}]" if label and label.startswith("framework") else (f"  [via dispatch: {label}]" if label else "")
+
+
+def _via_json(graph, caller: str, callee: str) -> dict:
+    label = getattr(graph, "edge_labels", {}).get((caller, callee))
+    return {"via": label} if label else {}
+
+
 def _emit(data, as_json: bool, lines: List[str]):
     click.echo(json.dumps(data, indent=2) if as_json else "\n".join(lines))
 
@@ -87,8 +102,9 @@ def neighbors(cwd: Path, symbol: str, direction: str, as_json: bool):
     node = graph.nodes[nid]
     ids = sorted(node.called_by if direction == "callers" else node.calls)
     label = "called by" if direction == "callers" else "calls"
+    edge = (lambda i: (i, nid)) if direction == "callers" else (lambda i: (nid, i))
     lines = [f"{nid}  ({_where(graph, nid)})", f"  {label} ({len(ids)}):"]
-    lines += [f"    {i}  ({_where(graph, i)})" for i in ids] or ["    (none found)"]
+    lines += [f"    {i}  ({_where(graph, i)}){_via(graph, *edge(i))}" for i in ids] or ["    (none found)"]
     notes = []
     if direction == "callers" and node.simple_name == "__init__":
         cls = nid.rsplit(".", 1)[0]
@@ -104,7 +120,8 @@ def neighbors(cwd: Path, symbol: str, direction: str, as_json: bool):
         if missing:
             notes.append("not linked (too many definitions to guess): " + ", ".join(f"{m} ({q.skipped[m]})" for m in missing))
     lines += [f"Note: {n}." for n in notes]
-    _emit({"symbol": nid, "location": _where(graph, nid), direction: [{"id": i, "location": _where(graph, i)} for i in ids],
+    _emit({"symbol": nid, "location": _where(graph, nid),
+           direction: [{"id": i, "location": _where(graph, i), **_via_json(graph, *edge(i))} for i in ids],
            "notes": notes}, as_json, lines)
 
 
@@ -120,7 +137,13 @@ def impact(cwd: Path, symbol: str, depth: int, tests: bool, as_json: bool):
         by_depth.setdefault(d, []).append(other)
     lines = [f"Impact of {nid} ({_where(graph, nid)}): {len(up)} transitive callers within {depth} hops"]
     lines += [f"  depth {d}: {len(by_depth[d])}" for d in sorted(by_depth)]
-    data = {"symbol": nid, "callers": len(up), "by_depth": {d: sorted(v) for d, v in sorted(by_depth.items())}}
+    reached = set(up) | {nid}
+    crossed = sorted({label for (a, b), label in getattr(graph, "edge_labels", {}).items()
+                      if a in reached and b in reached and not label.startswith("framework")})
+    if crossed:
+        lines.append(f"  through dispatch: {'; '.join(crossed)}")
+    data = {"symbol": nid, "callers": len(up), "by_depth": {d: sorted(v) for d, v in sorted(by_depth.items())},
+            "dispatch": crossed}
     if tests:
         hits = tests_reaching(graph, [nid], depth)
         files = sorted({graph.nodes[t].file for t in hits})
@@ -143,8 +166,13 @@ def path(cwd: Path, source: str, target: str, depth: int, limit: int, as_json: b
     lines = [f"{len(paths)} call path(s) from {a} to {b}" + (" (shortest first)" if paths else "")]
     for p in paths:
         names = [graph.nodes[x].simple_name for x in p]
-        shown = names if len(names) <= 12 else names[:5] + [f"... {len(names) - 10} more ..."] + names[-5:]
-        lines.append(f"  ({len(p) - 1} hops) " + " -> ".join(shown))
+        arrows = [f" -[{graph.edge_labels[(a, b)]}]-> " if (a, b) in getattr(graph, "edge_labels", {}) else " -> "
+                  for a, b in zip(p, p[1:])]
+        if len(names) <= 12:
+            chain = names[0] + "".join(arrow + name for arrow, name in zip(arrows, names[1:]))
+        else:
+            chain = " -> ".join(names[:5] + [f"... {len(names) - 10} more ..."] + names[-5:])
+        lines.append(f"  ({len(p) - 1} hops) " + chain)
     if not paths:
         lines.append(f"  none within {depth} hops. Note: {STATIC_NOTE}.")
     _emit({"source": a, "target": b, "paths": paths}, as_json, lines)

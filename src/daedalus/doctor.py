@@ -377,7 +377,7 @@ def _installed_from() -> tuple[Optional[str], Optional[Path], bool]:
     """(installed version, local source directory it was installed from, editable) for daedalus-cli.
     The source is known when pip recorded a file:// direct_url (pip install <dir>, pip install -e <dir>)."""
     from importlib import metadata
-    from urllib.parse import unquote, urlparse
+    from urllib.parse import urlparse
     from urllib.request import url2pathname
 
     try:
@@ -390,8 +390,13 @@ def _installed_from() -> tuple[Optional[str], Optional[Path], bool]:
         info = {}
     url = info.get("url", "")
     if url.startswith("file:"):
-        source = Path(url2pathname(unquote(urlparse(url).path)))
-        return dist.version, source, bool(info.get("dir_info", {}).get("editable"))
+        parsed = urlparse(url)
+        path = url2pathname(parsed.path)  # url2pathname decodes %-escapes itself
+        if parsed.netloc and parsed.netloc != "localhost":
+            path = f"//{parsed.netloc}{path}"  # a UNC share
+        return dist.version, Path(path), bool(info.get("dir_info", {}).get("editable"))
+    if url:
+        return dist.version, None, False  # installed from an index, a git URL, an archive: nothing local
     # An older editable install records no direct_url: the code runs straight from a checkout
     import daedalus
     checkout = Path(daedalus.__file__).resolve().parents[2]  # <checkout>/src/daedalus/__init__.py
@@ -403,12 +408,34 @@ def _installed_from() -> tuple[Optional[str], Optional[Path], bool]:
 
 
 def _source_version(source: Path) -> Optional[str]:
-    import re as _re
+    """`version` from the [project] table of the checkout's pyproject.toml."""
     try:
-        m = _re.search(r'^version\s*=\s*"([^"]+)"', (source / "pyproject.toml").read_text(encoding="utf-8"), _re.M)
+        text = (source / "pyproject.toml").read_text(encoding="utf-8")
     except OSError:
         return None
+    section = re.search(r"^\[project\]\s*$(.*?)(?=^\[|\Z)", text, re.M | re.S)
+    m = re.search(r'^version\s*=\s*["\']([^"\']+)["\']', section.group(1), re.M) if section else None
     return m.group(1) if m else None
+
+
+def _same_version(a: str, b: str) -> bool:
+    """PEP 440 equality (0.2 == 0.2.0, 1.0rc1 == 1.0-rc.1), without depending on `packaging`."""
+    try:
+        from packaging.version import Version
+        return Version(a) == Version(b)
+    except Exception:
+        pass
+
+    def norm(v: str):
+        v = v.lower().replace("-", "").replace("_", "").lstrip("v")
+        m = re.match(r"(\d+(?:\.\d+)*)(.*)", v)
+        if not m:
+            return (v,)
+        release = [int(x) for x in m.group(1).split(".")]
+        while len(release) > 1 and release[-1] == 0:
+            release.pop()
+        return tuple(release) + (m.group(2).replace(".", ""),)
+    return norm(a) == norm(b)
 
 
 def check_install(installed_from=_installed_from) -> list[Finding]:
@@ -420,13 +447,14 @@ def check_install(installed_from=_installed_from) -> list[Finding]:
     version, source, editable = installed_from()
     if version and source is not None:
         current = _source_version(source)
-        if current and current != version:
-            how = "pip install -e" if editable else "pip install"
+        if current and not _same_version(current, version):
+            if editable:
+                why = ("The code is live, but the install's metadata and dependencies are from the older version "
+                       f"(new dependencies may be missing). Reinstall: pip install -e \"{source}\"")
+            else:
+                why = f"Reinstall to pick up its code and dependencies: pip install \"{source}\""
             findings.append(Finding(
-                "install-stale",
-                f"daedalus-cli {version} is installed from {source}, which is now at {current}. "
-                f"Reinstall to pick up its code and dependencies: {how} \"{source}\"",
-            ))
+                "install-stale", f"daedalus-cli {version} is installed from {source}, which is now at {current}. {why}"))
     if version and importlib.util.find_spec("tree_sitter") is None:
         findings.append(Finding(
             "palace-grammars-missing",
@@ -482,8 +510,10 @@ def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Fi
 
     findings += check_board_ask_rule(project_dir)
     findings += check_undigested_sessions(project_dir)
-    if not os.environ.get("DAEDALUS_DOCTOR_SKIP_INSTALL"):  # the install, not the project (tests turn it off)
-        findings += check_install()
+    # The install, not the project: reported as hints, so a machine's setup never fails a project's CI.
+    # DAEDALUS_DOCTOR_SKIP_INSTALL turns it off (the test suite does).
+    if not os.environ.get("DAEDALUS_DOCTOR_SKIP_INSTALL"):
+        hints += [f"{f.name}: {f.message}" for f in check_install()]
     findings += check_project_map(project_dir)
     findings += check_empty_templates_read(project_dir, settings["stale_task_days"], today=today)
     return findings, hints
