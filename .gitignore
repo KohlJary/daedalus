@@ -46,3 +46,6 @@ Thumbs.db
 !.daedalus/roadmap/index.json
 !.daedalus/gameplans/
 .daedalus/gameplans/*.pending.json
+
+# Daedalus: the palace's dispatch rules are shared with the team (issue #47)
+!.daedalus/dispatch.json

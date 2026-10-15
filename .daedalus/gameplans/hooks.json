@@ -1,0 +1,144 @@
+{
+  "description": "Multi-phase plans currently in flight. Each phase references roadmap item ids; the activePhase section breaks the current phase into concrete tasks with status. Survives conversation compactions \u2014 a fresh session can pick up by reading this file.",
+  "phases": [
+    {
+      "id": "p10-hooks",
+      "title": "Toolbox hooks and the context map",
+      "status": "in_progress",
+      "roadmapItems": [],
+      "notes": "Edicts 0016 (the toolbox fires itself) and 0015 (the context map). 0016's hook kit comes first; 0015's context hook is a feature of it.",
+      "edict": "0016"
+    }
+  ],
+  "activePhase": {
+    "id": "p10-hooks",
+    "title": "Toolbox hooks and the context map",
+    "started": "2026-10-15",
+    "goal": "Build edicts 0016 and 0015 to their acceptance criteria: a stdlib hook kit that makes Daedalus's tools fire at exact events, and an exact context map with planned compaction, recovery and recall.",
+    "sequencing": "Kit first (T-h1, T-h2), then 0015's measuring and views (T-c1..T-c2) so the context feature has a home, then the 0016 triggers (T-h3..T-h7) and 0015's plan, nudges, recovery and recall (T-c3..T-c5), docs last (T-h8, covering both edicts). Rebase on the night shift's work; it owns ophanic/, cli/oph.py and the end of doctor.run_checks.",
+    "tasks": [
+      {
+        "id": "T-h1",
+        "title": "Hook kit: daedalus_hookkit, dispatchers, registration, state, budget, fail-soft",
+        "status": "pending",
+        "details": "Top-level stdlib package + daedalus-hook script; <=40 ms median subprocess on the no-feature event; HOOKS gains a matcher; board and capture move onto it; Stop/PreCompact never print.",
+        "updated": "2026-10-15",
+        "edict": "0016"
+      },
+      {
+        "id": "T-h2",
+        "title": "Efficacy logging, hookstate.load, digest counts",
+        "status": "pending",
+        "details": "Events log shape agreed with the TUI session (daedalus-3b); followed within hooks.efficacy_window; per-agent/per-skill counts in digests.",
+        "updated": "2026-10-15",
+        "edict": "0016"
+      },
+      {
+        "id": "T-c1",
+        "title": "Context measuring: offset reader, index, exact attribution, base, subagent reports",
+        "status": "pending",
+        "details": "Reuse digest.py; output_tokens to their own line; totals reset at compact_boundary; cold start in slices.",
+        "updated": "2026-10-15",
+        "edict": "0015"
+      },
+      {
+        "id": "T-c2",
+        "title": "Context views, library functions (measure/plan/pin), CLI",
+        "status": "pending",
+        "details": "By subject and by task, quiet share, stable keys; JSON shape agreed with the TUI session.",
+        "updated": "2026-10-15",
+        "edict": "0015"
+      },
+      {
+        "id": "T-h3",
+        "title": "Momus gate at merge, Covers line in momus.md, PR recording at gh pr create",
+        "status": "pending",
+        "details": "Default gate, opt-out; skips logged; gh pr view fallback with 5 s timeout; trials under CLAUDE_PROJECT_DIR.",
+        "updated": "2026-10-15",
+        "edict": "0016"
+      },
+      {
+        "id": "T-h4",
+        "title": "Gameplan capture at commit and merge; pending proposals in the brief; doctor hints",
+        "status": "pending",
+        "details": "hooks.capture defaults on; doctor: hooks not registered, worktree without settings, stale proposals.",
+        "updated": "2026-10-15",
+        "edict": "0016"
+      },
+      {
+        "id": "T-h5",
+        "title": "Memory lookup on mentions and questions",
+        "status": "pending",
+        "details": "Deterministic grep, <=3 hits, quoted, once per cycle; memory_lookup group in PROJECT_SETTING_GROUPS.",
+        "updated": "2026-10-15",
+        "edict": "0016"
+      },
+      {
+        "id": "T-h6",
+        "title": "Inhale after compaction made specific; reflection-due line",
+        "status": "pending",
+        "details": "Compaction times in session state; due.json staleness rule.",
+        "updated": "2026-10-15",
+        "edict": "0016"
+      },
+      {
+        "id": "T-h7",
+        "title": "Palace graph cache; tests for the commit",
+        "status": "pending",
+        "details": "mtime/size-keyed pickle under the cache dir; skip over 300 ms.",
+        "updated": "2026-10-15",
+        "edict": "0016"
+      },
+      {
+        "id": "T-c3",
+        "title": "Context plan: marks, pins, instructions, saved per boundary",
+        "status": "pending",
+        "details": "keep > record first > drop > summarize; 1,500-char instructions keep identifiers first.",
+        "updated": "2026-10-15",
+        "edict": "0015"
+      },
+      {
+        "id": "T-c4",
+        "title": "Context nudges as a kit feature: breakpoint and warn",
+        "status": "pending",
+        "details": "Within context.nudge_minutes and hooks.budget_per_hour; PostToolUse only.",
+        "updated": "2026-10-15",
+        "edict": "0015"
+      },
+      {
+        "id": "T-c5",
+        "title": "Recovery after compaction, recall, check",
+        "status": "pending",
+        "details": "SessionStart(compact) block <=800 chars; recall from transcript UUIDs per boundary.",
+        "updated": "2026-10-15",
+        "edict": "0015"
+      },
+      {
+        "id": "T-h8",
+        "title": "Docs: README hooks table, Reach-for-your-tools table, harness ledger, exhale skill",
+        "status": "pending",
+        "details": "Also 0015's README and exhale-skill criteria; send the TUI session the watched file paths; tell it when the kit's clock can replace clock.sh (needs 0014).",
+        "updated": "2026-10-15",
+        "edict": "0016"
+      }
+    ],
+    "deferred": [],
+    "edict": "0016"
+  },
+  "owner": {
+    "id": "hooks",
+    "kind": "session",
+    "git_author": "Daedalus"
+  },
+  "claims": [
+    "src/daedalus_hookkit/**",
+    "src/daedalus/hooks.py",
+    "src/daedalus/context/**",
+    "src/daedalus/reflection/digest.py",
+    "src/daedalus/cli/palace_query.py",
+    "src/daedalus/plugin/skills/exhale/**",
+    "src/daedalus/plugin/agents/momus.md",
+    "src/daedalus/plugin/templates/CLAUDE_TEMPLATE.md",
+    "docs/harness-ledger.md"
+  ]
+}
