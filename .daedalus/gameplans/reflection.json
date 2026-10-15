@@ -171,10 +171,11 @@
       {
         "id": "T-r18",
         "title": "Spend breakdown: tokens by model, turn and class; reflect spend",
-        "status": "pending",
+        "status": "done",
         "details": "Digest schema 3 (tokens_by_model, turns, compactions, 5m/1h cache writes, units), reflection/spend.py, daedalus reflect spend, spend in bundles, delphi guidance. PR #60.",
         "updated": "2026-10-15",
-        "edict": "0010"
+        "edict": "0010",
+        "resolution": "Shipped in PR #60 (0222c0d, 27bf9a6): tokens by model/turn/class, reflect spend; pre-prompt turns counted, digests without spend data reported."
       },
       {
         "id": "T-r19",
@@ -183,6 +184,15 @@
         "details": "Kohl's idea (2026-10-15): a local model scores the prompt and picks the model. Per-prompt switching inside a session rewrites the per-model prompt cache, so route only where context starts fresh (session start, subagent dispatch), likely via the TUI (0012) which owns the prompt box. Evaluate offline first against recorded digest turns (prompt start, tool_calls, units) before routing anything live. Also weigh the Sonnet-front-desk / long-lived Opus workshop subagent shape. Needs T-r18 data; mind ComfyUI VRAM contention.",
         "updated": "2026-10-15",
         "edict": "0010"
+      },
+      {
+        "id": "T-r20",
+        "title": "Reflection-check leaks: ratios/ranges as numbers, period-checked figures, stable tombstones",
+        "status": "done",
+        "details": "Found on the first real reflection run's follow-up; Momus-reviewed.",
+        "updated": "2026-10-15",
+        "edict": "0010",
+        "resolution": "PR #66 (c340820, fb1bd6b), merged 2026-10-15 overnight after Momus + CI: forget_key tombstones keep matching, figures period-checked, integer-only ranges, symbol-aware duplicate guard on add and revise."
       }
     ],
     "deferred": [],
