@@ -91,6 +91,31 @@ def iter_events(path: Path, skipped: dict) -> Iterator[dict]:
         return
 
 
+def iter_events_from(path: Path, offset: int, skipped: dict) -> Iterator[tuple[dict, int]]:
+    """Events of a JSONL transcript from a byte offset, each with the offset just past its line, so a
+    reader can resume there (edict 0015's incremental index). A last line without its newline is still
+    being written: it is left for the next read."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(offset)
+            for raw in f:
+                if not raw.endswith(b"\n"):
+                    return
+                offset += len(raw)
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line.decode("utf-8", errors="replace"))
+                except json.JSONDecodeError:
+                    skipped["bad_lines"] = skipped.get("bad_lines", 0) + 1
+                    continue
+                if isinstance(event, dict):
+                    yield event, offset
+    except OSError:
+        return
+
+
 def first_cwd(path: Path) -> Optional[str]:
     """The cwd of the first event that has one (the session's starting directory)."""
     for event in iter_events(path, {}):
