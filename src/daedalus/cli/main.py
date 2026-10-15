@@ -1065,6 +1065,19 @@ def gameplan_pending_drop(proposal_id: str):
     drop_pending(Path.cwd(), proposal_id)
 
 
+@main.command("page")
+@click.option("--out", default=None, help="Where to write it (default .daedalus/page/index.html)")
+def page_cmd(out):
+    """Write a one-page HTML summary of the project for someone who wasn't there.
+
+    The active phase and its tasks, the plan, the edicts, intake by origin, and the latest note: only
+    what the project already commits. Sharing it is your choice.
+    """
+    from ..page import write
+
+    click.echo(f"Wrote {write(Path.cwd(), Path(out) if out else None)}")
+
+
 from .reflect import reflect as _reflect  # noqa: E402
 from .source import source as _source  # noqa: E402
 from .dream import dream as _dream  # noqa: E402
