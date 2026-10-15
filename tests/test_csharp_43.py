@@ -273,3 +273,22 @@ def test_dotnet_filter_skips_helper_classes_in_test_files(tmp_path):
     languages._registry = None
     runs, _ = plan_runs(tmp_path, ["T.Tests/RestockerTests.cs"], ["pytest"])
     assert runs[0].command[-1] == "FullyQualifiedName~RestockerTests"  # not CapturingLogger, Item, Order
+
+
+def test_join_inner_key_selector_is_not_the_outer_element(tmp_path):
+    g = _graph(tmp_path, "namespace N;\npublic interface IA { int Find(int x); }\npublic interface IB { int Find(int x); }\n"
+                         "public class U { void M(System.Collections.Generic.List<IA> l, System.Collections.Generic.List<IB> o) {\n"
+                         "  l.Join(o, a => a.Find(1), b => b.Find(2), (a, b) => 1); } }\n")
+    assert sorted(g.nodes["a.cs.U.M"].calls) == ["a.cs.IA.Find", "a.cs.IB.Find"]
+
+
+def test_dotnet_filter_keeps_classes_inheriting_tests(tmp_path):
+    from daedalus.ariadne.test_runners import plan_runs
+    (tmp_path / "T.Tests").mkdir()
+    (tmp_path / "T.Tests" / "T.Tests.csproj").write_text("<Project/>")
+    (tmp_path / "T.Tests" / "StoreTests.cs").write_text(
+        "public abstract class BaseTests { [Fact] public void Works() {} }\npublic class DerivedTests : BaseTests { }\n"
+        "public class Helper { }\n")
+    languages._registry = None
+    runs, _ = plan_runs(tmp_path, ["T.Tests/StoreTests.cs"], ["pytest"])
+    assert runs[0].command[-1] == "FullyQualifiedName~BaseTests|FullyQualifiedName~DerivedTests"

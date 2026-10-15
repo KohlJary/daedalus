@@ -492,6 +492,17 @@ def _qualifier(ref, name_node) -> str:
     return text if obj.type in IDENTIFIER_TYPES else "?"
 
 
+# LINQ methods taking a second sequence: their later lambdas get its elements (or both), not the receiver's
+SECOND_SEQUENCE_METHODS = {"Join", "GroupJoin", "Zip", "SelectMany", "GroupBy", "Aggregate", "ToDictionary", "ToLookup"}
+
+
+def _method_name(fn) -> str:
+    if fn is None:
+        return ""
+    name = fn.child_by_field_name("name") if fn.type == "member_access_expression" else fn
+    return _text(name).split("<")[0]
+
+
 def _receiver_name(node) -> Optional[str]:
     """`x` or `this.x` as a receiver name ("x" / "self.x"); None for anything else."""
     if node is None:
@@ -517,9 +528,19 @@ def _lambda_context(ident) -> Optional[str]:
             declared = [params] if params is not None and params.type == "implicit_parameter" else (
                 [p for p in params.named_children if p.type == "implicit_parameter"] if params is not None else [])
             if any(_text(p) == name for p in declared):
+                arg = node.parent if node.parent is not None and node.parent.type == "argument" else node
                 call = node.parent
                 while call is not None and call.type in ("argument", "argument_list"):
                     call = call.parent
+                if call is not None and call.type == "invocation_expression":
+                    fn_name = _method_name(call.child_by_field_name("function"))
+                    if fn_name in SECOND_SEQUENCE_METHODS:
+                        # Join(inner, outerKey, innerKey, result): only the first lambda sees the receiver's element
+                        args = call.child_by_field_name("arguments")
+                        lambdas = [a for a in (args.named_children if args is not None else [])
+                                   if a.type == "argument" and a.named_children and a.named_children[0].type == "lambda_expression"]
+                        if not lambdas or lambdas[0] != arg:
+                            return None
                 fn = call.child_by_field_name("function") if call is not None and call.type == "invocation_expression" else None
                 if fn is None or fn.type != "member_access_expression":
                     return None

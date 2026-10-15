@@ -118,6 +118,12 @@ def _csharp_test_classes(repo: Path, rel_file: str) -> List[str]:
         holders = [c for c in classes if c.line <= line <= (c.end_line or c.line)]
         if holders:
             with_tests.add(min(holders, key=lambda c: (c.end_line or c.line) - c.line).simple_name)
+    # Tests inherited from a (typically abstract) base run under the subclass: include classes deriving from one
+    grew = True
+    while grew:
+        more = {c.simple_name for c in classes if set(c.bases) & with_tests} - with_tests
+        with_tests |= more
+        grew = bool(more)
     names = sorted(with_tests) or sorted({c.simple_name for c in classes})
     return names or [Path(rel_file).stem]
 
