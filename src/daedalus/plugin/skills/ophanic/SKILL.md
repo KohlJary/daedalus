@@ -22,10 +22,13 @@ A diagram shows nesting, adjacency and flow at once; a list makes the reader reb
 2. **Any other graph:** write `{"title", "nodes": [{"id", "label", "kind", "mark"?, "parent"?}], "edges": [{"from",
    "to"}]}` to a scratch file and run `daedalus oph draw <file>`. It lays it out, assigns slugs and writes the legend.
 3. **By hand** (layouts, or when the renderer's layered layout doesn't fit the idea):
-   - equal-width rows, at most 100 columns, one box family;
+   - at most 100 columns, one box family; rows that are box edge to box edge in one stack share a width;
+   - vertical connectors (`┬`, `│`, `▼`), titles in a border (`┌─ Title ──┐`), side edges (`│──▶│`, `│┄┄▶│`) and
+     carets as text (`│ Sort by ▼ │`) are all fine;
    - `◆Name` for components;
    - slugs and a legend for edges.
-   Then run `daedalus oph check <file>` before showing it. Fix every problem it reports.
+   Then run `daedalus oph check <file>` before showing it. Fix every problem it reports: each one is a box that
+   doesn't close, a line that joins nothing, or a slug with no legend.
 4. Put a diagram in Markdown inside a fence marked `oph` so it's linted.
 
 A diagram that passes the lint can still be wrong: say what it shows in a sentence, and check its edges against

@@ -1,22 +1,35 @@
 """
 `daedalus oph check`: a deterministic lint for Ophanic diagrams as drawn (edict 0017).
 
-A diagram is a run of consecutive lines that start with a box-drawing character. It is found:
+A diagram is a run of consecutive diagram rows. It is found:
 - in an `.oph` file, under an `@variant` line;
 - in Markdown, inside a fenced ```oph block.
 
-Lines after a diagram that start with `note:`, or with a slug and a colon (`█E07: ...`), are its notes and
-legend; they are not content.
+A line is a diagram row when it starts with a box character (`┌ │ ├ └ ...`) or an arrow (`▼ ▲ ▶ ◀`), when it holds
+only line characters, arrows and spaces (a connector row like `    │`), or when it ends with a box's right side
+after text (a label left of a box: `Header ┌───┐`). Lines after a diagram that start with `note:`, or with a slug
+and a colon (`█E07: ...`), or with `missing:`, or that list an edge (`█E13 ─▶ █E07`), are its notes and legend; they are not content.
 
 What it checks, each with a line number:
-- **width:** every row of a diagram has the same display width;
+- **width:** no row is wider than 100 display columns, and *box rows* agree. A box row starts at the diagram's
+  left edge with a box side or corner and ends with one (`│ ... │`, `└──┬──┘`). Consecutive box rows form a band,
+  and every row of a band has the same display width: a framed layout is one band, so all its rows must match.
+  Other rows (a short connector `    │`, an arrow `    ▼`, a row with a label to the left of a box) are not
+  measured, and they end a band, so boxes stacked under a connector may be narrower than the ones above it.
+  Trailing spaces are not counted and never split a diagram.
 - **joins:** every box character's arms meet a neighbour with the matching arm (a `┬` needs something below
-  it, a `─` needs something on both sides, and so on). Arrows end an edge, and a slug inside an edge
-  (`─█R11─▶`) is part of the line;
-- **style:** one box style per diagram (light/rounded, heavy, or double, not mixed);
+  it, a `─` needs something on both sides, and so on). Exceptions, each text or part of a line:
+  - a run of `─` that joins nothing at either end is text (`─ divider (3) ─`);
+  - text between two runs of a border is a title (`┌─ Title ────┐`);
+  - an arrow (`▶ ◀ ▼ ▲`) with no line coming into it is text (`│ Sort by ▼ │`, `│ ▶ Section │`); an arrow that
+    has a line coming into it must point at something (a box side, a border, a slug), not at a blank;
+  - an edge (a horizontal run, solid or dashed `┄ ┈ ╌`, ending in an arrow) may attach to a box's side, and a
+    slug inside an edge (`─█R11─▶`) is part of the line.
+- **style:** one box style per diagram (light/rounded/dashed, heavy, or double, not mixed);
 - **components:** every `◆Name` has a `## ◆Name` section in the same file, or is a known component
   (`--components`);
-- **slugs:** every slug on an edge has a legend line, and every legend line is used.
+- **slugs:** every slug on an edge has a legend line, and every legend line is used;
+- **fence:** in Markdown, every ```oph block closes with ``` on a line of its own.
 """
 
 from __future__ import annotations
@@ -36,18 +49,28 @@ ARMS = {
     "┣": {U, D, R}, "┫": {U, D, L}, "┳": {L, R, D}, "┻": {L, R, U}, "╋": {U, D, L, R},
     "═": {L, R}, "║": {U, D}, "╔": {R, D}, "╗": {L, D}, "╚": {R, U}, "╝": {L, U},
     "╠": {U, D, R}, "╣": {U, D, L}, "╦": {L, R, D}, "╩": {L, R, U}, "╬": {U, D, L, R},
+    # Dashed lines: light (┄ ┈ ╌ and ┆ ┊ ╎) and heavy (┅ ┉ ╍ and ┇ ┋ ╏)
+    "┄": {L, R}, "┈": {L, R}, "╌": {L, R}, "┆": {U, D}, "┊": {U, D}, "╎": {U, D},
+    "┅": {L, R}, "┉": {L, R}, "╍": {L, R}, "┇": {U, D}, "┋": {U, D}, "╏": {U, D},
     # Arrows end an edge: they only need the line coming into them
     "▶": {L}, "◀": {R}, "▼": {U}, "▲": {D},
 }
-STYLE = {**{c: "light" for c in "─│┌┐└┘├┤┬┴┼╭╮╰╯"}, **{c: "heavy" for c in "━┃┏┓┗┛┣┫┳┻╋"},
+ARROWS = {"▶": R, "◀": L, "▼": D, "▲": U}  # each arrow and the way it points
+STYLE = {**{c: "light" for c in "─│┌┐└┘├┤┬┴┼╭╮╰╯┄┈╌┆┊╎"}, **{c: "heavy" for c in "━┃┏┓┗┛┣┫┳┻╋┅┉╍┇┋╏"},
          **{c: "double" for c in "═║╔╗╚╝╠╣╦╩╬"}}
-BOX_START = set("┌└├│╭╰┏┗┣┃╔╚╠║")
+BOX_START = set("┌└├│╭╰┏┗┣┃╔╚╠║┆┊╎┇┋╏")
+# A box's side or corner: a box character with an arm up or down (what a box row starts and ends with)
+SIDE = {c for c, a in ARMS.items() if c not in ARROWS and (U in a or D in a)}
+RIGHT_SIDE = {c for c in SIDE if R not in ARMS[c]}
 OPPOSITE = {U: D, D: U, L: R, R: L}
-HORIZONTAL = set("─━═")
+HORIZONTAL = set("─━═┄┈╌┅┉╍")
 MAX_WIDTH = 100
 # An edge written inside a box ("─▶ █E10 █E11") is text for joining purposes, as are listed edges
 EDGE_TOKEN = re.compile(r"(?<![─━═┌└├┬┴┼│])─+▶(?=\s)")
-VERTICAL = set("│┃║├┤┣┫╠╣")
+VERTICAL = set("│┃║├┤┣┫╠╣┆┊╎┇┋╏")
+# Text between two runs of a border is a title: "┌─ Title ────┐"
+TITLE = re.compile(r"(?<=[─━═┄┈╌┅┉╍]) ([^\s─━═┄┈╌┅┉╍│┃║┌┐└┘├┤┬┴┼▶◀▼▲█](?:[^─━═┄┈╌┅┉╍│┃║┌┐└┘├┤┬┴┼]*?[^\s])?) (?=[─━═┄┈╌┅┉╍])")
+WHERE = dict(U="above", D="below", L="on its left", R="on its right")
 STEP = {U: (-1, 0), D: (1, 0), L: (0, -1), R: (0, 1)}
 SLUG = re.compile(r"█[A-Z]\d{1,4}")
 LEGEND = re.compile(r"^\s*(█[A-Z]\d{1,4})\s*:")
@@ -75,9 +98,39 @@ def width(text: str) -> int:
                for ch in text)
 
 
+def columns(line: str) -> str:
+    """The line with one character per display column, for reading it as a grid: a wide character becomes two
+    placeholder letters and a combining mark disappears. Box characters are all one column wide, so they keep
+    their places; only the text between them changes."""
+    out = []
+    for ch in line:
+        w = width(ch)
+        out.append("ww" if w == 2 else "" if w == 0 else ch)
+    return "".join(out)
+
+
 def _is_row(line: str) -> bool:
-    s = line.lstrip()
-    return bool(s) and s[0] in BOX_START
+    s = line.strip()
+    if not s or s.startswith(("note:", "missing:")) or LEGEND.match(line) or LISTED.match(line):
+        return False
+    if s[0] in BOX_START or s[0] in ARROWS:
+        return True
+    if all(ch in ARMS or ch == " " for ch in s):   # a connector row: "    │", "  ┄┄▶"
+        return True
+    # A label to the left of a box: "Header ┌───┐"
+    return s[-1] in RIGHT_SIDE and any(ch in SIDE for ch in s[:-1])
+
+
+def _box_rows(rows: list[str]) -> list[int]:
+    """Indexes of the box rows: those that start at the diagram's left edge with a box side or corner, and end
+    with one. Only these must share a width."""
+    indent = min((len(r) - len(r.lstrip(" ")) for r in rows if r.strip()), default=0)
+    out = []
+    for k, r in enumerate(rows):
+        r = r.rstrip()
+        if len(r) > indent and r[indent] in SIDE and r[-1] in SIDE:
+            out.append(k)
+    return out
 
 
 def diagrams(text: str, markdown: bool = False) -> list[Diagram]:
@@ -97,7 +150,7 @@ def diagrams(text: str, markdown: bool = False) -> list[Diagram]:
                 i += 1
             after = []
             j = i
-            while j < len(lines) and (lines[j].startswith("note:") or LEGEND.match(lines[j]) or LISTED.match(lines[j])
+            while j < len(lines) and (lines[j].startswith(("note:", "missing:")) or LEGEND.match(lines[j]) or LISTED.match(lines[j])
                                       or (lines[j].startswith(" ") and after and lines[j].strip())):
                 after.append(lines[j])
                 j += 1
@@ -108,7 +161,9 @@ def diagrams(text: str, markdown: bool = False) -> list[Diagram]:
 
 
 def _cells(rows: list[str]) -> list[list[str]]:
+    rows = [columns(r) for r in rows]
     rows = [EDGE_TOKEN.sub(lambda m: " " * len(m.group(0)), r) for r in rows]
+    rows = [TITLE.sub(lambda m: m.string[m.start() - 1] * len(m.group(0)), r) for r in rows]
     grid = [list(r) for r in rows]
     # A slug inside an edge (─█R11─▶) is part of the line: treat its characters as ─ for joining
     for r, row in enumerate(rows):
@@ -119,20 +174,42 @@ def _cells(rows: list[str]) -> list[list[str]]:
             if left in ARMS and R in ARMS[left] and right in ARMS and L in ARMS[right]:
                 for c in range(a, b):
                     grid[r][c] = "─"
+
+    def at(r, c):
+        return grid[r][c] if 0 <= r < len(grid) and 0 <= c < len(grid[r]) else " "
+    # An arrow with no line coming into it is text ("│ Sort by ▼ │", "│ ▶ Section │")
+    for r, row in enumerate(grid):
+        for c, ch in enumerate(row):
+            if ch in ARROWS:
+                (arm,) = ARMS[ch]
+                dr, dc = STEP[arm]
+                other = at(r + dr, c + dc)
+                if OPPOSITE[arm] not in ARMS.get(other, set()) or other in ARROWS:
+                    grid[r][c] = " "
     return grid
 
 
 def check_diagram(path: str, d: Diagram, components: set[str], sections: set[str]) -> list[Problem]:
     out: list[Problem] = []
-    widths = {width(r.rstrip()) for r in d.rows}
-    if max(widths, default=0) > MAX_WIDTH:
-        out.append(Problem(path, d.start, "width", f"the diagram is {max(widths)} wide; at most {MAX_WIDTH}"))
-    if len(widths) > 1:
-        common = max(widths, key=lambda w: sum(1 for r in d.rows if width(r.rstrip()) == w))
-        for k, r in enumerate(d.rows):
-            if width(r.rstrip()) != common:
-                out.append(Problem(path, d.start + k, "width",
-                                   f"row is {width(r.rstrip())} wide, the diagram is {common}"))
+    widest = max((width(r.rstrip()) for r in d.rows), default=0)
+    if widest > MAX_WIDTH:
+        out.append(Problem(path, d.start, "width", f"the diagram is {widest} wide; at most {MAX_WIDTH}"))
+    # Box rows agree within a band: a run of consecutive box rows. A connector row between two stacked boxes
+    # ends one band and starts another, so a flow may stack boxes of different widths; a framed layout is one band.
+    boxed = _box_rows(d.rows)
+    bands: list[list[int]] = []
+    for k in boxed:
+        if bands and bands[-1][-1] == k - 1:
+            bands[-1].append(k)
+        else:
+            bands.append([k])
+    for band in bands:
+        widths = [width(d.rows[k].rstrip()) for k in band]
+        if len(set(widths)) > 1:
+            common = max(set(widths), key=lambda w: (widths.count(w), w))
+            for k, w in zip(band, widths):
+                if w != common:
+                    out.append(Problem(path, d.start + k, "width", f"row is {w} wide, the diagram is {common}"))
     grid = _cells([r.rstrip() for r in d.rows])
 
     def at(r, c):
@@ -150,8 +227,8 @@ def check_diagram(path: str, d: Diagram, components: set[str], sections: set[str
                 a = c
                 while c < len(row) and row[c] in HORIZONTAL:
                     c += 1
-                left_joins = R in ARMS.get(at(r, a - 1), set())
-                right_joins = L in ARMS.get(at(r, c), set())
+                left_joins = R in ARMS.get(at(r, a - 1), set()) or at(r, a - 1) in VERTICAL
+                right_joins = L in ARMS.get(at(r, c), set()) or at(r, c) in VERTICAL
                 if not left_joins and not right_joins:
                     decorative |= {(r, k) for k in range(a, c)}
             else:
@@ -167,10 +244,16 @@ def check_diagram(path: str, d: Diagram, components: set[str], sections: set[str
                 other = at(r + dr, c + dc)
                 # An edge may attach to a box's side: a horizontal line or arrow meeting a vertical edge
                 attaches = arm in (L, R) and (ch in HORIZONTAL or ch in "▶◀") and other in VERTICAL
+                attaches = attaches or ARROWS.get(other) == OPPOSITE[arm]  # an arrow pointing into it
                 if not attaches and OPPOSITE[arm] not in ARMS.get(other, set()):
                     out.append(Problem(path, d.start + r, "joins",
-                                       f"'{ch}' at column {c + 1} has nothing to join {dict(U='above', D='below', L='on its left', R='on its right')[arm]}"))
+                                       f"'{ch}' at column {c + 1} has nothing to join {WHERE[arm]}"))
                     break
+            if ch in ARROWS:
+                dr, dc = STEP[ARROWS[ch]]
+                if at(r + dr, c + dc) == " ":
+                    out.append(Problem(path, d.start + r, "joins",
+                                       f"'{ch}' at column {c + 1} points at nothing {WHERE[ARROWS[ch]]}"))
     text = "\n".join(d.rows)
     for name in sorted(set(COMPONENT.findall(text))):
         if name not in sections and name not in components:
@@ -199,6 +282,16 @@ def check_text(path: str, text: str, components: Optional[set[str]] = None,
     markdown = path.endswith(".md")
     sections = set() if strict else definitions(text) | (siblings or set())
     out: list[Problem] = []
+    if markdown:
+        opened = None
+        for k, line in enumerate(text.splitlines(), 1):
+            if line.strip().startswith("```"):
+                if opened is None and line.strip() in ("```oph", "```ophanic"):
+                    opened = k
+                elif opened is not None:
+                    opened = None if line.strip() == "```" else opened
+        if opened is not None:
+            out.append(Problem(path, opened, "fence", "this ```oph block never closes: put ``` on its own line"))
     for d in diagrams(text, markdown=markdown):
         out += check_diagram(path, d, components or set(), sections)
     return out

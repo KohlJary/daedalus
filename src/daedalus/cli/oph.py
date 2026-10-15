@@ -13,6 +13,15 @@ def oph():
     """Ophanic diagrams: lint them (check) and draw Daedalus's own state (map)."""
 
 
+def project_root(start: Path) -> Path:
+    """The nearest directory at or above `start` that holds `.daedalus`, else `start`: maps read the project, not
+    whatever directory the command ran in."""
+    for d in [start, *start.parents]:
+        if (d / ".daedalus").is_dir():
+            return d
+    return start
+
+
 @oph.command("check")
 @click.argument("paths", nargs=-1, type=click.Path(exists=True))
 @click.option("--components", default=None,
@@ -30,14 +39,20 @@ def oph_check(paths, components, strict_components, as_json):
     targets = [Path(p) for p in paths] or [Path("docs/design")]
     problems = check_paths([t for t in targets if t.exists()], known, strict=strict_components)
     if as_json:
-        from ..ophanic.render import read_edges
+        from ..ophanic.render import read_diagram_edges
 
+        # Per file, per diagram: the same slugs in two @variants are separate diagrams, not one graph
         edges = {}
         for t in targets:
-            files = [t] if t.is_file() else sorted(t.rglob("*.oph"))
+            files = [t] if t.is_file() else sorted(t.rglob("*.oph")) + sorted(t.rglob("*.md"))
             for f in files:
-                edges[str(f)] = read_edges(f.read_text(encoding="utf-8"))
-        click.echo(json.dumps({"problems": [p.__dict__ for p in problems], "edges": edges}, indent=2))
+                try:
+                    found = read_diagram_edges(f.read_text(encoding="utf-8"), markdown=f.suffix == ".md")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                if found or f.suffix == ".oph":
+                    edges[str(f)] = found
+        click.echo(json.dumps({"problems": [p.__dict__ for p in problems], "edges": edges}, indent=2, ensure_ascii=False))
     else:
         for p in problems:
             click.echo(f"{p.path}:{p.line}: {p.kind}: {p.message}")
@@ -57,9 +72,10 @@ def oph_map(subject, width, workstream, as_json):
     from ..ophanic.maps import MAPS
     from ..ophanic.render import draw
 
-    graph = MAPS[subject](Path.cwd(), workstream) if subject == "plan" else MAPS[subject](Path.cwd())
+    root = project_root(Path.cwd())
+    graph = MAPS[subject](root, workstream) if subject == "plan" else MAPS[subject](root)
     text, data = draw(graph, int(width))
-    click.echo(json.dumps(data, indent=2) if as_json else text, nl=not as_json or True)
+    click.echo(json.dumps(data, indent=2, ensure_ascii=False) if as_json else text, nl=not as_json or True)
 
 
 @oph.command("draw")
@@ -70,7 +86,13 @@ def oph_draw(graph_file, width, as_json):
     """Draw any graph as an Ophanic diagram. GRAPH_FILE is JSON:
     {"title", "nodes": [{"id", "label", "kind", "mark"?, "parent"?, "detail"?}], "edges": [{"from", "to", "label"?}]}.
     kind is one letter (E edict, P phase, T task, R roadmap item, W workstream, S source, M module, C claim, N other)."""
-    from ..ophanic.render import draw
+    from ..ophanic.render import GraphError, draw
 
-    text, data = draw(json.loads(Path(graph_file).read_text(encoding="utf-8")), int(width))
-    click.echo(json.dumps(data, indent=2) if as_json else text)
+    try:
+        graph = json.loads(Path(graph_file).read_text(encoding="utf-8"))
+        text, data = draw(graph, int(width))
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise click.ClickException(f"{graph_file} is not valid JSON: {e}")
+    except GraphError as e:
+        raise click.ClickException(f"{graph_file}: {e}")
+    click.echo(json.dumps(data, indent=2, ensure_ascii=False) if as_json else text)

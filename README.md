@@ -381,6 +381,7 @@ The pieces are named after the Labyrinth myth; here is what each does.
 | `daedalus palace init \| status \| callers \| callees \| impact \| path \| tests-for` | Mind Palace and its call-graph queries |
 | `daedalus palace dispatch` | The dispatch rules in effect: built-in (MediatR, MassTransit, NServiceBus, Hangfire, Celery) and this project's `palace.dispatch` |
 | `daedalus palace languages` | Which languages the palace analyzes here: Python, JS/TS, Go, Rust, Java, C#, Razor, C/C++, Ruby built in; Kotlin, PHP, Scala, Lua with `pip install "daedalus-cli[palace-all]"` |
+| `daedalus oph check \| map \| draw` | Ophanic diagrams: lint them, draw Daedalus's own state (edicts, plan, workstreams, intake), draw any graph ([docs/ophanic.md](docs/ophanic.md), the [`ophanic` skill](src/daedalus/plugin/skills/ophanic/SKILL.md)) |
 | `daedalus tui` | The TUI: needs-you, plan, health, story, edicts, board, config, sources, reflection, and a Claude pane |
 | `daedalus config [key [value]] [--project] [--schema [prefix]]` | Settings, checked against the schema registry |
 | `ariadne init \| status \| process \| daemon \| review … \| plans …` | Ariadne |

@@ -4,7 +4,7 @@
 Each map returns the graph format render.draw takes, from the same library functions the CLI uses:
 - `edicts`: edicts and their `Depends on:` edges; external dependencies in the box's detail line;
 - `plan`: phases as boxes, the active phase's tasks inside it, edicts as the phase's tag;
-- `workstreams`: workstreams holding their claims; collisions as listed edges;
+- `workstreams`: workstreams holding their claims; each collision a `█C` box pointing at the two workstreams;
 - `intake`: sources, then roadmap items by origin, then the phases that pull them in.
 """
 
@@ -22,7 +22,6 @@ def edicts_graph(project_dir: Path) -> dict:
     from ..edicts import EdictError, depends_on, load_edict
 
     nodes, edges = [], []
-    numbers = {e["number"] for e in load_edicts(project_dir)}
     for e in load_edicts(project_dir):
         try:
             ed = load_edict(project_dir, e["number"])
@@ -33,7 +32,8 @@ def edicts_graph(project_dir: Path) -> dict:
         if external:
             node["detail"] = "also: " + "; ".join(external)
         nodes.append(node)
-        edges += [{"from": ed.number, "to": d} for d in deps if d in numbers]
+        # Every dependency, including one on an edict that doesn't exist: the renderer lists it as missing
+        edges += [{"from": ed.number, "to": d} for d in deps]
     return {"title": "Edicts: each box points at the edicts it depends on", "nodes": nodes, "edges": edges}
 
 
@@ -66,27 +66,31 @@ def plan_graph(project_dir: Path, workstream: str | None = None) -> dict:
 
 
 def workstreams_graph(project_dir: Path) -> dict:
+    """Workstreams as boxes holding their path claims. Each collision doctor finds (`doctor.collisions`) is a `█C`
+    box labelled "collides", pointing at the two workstreams it involves: the arrow means "involves", as it means
+    "points at" everywhere, so a collision is never drawn as one workstream depending on another."""
     from .. import workstreams as ws
+    from ..doctor import collisions
 
     nodes, edges = [], []
-    owners: dict[str, list[str]] = {}
+    plans: dict = {}
     for wid in ws.list_ids(project_dir):
         try:
             data = ws.load(project_dir, wid)
         except ws.WorkstreamError:
             continue
-        nodes.append({"id": wid, "label": ws.owner(data, wid).get("kind", ""), "kind": "W",
+        plans[wid] = data
+        nodes.append({"id": wid, "label": f"{wid} ({ws.owner(data, wid).get('kind', '')})", "kind": "W",
                       "detail": ws.summary_line(data, wid).split(":", 1)[-1].strip()})
-        for claim in ws.owner(data, wid).get("claims", []) or data.get("claims", []) or []:
-            nodes.append({"id": f"{wid}:{claim}", "label": "", "kind": "C", "parent": wid})
-            owners.setdefault(wid, []).append(claim)
-    ids = sorted(owners)
-    for i, a in enumerate(ids):
-        for b in ids[i + 1:]:
-            if any(ws.claims_overlap(x, y) for x in owners[a] for y in owners[b]):
-                edges.append({"from": a, "to": b, "label": "claims overlap"})
-    return {"title": "Workstreams and their claims; overlapping claims are listed below", "nodes": nodes,
-            "edges": edges}
+        for k, claim in enumerate(data.get("claims", []) or []):
+            nodes.append({"id": f"~{wid}-claim-{k:04d}", "label": f"claim {claim}", "kind": "C", "parent": wid})
+    for k, (kind, a, b, detail) in enumerate(collisions(plans), 1):
+        what = f"edict {detail}" if kind == "edict" else f"paths {detail}"
+        cid = f"collision-{k:03d}"
+        nodes.append({"id": cid, "label": f"{a} collides with {b}", "kind": "C", "detail": what})
+        edges += [{"from": cid, "to": a}, {"from": cid, "to": b}]
+    return {"title": "Workstreams and their claims; a collision is a box of its own, pointing at both workstreams",
+            "nodes": nodes, "edges": edges}
 
 
 def intake_graph(project_dir: Path) -> dict:

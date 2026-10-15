@@ -204,4 +204,6 @@ from (nodes, containment, edges), so a test can check the drawing against the da
       the skill and doctor, `map palace`, then the send-form A/B. The skill's criterion becomes behavioural: given the
       skill, a session asked to explain a project's structure produces a diagram that passes `oph check`, checked in a
       pilot transcript.
-
+  12. **Deferred from v1** (recorded 2026-10-15, after Momus's trial of the build): `map palace`, the send-form A/B,
+      and `oph outline` are not in v1, as items 6, 9 and 11 allow. `docs/ophanic.md` lists them under "Deferred in
+      v1". The skill's pilot transcript (item 11) has not been run.

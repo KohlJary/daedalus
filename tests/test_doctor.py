@@ -205,3 +205,30 @@ def test_fresh_init_reports_no_drift(tmp_path, monkeypatch):
     assert CliRunner().invoke(main, ["init"]).exit_code == 0
     result = CliRunner().invoke(main, ["doctor"])
     assert result.exit_code == 0, result.output
+
+
+# ---------- design diagrams (edict 0017) ----------
+
+def _design(tmp_path, body):
+    (tmp_path / "docs/design").mkdir(parents=True)
+    (tmp_path / "docs/design/screen.oph").write_text("# Screen\n\n@desktop\n" + body, encoding="utf-8")
+    (tmp_path / ".daedalus").mkdir()
+
+
+def test_doctor_reports_a_malformed_design_diagram(tmp_path):
+    from daedalus.doctor import check_design_diagrams
+
+    _design(tmp_path, "┌───┬──┐\n│ A    │\n└──────┘\n")  # the ┬ joins nothing below
+    found = check_design_diagrams(tmp_path)
+    assert [f.name for f in found] == ["design-diagram-invalid"]
+    assert "nothing to join below" in found[0].message
+
+
+def test_doctor_reports_unresolved_components_only_when_configured(tmp_path):
+    from daedalus.doctor import check_design_diagrams
+
+    _design(tmp_path, "┌────────┐\n│ ◆Nope  │\n└────────┘\n")
+    assert check_design_diagrams(tmp_path) == []
+    (tmp_path / ".daedalus/config.json").write_text(json.dumps({"oph": {"components": ["Known"]}}))
+    found = check_design_diagrams(tmp_path)
+    assert found and "◆Nope" in found[0].message

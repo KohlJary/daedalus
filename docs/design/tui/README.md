@@ -15,7 +15,9 @@ behind every view it teaches the CLI.
 Code is the interface". Nothing in that old TUI is carried forward.)
 
 Every screen is drawn in [Ophanic](https://github.com/KohlJary/ophanic)
-notation: fixed-width box drawing, `◆Name` component references, one diagram
+notation (Daedalus's conventions and lint: [docs/ophanic.md](../../ophanic.md); the
+[`ophanic` skill](../../../src/daedalus/plugin/skills/ophanic/SKILL.md) teaches sessions to draw first;
+`daedalus oph check docs/design/tui --components src/daedalus/tui` lints these files): fixed-width box drawing, `◆Name` component references, one diagram
 per `@variant`, and `## ◆Name` sections for a component's internals. Desktop
 diagrams are 100 columns wide, narrow ones 60, and in-column panels are
 drawn at their real width in the shell (34). The sample data is illustrative:

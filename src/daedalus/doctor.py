@@ -309,28 +309,41 @@ def check_empty_templates_read(project_dir: Path, max_days: int, today: Optional
 # ---------- entry point ----------
 
 
-def check_collisions(plans: dict) -> list[Finding]:
-    """Two workstreams with open work citing the same edict, or with overlapping path claims."""
+def collisions(plans: dict) -> list[tuple[str, str, str, str]]:
+    """Every collision between two workstreams' plans, as (kind, a, b, detail), a before b by ID:
+    - ("edict", a, b, "0002"): both have open work citing edict 0002, one tuple per edict;
+    - ("claims", a, b, "src/x/ / src/x/y.py; ..."): their path claims overlap, one tuple per pair of workstreams.
+    `check_collisions` words these as findings; `oph map workstreams` draws them."""
     from . import workstreams as ws
 
-    findings = []
+    out: list[tuple[str, str, str, str]] = []
     ids = sorted(plans)
     for i, a in enumerate(ids):
         for b in ids[i + 1:]:
-            shared = ws.open_edicts(plans[a]) & ws.open_edicts(plans[b])
-            for number in sorted(shared):
-                findings.append(Finding(
-                    "collision-edict",
-                    f"Workstreams {a} and {b} both have open work on edict {number}. Agree who takes what.",
-                ))
-            pairs = sorted({(x, y) for x in plans[a].get("claims", []) for y in plans[b].get("claims", [])
+            for number in sorted(ws.open_edicts(plans[a]) & ws.open_edicts(plans[b])):
+                out.append(("edict", a, b, number))
+            pairs = sorted({(x, y) for x in plans[a].get("claims", []) or [] for y in plans[b].get("claims", []) or []
                             if ws.claims_overlap(x, y)})
             if pairs:
                 listed = "; ".join(f"{x} / {y}" for x, y in pairs[:4]) + (" ..." if len(pairs) > 4 else "")
-                findings.append(Finding(
-                    "collision-claims",
-                    f"Workstreams {a} and {b} claim overlapping paths: {listed}.",
-                ))
+                out.append(("claims", a, b, listed))
+    return out
+
+
+def check_collisions(plans: dict) -> list[Finding]:
+    """Two workstreams with open work citing the same edict, or with overlapping path claims."""
+    findings = []
+    for kind, a, b, detail in collisions(plans):
+        if kind == "edict":
+            findings.append(Finding(
+                "collision-edict",
+                f"Workstreams {a} and {b} both have open work on edict {detail}. Agree who takes what.",
+            ))
+        else:
+            findings.append(Finding(
+                "collision-claims",
+                f"Workstreams {a} and {b} claim overlapping paths: {detail}.",
+            ))
     return findings
 
 
@@ -642,17 +655,25 @@ def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Fi
 
 
 def check_design_diagrams(project_dir: Path) -> list[Finding]:
-    """Design diagrams under docs/design that don't pass `daedalus oph check` (edict 0017)."""
+    """Design diagrams under docs/design that don't pass `daedalus oph check` (edict 0017).
+
+    Joins, widths, box styles and slugs are always checked. An unresolved `◆Name` is reported only when the project
+    sets `oph.components` (`daedalus config set oph.components ...`): without it doctor can't know the code's
+    components, and a fresh clone would report every widget the designs name. That setting lives in the untracked
+    `.daedalus/config.json`; there is no committed per-project default for it."""
     design = Path(project_dir) / "docs" / "design"
     if not design.is_dir():
         return []
     from .ophanic.lint import check_paths, components_from_package
 
     known: set[str] = set()
-    for c in get_project_settings(project_dir, "oph").get("components") or []:
+    configured = get_project_settings(project_dir, "oph").get("components") or []
+    for c in configured:
         p = Path(project_dir) / c
         known |= components_from_package(p) if p.is_dir() else {c}
     problems = check_paths([design], known)
+    if not configured:
+        problems = [p for p in problems if p.kind != "components"]
     if not problems:
         return []
     first = problems[0]

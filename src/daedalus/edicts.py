@@ -233,16 +233,20 @@ def mark_done(repo: Path, number: str) -> Path:
 def depends_on(edict: Edict) -> tuple[list[str], list[str]]:
     """(edict numbers this edict depends on, everything else its `Depends on:` block names), edict 0017.
 
-    The block runs from `Depends on:` to the first blank line. Each four-digit number is an edge to that edict
-    (its own number excluded); anything else (a branch, a task ID, "none") is listed as external."""
+    The block runs from `Depends on:` to the first blank line. Parenthetical glosses describe a dependency; they
+    don't add one, so numbers inside them are ignored. Outside them, each four-digit number is an edge to that edict
+    (its own number excluded), and so is a shorter number named as an edict (`Edict 10`, `edict 7`,
+    `Edicts 7, 8 and 9`). Anything else (a branch, a task ID, "none") is listed as external."""
     m = re.search(r"^Depends on:(.*?)(?:\n\s*\n|\Z)", edict.text, re.M | re.S)
     if not m:
         return [], []
     block = " ".join(m.group(1).split())
-    numbers = sorted({n for n in re.findall(r"(?<!\d)(\d{4})(?!\d)", block) if n != edict.number})
-    # A part that names an edict is about that edict (its gloss is not a dependency); the rest is external
-    unglossed = re.sub(r"\([^)]*\)", "", block)  # parenthetical glosses describe; they don't depend
+    unglossed = re.sub(r"\([^)]*\)", "", block)
+    found = set(re.findall(r"(?<!\d)(\d{4})(?!\d)", unglossed))
+    for run in re.findall(r"\b[Ee]dicts?\s+(\d{1,4}(?:\s*(?:,|and|&)\s*\d{1,4})*)(?!\d)", unglossed):
+        found |= {n.zfill(4) for n in re.findall(r"\d{1,4}", run)}
+    numbers = sorted(n for n in found if n != edict.number)
     parts = [p.strip(" ,;.") for p in unglossed.split(";")]
-    external = [p for p in parts if p and not re.search(r"(?<!\d)\d{4}(?!\d)", p)
+    external = [p for p in parts if p and not re.search(r"(?<!\d)\d{4}(?!\d)|\b[Ee]dicts?\s+\d", p)
                 and not p.lower().startswith("none")]
     return numbers, external
