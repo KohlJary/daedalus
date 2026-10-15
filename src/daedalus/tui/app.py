@@ -275,6 +275,8 @@ class DaedalusShell(App):
     def ask_to_send(self, source: str, prompt: str) -> None:
         def done(text: Optional[str]) -> None:
             if text:
+                while len(self.screen_stack) > 1:  # back to the shell from an expanded screen, to show Claude
+                    self.pop_screen()
                 pane = self.query_one(ClaudePane)
                 if pane.session is None:
                     pane.start_session()
