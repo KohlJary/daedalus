@@ -105,6 +105,15 @@ class GitHubSource(Source):
             changed = self._get_all(f"{base}/issues?{urlencode({'state': 'all', 'since': since, 'per_page': 100})}",
                                     headers)
             issues += [i for i in changed if str(i["number"]) in known and str(i["number"]) not in seen]
+            seen = {str(i["number"]) for i in issues}
+        # A sub-issue's parent may not be assigned to you: fetch it, so the sub-issue has an item to hang on
+        # (as ADO fetches parents). One level, open parents only.
+        for number in sorted({i["parent_issue_url"].rstrip("/").rsplit("/", 1)[-1] for i in issues
+                              if i.get("parent_issue_url")} - seen):
+            if number.isdigit():
+                parent, _ = http.request("GET", f"{base}/issues/{number}", headers)
+                if isinstance(parent, dict) and parent.get("state") == "open":
+                    issues.append(parent)
         return self.to_remote(issues)
 
     def to_remote(self, issues: list[dict[str, Any]]) -> list[RemoteItem]:

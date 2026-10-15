@@ -16,6 +16,7 @@ for core keys stays cheap.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, fields, is_dataclass
 from typing import Any, Optional
 
@@ -219,6 +220,9 @@ def convert(setting: Setting, value: str) -> Any:
         if not isinstance(parsed, list if setting.type == "list" else dict):
             raise ValueError(f"{setting.key} takes a JSON {'list' if setting.type == 'list' else 'object'}")
         return parsed
+    if setting.key.endswith(".token_env") and not re.fullmatch(r"[A-Z_][A-Z0-9_]*", raw):
+        raise ValueError(f"{setting.key} is the NAME of an environment variable (like GITHUB_TOKEN), in capitals. "
+                         "Never put the token itself in config; `daedalus source login` stores it in the keyring.")
     if setting.choices and value not in setting.choices:
         raise ValueError(f"invalid value for {setting.key}: {value!r}. Allowed: {', '.join(setting.choices)}")
     return value

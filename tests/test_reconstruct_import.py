@@ -78,6 +78,6 @@ def test_roadmap_item_removed_after_import_fails_cleanly(repo, monkeypatch, tmp_
     f.write_text(json.dumps(proposal(shas, phases=[], updates=[])))
     run(path, monkeypatch, "gameplan", "pending", "import", str(f))
     (path / ".daedalus/roadmap/index.json").write_text(json.dumps({"items": []}))
-    out = run(path, monkeypatch, "gameplan", "pending", "apply", "all")
+    out = run(path, monkeypatch, "gameplan", "pending", "apply", "all", code=1)  # a failed apply exits 1
     assert "Roadmap item 'r1' not found" in out
     assert len(gp.load_pending(path)) == 1                     # nothing applied, nothing lost

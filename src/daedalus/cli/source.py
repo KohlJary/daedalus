@@ -69,11 +69,27 @@ def source_sync(name, dry_run, workstream):
     from ..sources import sync as sync_mod
     from . import gameplan as gp
 
+    project_dir = Path.cwd()
     try:
-        ws.set_override(workstream)
+        ws.validate_id(workstream) if workstream else None
     except ws.WorkstreamError as e:
         raise click.UsageError(str(e))
-    project_dir = Path.cwd()
+    if workstream and workstream not in ws.list_ids(project_dir):
+        raise click.UsageError(f"No workstream '{workstream}' here. Create it with `daedalus workstream new "
+                               f"{workstream}`, or see `daedalus workstream list`.")
+    ws.set_override(workstream)
+    try:
+        _sync(project_dir, name, dry_run)
+    finally:
+        ws.set_override(None)
+
+
+def _sync(project_dir, name, dry_run):
+    from .. import sources
+    from .. import workstreams as ws
+    from ..sources import sync as sync_mod
+    from . import gameplan as gp
+
     names = [name] if name else sources.active(project_dir)
     if not names:
         click.echo("No active sources here. See `daedalus source list`.")
@@ -131,6 +147,10 @@ def source_status():
         click.echo(f"{n:10} {health:13} last sync {last}, {count} item(s)")
         if entry.get("error") and health in ("auth-failed", "unreachable"):
             click.echo(f"           {entry['error']}")
+        if entry.get("skipped"):
+            click.echo(f"           {len(entry['skipped'])} item(s) waiting for a phase; first: {entry['skipped'][0]}")
+        if entry.get("dropped"):
+            click.echo(f"           {len(entry['dropped'])} dropped item(s) a sync won't propose again")
 
 
 @source.command("login")

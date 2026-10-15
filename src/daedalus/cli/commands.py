@@ -776,7 +776,11 @@ def list_pending(project_dir: Path):
         click.echo("No pending gameplan updates.")
         return
     for p in proposals:
-        click.echo(f"{p['id']}: {gp.describe_proposal(p)}  ({p.get('source', '')}, {p.get('created', '')})")
+        try:
+            described = gp.describe_proposal(p)
+        except (gp.GameplanError, KeyError, TypeError) as e:
+            described = f"[can't apply: {e}] drop it with `daedalus gameplan pending drop {p.get('id')}`"
+        click.echo(f"{p['id']}: {described}  ({p.get('source', '')}, {p.get('created', '')})")
         if p.get("resolution"):
             click.echo(f"    {p['resolution']}")
 
@@ -790,7 +794,10 @@ def apply_pending(project_dir: Path, which: str):
         click.echo(f"Applied {p['id']}: {gp.describe_proposal(p)}")
     for p, error in failures:
         click.echo(f"Not applied {p['id']} (still pending): {error}", err=True)
-    if failures:
+    if applied is None:
+        click.echo("Nothing above was applied; the proposals are still pending. Drop the one in the way, "
+                   "or apply them one at a time.", err=True)
+    if failures or applied is None:
         raise SystemExit(1)
 
 
@@ -803,7 +810,10 @@ def drop_pending(project_dir: Path, which: str):
         click.echo(str(e), err=True)
         return
     for p in dropped:
-        click.echo(f"Dropped {p['id']}: {gp.describe_proposal(p)}")
+        try:
+            click.echo(f"Dropped {p['id']}: {gp.describe_proposal(p)}")
+        except (gp.GameplanError, KeyError, TypeError):
+            click.echo(f"Dropped {p['id']}")
 
 
 def import_reconstruction(project_dir: Path, proposal_file: Path):

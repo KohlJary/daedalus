@@ -94,3 +94,9 @@ def test_parent_id_from_relations_or_field():
         {"rel": "System.LinkTypes.Hierarchy-Forward", "url": "x/workItems/9"},
         {"rel": "System.LinkTypes.Hierarchy-Reverse", "url": "x/workItems/8"}]}) == 8
     assert ado_mod.parent_id({"fields": {}}) is None
+
+
+def test_ado_dry_run_writes_nothing(ado, project):
+    out = run("source", "sync", "ado", "--dry-run")
+    assert out.exit_code == 0 and "would propose 3" in out.output
+    assert pending(project) == [] and not (project / ".daedalus/sources/state.json").exists()

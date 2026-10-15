@@ -295,6 +295,8 @@ PROPOSAL_KINDS = ("task-status", "new-phase", "roadmap-status", "new-task",
                   "roadmap-new", "roadmap-update", "write-back")
 # Kinds whose proposals carry commits: a newer one replaces a pending one only when it brings new commits
 COMMIT_KINDS = ("task-status", "new-phase", "roadmap-status")
+# Kinds a source makes whose drop is remembered, so a re-sync doesn't bring them back
+SOURCE_DROP_KINDS = ("roadmap-new", "roadmap-update", "write-back", "new-phase", "new-task")
 
 
 def proposal_kind(proposal: dict[str, Any]) -> str:
@@ -388,7 +390,12 @@ def add_proposals(project_dir: Path, new: list[dict[str, Any]]) -> list[dict[str
     when it brings commits the old one didn't have; otherwise it is skipped. Returns what was added.
     """
     proposals = load_pending(project_dir)
-    by_key = {proposal_key(p): p for p in proposals}
+    by_key = {}
+    for p in proposals:
+        try:
+            by_key[proposal_key(p)] = p
+        except (GameplanError, KeyError, TypeError):
+            continue  # an entry this version doesn't know; left alone (drop it with `pending drop`)
     next_num = max((int(p["id"][1:]) for p in proposals if p.get("id", "")[1:].isdigit()), default=0) + 1
     added = []
     for proposal in new:
@@ -437,7 +444,6 @@ def apply_pending(project_dir: Path, data: dict[str, Any], which: str,
     for p in chosen:
         proposal_kind(p)  # raises on an unknown kind, before anything is applied
     applied: list[dict[str, Any]] = []
-    roadmap_changes = []
     from ..sources import sync as source_sync
 
     for p in [p for p in chosen if proposal_kind(p) == "write-back"]:
@@ -449,8 +455,34 @@ def apply_pending(project_dir: Path, data: dict[str, Any], which: str,
             failures.append((p, str(e)))
             continue
         applied.append(p)
-    if applied:  # the outside call happened: never leave it pending, whatever happens next
+    if applied:
+        # The outside call happened: record it and take it off the pending list now, whatever happens next
+        save_gameplan(project_dir, data)
         save_pending(project_dir, [p for p in proposals if p not in applied])
+    # The local part is all or nothing: a failure partway restores the roadmap index and raises, so the
+    # gameplan isn't saved and every local proposal stays pending as it was.
+    from .. import roadmap as rm
+
+    index_file = rm.index_path(project_dir)
+    index_before = index_file.read_bytes() if index_file.exists() else None
+    try:
+        done_tasks = _apply_local(project_dir, data, chosen, applied)
+    except Exception:
+        if index_before is None:
+            index_file.unlink(missing_ok=True)
+        else:
+            index_file.write_bytes(index_before)
+        raise
+    save_pending(project_dir, [p for p in proposals if p not in applied])
+    for task in done_tasks:
+        source_sync.propose_write_back(project_dir, data, task)
+    return applied
+
+
+def _apply_local(project_dir: Path, data: dict[str, Any], chosen: list, applied: list) -> list:
+    from ..sources import sync as source_sync
+
+    roadmap_changes = []
     done_tasks = []
     for p in chosen:
         kind = proposal_kind(p)
@@ -482,10 +514,7 @@ def apply_pending(project_dir: Path, data: dict[str, Any], which: str,
         applied.append(p)
     if roadmap_changes:
         _apply_roadmap_status(project_dir, roadmap_changes)
-    save_pending(project_dir, [p for p in proposals if p not in applied])
-    for task in done_tasks:
-        source_sync.propose_write_back(project_dir, data, task)
-    return applied
+    return done_tasks
 
 
 def _apply_new_task(data: dict[str, Any], p: dict[str, Any]) -> dict[str, Any]:
@@ -577,9 +606,9 @@ def drop_pending(project_dir: Path, which: str) -> list[dict[str, Any]]:
     write-back is recorded as `dropped` (doctor then knows it wasn't forgotten). Nothing is called."""
     proposals = load_pending(project_dir)
     chosen = _select(proposals, which)
-    if any(proposal_kind(p) in ("roadmap-update", "write-back") for p in chosen):
+    if any(p.get("kind") in ("roadmap-update", "write-back") or p.get("origin") for p in chosen):
         from ..sources import sync as source_sync
 
-        source_sync.record_drops(project_dir, [p for p in chosen if proposal_kind(p) in ("roadmap-update", "write-back")])
+        source_sync.record_drops(project_dir, [p for p in chosen if p.get("kind") in SOURCE_DROP_KINDS])
     save_pending(project_dir, [p for p in proposals if p not in chosen])
     return chosen

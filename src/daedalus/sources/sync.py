@@ -162,18 +162,27 @@ def sync(project_dir: Path, name: str, dry_run: bool = False) -> SyncResult:
                 task_origins.add(str(o.get("external_id")))
 
     prior = state.load(project_dir).get(name, {})
+    dropped = set(prior.get("dropped", []))
+    # The watermark is the oldest tracker time any known item was last seen at, not the last sync: an item
+    # that changed between a sync and the apply of its proposal is still caught on the next sync.
+    seen_at = [str((i.get("synced") or {}).get("remote_updated")) for i in known_items.values()
+               if (i.get("synced") or {}).get("remote_updated")]
+    watermark = min(seen_at) if seen_at else prior.get("last_sync")
     try:
-        remote = src.fetch(sorted(known_items), prior.get("last_sync"))
-    except SourceError as e:
-        result.error, result.health = str(e), e.health
+        remote = src.fetch(sorted(known_items), watermark)
+        roles = {r.external_id: src.role(r) for r in remote}
+    except Exception as e:  # SourceError, or a response that isn't the shape the plugin expects
+        health = e.health if isinstance(e, SourceError) else "unreachable"
+        message = str(e) if isinstance(e, SourceError) else \
+            f"The tracker's response wasn't the expected shape ({type(e).__name__}: {e})"
+        result.error, result.health = message, health
         if not dry_run:
-            state.record(project_dir, name, last_attempt=stamp, health=e.health, error=str(e),
+            state.record(project_dir, name, last_attempt=stamp, health=health, error=message,
                          supports_write_back=bool(src.supports_write_back))
         return result
 
     today = date.today().isoformat()
     provenance = f"sync:{name}"
-    roles = {r.external_id: src.role(r) for r in remote}
     by_id = {r.external_id: r for r in remote}
     proposals: list[dict[str, Any]] = []
     index_dirty = False
@@ -188,7 +197,7 @@ def sync(project_dir: Path, name: str, dry_run: bool = False) -> SyncResult:
             continue
         pid = phase_id(r.external_id)
         if (r.external_id in phase_origins or pid in phase_ids or f"phase:{pid}" in pending_keys
-                or src.status_for(r) == "done"):
+                or f"src:{name}:{r.external_id}" in dropped or src.status_for(r) == "done"):
             continue
         children = [roadmap.item_id_for(name, c.external_id) for c in remote
                     if c.parent == r.external_id and roles[c.external_id] == ITEM]
@@ -208,8 +217,8 @@ def sync(project_dir: Path, name: str, dry_run: bool = False) -> SyncResult:
         remote_fields = src.fields(r)
         item = known_items.get(r.external_id)
         if item is None:
-            if key in pending_keys or remote_fields.get("status") == "done":
-                continue  # already proposed, or closed before it was ever taken in
+            if key in pending_keys or key in dropped or remote_fields.get("status") == "done":
+                continue  # already proposed, dropped by the owner, or closed before it was ever taken in
             new_item = {"id": roadmap.item_id_for(name, r.external_id), "title": r.title,
                         "description": r.description or "", "status": "backlog", "priority": "P2",
                         "item_type": src.item_type(r), "created_at": stamp, "created_by": provenance, "origin": o}
@@ -254,7 +263,7 @@ def sync(project_dir: Path, name: str, dry_run: bool = False) -> SyncResult:
             continue
         key = f"src:{name}:{r.external_id}"
         if (r.external_id in task_origins or r.external_id in pending_task_origins or key in pending_keys
-                or src.status_for(r) == "done"):
+                or key in dropped or src.status_for(r) == "done"):
             continue
         parent_item = roadmap.item_id_for(name, r.parent) if r.parent else None
         task = {"id": roadmap.item_id_for(name, r.external_id).lower(), "title": r.title, "details": r.url,
@@ -283,7 +292,7 @@ def sync(project_dir: Path, name: str, dry_run: bool = False) -> SyncResult:
     result.proposals = gp.add_proposals(project_dir, proposals) if proposals else []
     result.health = src.health_when_ok()
     state.record(project_dir, name, last_sync=stamp, last_attempt=stamp, health=result.health, error=None,
-                 supports_write_back=bool(src.supports_write_back))
+                 supports_write_back=bool(src.supports_write_back), skipped=result.skipped)
     return result
 
 
@@ -394,6 +403,14 @@ def record_drops(project_dir: Path, proposals: list[dict[str, Any]]) -> None:
             index_dirty = True
     if index_dirty:
         roadmap.save_index(project_dir, index)
+    intake = [p for p in proposals if p.get("kind") in ("roadmap-new", "new-phase", "new-task") and p.get("origin")]
+    by_source: dict[str, set] = {}
+    for p in intake:
+        o = p["origin"]
+        by_source.setdefault(o["source"], set()).add(f"src:{o['source']}:{o['external_id']}")
+    for source_name, keys in by_source.items():
+        prior = state.load(project_dir).get(source_name, {})
+        state.record(project_dir, source_name, dropped=sorted(set(prior.get("dropped", [])) | keys))
     wbs = [p for p in proposals if p.get("kind") == "write-back"]
     for p in wbs:
         _record_write_back(project_dir, data, p, "dropped")
