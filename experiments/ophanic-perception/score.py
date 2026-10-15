@@ -246,12 +246,14 @@ def review_checks(rows: list[dict], encs: list[str], tokens: list[dict]) -> list
             floor[(t, sub)][0] += 1
             cases.append((t, sub, task, qid, next(iter(arms.values()))["gold"]))
     out += ["### Floors: questions every arm got wrong", "",
-            f"A question counts here when all of {', '.join(main_arms)} answered it wrong.", ""]
+            f"A question counts here when all of {', '.join(main_arms)} answered it wrong. A question with no "
+            "scored answer in some arm (an error, or a call that gave no answer) is left out of the count, so the "
+            "denominators can be smaller than the structures asked. A11's floor rule: more than half.", ""]
     subs_in_order = [(t, s) for t in TYPE_ORDER for s in sorted({k[1] for k in floor if k[0] == t})]
     out += table(["structure", "question", "wrong in every arm"],
                  [[tl(t), s, f"{floor[(t, s)][0]} of {floor[(t, s)][1]}"] for t, s in subs_in_order])
     g = [(s, floor[("graph", s)]) for t, s in subs_in_order if t == "graph"]
-    if g:
+    if g and any(b and a / b > 0.5 for _, (a, b) in g):
         out += ["On graphs the arms look level because the graph questions are near the floor, not because the "
                 "encodings are at parity: " + "; ".join(f"`{s}` was wrong in every arm on {a} of {b}"
                                                          for s, (a, b) in g) + ".", ""]
@@ -787,8 +789,9 @@ def main(argv=None):
     text = report(run_dir, rows, a.label, tokens, a.primary, a.boot, a.boot_seed, errors)
     if a.notes:
         # the notes go after the header, before the first section
-        head, rest = text.split("\n## ", 1)
-        text = head + "\n" + Path(a.notes).read_text(encoding="utf-8").rstrip() + "\n\n## " + rest
+        cut = "\n# Condition: " if "\n# Condition: " in text else "\n## "
+        head, rest = text.split(cut, 1)
+        text = head + "\n" + Path(a.notes).read_text(encoding="utf-8").rstrip() + "\n" + cut + rest
     path = Path(a.report) if a.report else run_dir / "REPORT.md"
     path.write_text(text + "\n", encoding="utf-8")
     k = sum(r["correct"] for r in rows)

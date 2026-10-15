@@ -134,7 +134,7 @@ Always answering 25 would score 4/9 = 44% under the ±5 rule; no other constant 
 
 ### Floors: questions every arm got wrong
 
-A question counts here when all of ophanic@100, ophanic@100+fenced, ophanic@100+unframed, prose, json, list answered it wrong.
+A question counts here when all of ophanic@100, ophanic@100+fenced, ophanic@100+unframed, prose, json, list answered it wrong. A question with no scored answer in some arm (an error, or a call that gave no answer) is left out of the count, so the denominators can be smaller than the structures asked. A11's floor rule: more than half.
 
 | structure | question | wrong in every arm |
 |---|---|---|
