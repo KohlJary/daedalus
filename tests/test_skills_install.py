@@ -114,3 +114,23 @@ def test_reconstruct_skill_and_mnemosyne_agent_ship(tmp_path, monkeypatch):
     CliRunner().invoke(main, ["hydrate", "--no-template"])
     assert (tmp_path / ".claude/skills/reconstruct/SKILL.md").exists()
     assert (tmp_path / ".claude/agents/mnemosyne.md").exists()
+
+
+def test_hit_em_up_ships_its_personas_and_frames_and_they_are_generic(tmp_path, monkeypatch):
+    skill = get_skills_dir() / "hit-em-up"
+    personas = sorted(p.stem for p in (skill / "personas").glob("*.md"))
+    frames = sorted(p.stem for p in (skill / "frames").glob("*.md"))
+    assert {"neutral", "battle"} <= set(frames)
+    assert {"workplace", "full-bore"} <= set(personas)
+    shipped = [("personas", n) for n in personas] + [("frames", n) for n in frames]
+    for folder, name in shipped:
+        text = (skill / folder / f"{name}.md").read_text(encoding="utf-8")
+        assert [t for t in DENY if re.search(rf"\b{re.escape(t)}\b", text)] == []
+        assert text.isascii()
+    full = (skill / "personas" / "full-bore.md").read_text(encoding="utf-8")
+    assert "No amendment may aim his fire at a person." in full
+
+    run(tmp_path, monkeypatch, "--no-agents", "--no-template")
+    for folder, name in shipped:
+        installed = tmp_path / ".claude" / "skills" / "hit-em-up" / folder / f"{name}.md"
+        assert installed.read_bytes() == (skill / folder / f"{name}.md").read_bytes()
