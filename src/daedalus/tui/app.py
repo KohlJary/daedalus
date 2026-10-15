@@ -281,6 +281,8 @@ class DaedalusShell(App):
                 if pane.session is None:
                     pane.start_session()
                 pane.paste(text)
+                while len(self.screen_stack) > 1:  # sent from an expanded screen: back to the shell, Claude in view
+                    self.pop_screen()
                 self.action_focus_claude()
         self.query_one(KeyBar).show_modal()
         self.push_screen(SendToClaude(source, prompt), done)
