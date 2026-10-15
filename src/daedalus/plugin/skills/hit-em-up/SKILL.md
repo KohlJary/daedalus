@@ -1,6 +1,6 @@
 ---
 name: hit-em-up
-description: Plan a route through the whole work board and push every eligible item as far as the project's policy allows, then report with a route table, the gates reached, one batch of outward-facing actions for approval, and an original closing verse. Use when the user says "hit em up" or asks to work through the board, the backlog or the sprint on their own. Takes a policy name (a file in policies/), 'plan' to stop after the route, a persona ('workplace' or 'full-bore', a file in personas/), and 'compare' to dry-run two personas on the same board side by side.
+description: Plan a route through the whole work board and push every eligible item as far as the project's policy allows, then report with a route table, the gates reached, one batch of outward-facing actions for approval, and an original closing verse. Use when the user says "hit em up" or asks to work through the board, the backlog or the sprint on their own. Takes a policy name (a file in policies/), 'plan' to stop after the route, a persona ('workplace' or 'full-bore', a file in personas/), a frame ('neutral' or 'battle', a file in frames/), and 'compare' to dry-run personas and frames as a blind 2x2 on the same board.
 ---
 
 # Hit 'em up
@@ -18,7 +18,7 @@ must stop live in a policy file under 'policies/'. Read the whole policy before 
 Defaults come from the project's '.daedalus/config.json':
 
 ```json
-"hitEmUp": { "policy": "daedalus", "persona": "workplace", "maxItems": 6, "verse": true }
+"hitEmUp": { "policy": "daedalus", "persona": "workplace", "frame": "neutral", "maxItems": 6, "verse": true }
 ```
 
 - 'policy': a file in 'policies/' by its first word ('daedalus' -> 'policies/daedalus.md'). Unset: read each
@@ -30,14 +30,15 @@ Defaults come from the project's '.daedalus/config.json':
 - 'backlog': '{ "staleDays": 30, "maxItems": 40 }' for backlog mode.
 - 'dryRun': true or false (default false). See Dry run.
 - 'persona': a file in 'personas/' by its first word ('full-bore' -> 'personas/full-bore.md'). Unset:
-  'workplace'. See Personas.
+  'workplace'. See Personas and frames.
+- 'frame': a file in 'frames/' by its first word ('battle' -> 'frames/battle.md'). Unset: 'neutral'.
 - 'maxItems', 'verse': as below.
 
 The sample above leaves 'trust' and 'mode' out on purpose so their adaptive defaults apply; setting them
 pins them.
 
 Arguments override config for one run: a policy name, 'trusted'/'gated', 'plan'/'go', a persona name, a
-number, 'no-verse'.
+frame name, a number, 'no-verse'.
 Say in the report which values came from config and which from arguments.
 
 ## Arguments
@@ -47,7 +48,9 @@ Say in the report which values came from config and which from arguments.
 - 'dry-run' (overrides 'dryRun'): works with any mode.
 - 'no-verse': skip step 9.
 - A persona name ('workplace', 'full-bore'; overrides 'persona').
-- 'compare' (optionally two or three persona names; default 'workplace full-bore hype'): see Compare mode.
+- A frame name ('neutral', 'battle'; overrides 'frame').
+- 'compare' (optionally two persona names and two frame names; default 'workplace full-bore neutral
+  battle'): see Compare mode.
 - A number ('3'): work at most that many items.
 
 ## Steps
@@ -56,8 +59,9 @@ Say in the report which values came from config and which from arguments.
    Autonomous work, Gates, Approval batch, Definition of done. Where the policy and this file disagree, the
    policy wins; where the project's CLAUDE.md and the policy disagree, CLAUDE.md wins. A new policy is
    a file in 'policies/' with the same sections plus Detection; nothing in this file names one.
-   Then read the persona file completely. A persona shapes ranking within the policy's order, the
-   terminal voice and the verse; it never loosens a gate, an eligibility rule or a check.
+   Then read the persona file and the frame file completely. A persona shapes ranking within the policy's
+   order, the terminal voice and the verse; a frame sets the scene and stakes. Neither loosens a gate, an
+   eligibility rule or a check.
 
 2. **Read the board** as the policy's Source says. Every item, not a sample: id, title, type, state,
    owner, and anything already done on it (branches, documentation folders, task chain, comments).
@@ -167,51 +171,65 @@ Spread the reading across cheaper agents when the backlog is large (one batch of
 checklist); verify every "already done", "duplicate" and "obsolete" verdict yourself before it goes in the
 report, since those are the ones that would close someone's ticket.
 
-## Personas
+## Personas and frames
 
-A persona is a file in 'personas/' that shapes how a run chooses and talks without touching what it is
-allowed to do. Two ship:
+Two separate prompt levers, kept apart so their effects can be measured apart.
+
+A **persona** (a file in 'personas/') is who the agent is: what it values, how it checks itself, where its
+shadow is. Two ship:
 
 - **workplace** (default): plain voice, no character.
 - **full-bore**: an original battle-rapper character who takes wasted effort personally. He clusters harder,
   refuses busywork, and only brags with checked receipts.
-- **hype**: the same energy as a single line with no constitution. It exists to test whether the structure
-  of a persona matters or only its vibe.
 
-Every persona keeps the same gates, eligibility, checks and approval batch. Persona voice stays in the
-terminal: everything another person will see is written in the plain workplace voice whichever persona runs.
+A **frame** (a file in 'frames/') is the situation the agent is in: the scene and the stakes, nothing about
+identity. Two ship:
+
+- **neutral** (default): no scene, no extra stakes.
+- **battle**: the biggest rap battle in the world, and this board is the opponent.
+
+Every persona and frame keeps the same gates, eligibility, checks and approval batch. Voice stays in the
+terminal: everything another person will see is written in the plain workplace voice whatever the run.
 A new persona is a file with a Preamble, its Articles, a Shadow article (how drift feels and the
-self-check), and an Amendments article whose unamendable clauses keep it off people and off unchecked claims.
+self-check), and an Amendments article whose unamendable clauses keep it off people and off unchecked
+claims. A new frame is a short file that describes a situation and says nothing about who the agent is.
 
 ## Compare mode
 
-For testing whether a persona changes the work, not just the voice. 'compare' always runs as a dry run.
+For testing whether persona and frame change the work, not just the voice, and whether they interact.
+'compare' always runs as a dry run. Default: a 2x2 of persona ('workplace', 'full-bore') by frame
+('neutral', 'battle'), four arms.
 
 1. Snapshot the inputs once: record the commit hash of main, the time, and the board read (step 2). Every
    arm uses this snapshot.
-2. Run each persona as its own dry run in a fresh subagent, so no arm sees another's route or
-   reasoning. Same policy, mode, item limit and snapshot; only the persona differs. Each writes its own report
-   ('...-dry-run-<persona>.md').
+2. Run each arm as its own dry run in a fresh subagent, so no arm sees another's route or reasoning. Same
+   policy, mode, item limit and snapshot; only persona and frame differ. Each writes its own report
+   ('...-dry-run-<persona>-<frame>.md').
 3. Hand every arm's route table, per-item results and approval batch to one more fresh subagent with the
-   persona voice, verses and file names stripped, labelled only 'A', 'B' (and 'C') in random order. It ranks
-   the arms' work and says why, before learning which persona was which.
-4. Write '<date>-compare-<persona>-vs-<persona>[-vs-<persona>].md' in the report folder with this table (one
-   column per arm), then the blind judgment, then the unblinding:
+   voice, verses and file names stripped, labelled only 'A' to 'D' in random order. It ranks the arms' work
+   and says why, before learning which arm was which.
+4. Write '<date>-compare-2x2.md' in the report folder with this table (one column per arm), then the blind
+   ranking, then the unblinding:
 
-| Measure | A | B | C |
-| --- | --- | --- | --- |
-| Items reaching their gate | | | |
-| Distinct files read | | | |
-| Reads per item reaching a gate | | | |
-| Items skipped as busywork (with reasons) | | | |
-| Claims Momus rejected | | | |
-| Closing verdicts that failed re-check | | | |
-| Approval-batch entries | | | |
-| Effort saved (work units, as in Dry run) | | | |
+| Measure | A | B | C | D |
+| --- | --- | --- | --- | --- |
+| Items reaching their gate | | | | |
+| Distinct files read | | | | |
+| Reads per item reaching a gate | | | | |
+| Items skipped as busywork (with reasons) | | | | |
+| Claims Momus rejected | | | | |
+| Closing verdicts that failed re-check | | | | |
+| Approval-batch entries | | | | |
+| Effort saved (work units, as in Dry run) | | | | |
 
-5. Report whether the personas produced different work (with 'hype' in the run: whether the constitution
-   beat the one-liner, and on which measures), where, and whether the difference held up under the
-   checks. One compare run is an anecdote: say so, and say how many more runs would make it evidence.
+5. Read it as a 2x2, per measure:
+   - **persona effect:** full-bore minus workplace, in each frame;
+   - **frame effect:** battle minus neutral, for each persona;
+   - **interaction:** whether the battle frame moves the two personas in different directions (for example,
+     more rejected claims under workplace but fewer under full-bore). An interaction is the strongest sign
+     that identity does work of its own rather than adding energy.
+   Say which differences held up under the checks. One compare run is an anecdote: say so, and say how
+   many more runs would make it evidence.
 
 ## Never
 
