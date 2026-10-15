@@ -167,6 +167,22 @@
         "updated": "2026-10-15",
         "edict": "0010",
         "resolution": "PR #54 (merged e826c7e): fixes from the first real reflection run; Momus reviewed twice (trials 2026-10-15-reflection-tooling-fixes.md). Known leaks left: ratios/word numbers, d: whole-session totals in a daily, event_days in the digesting machine's zone, symbol-blind normalise."
+      },
+      {
+        "id": "T-r18",
+        "title": "Spend breakdown: tokens by model, turn and class; reflect spend",
+        "status": "pending",
+        "details": "Digest schema 3 (tokens_by_model, turns, compactions, 5m/1h cache writes, units), reflection/spend.py, daedalus reflect spend, spend in bundles, delphi guidance. PR #60.",
+        "updated": "2026-10-15",
+        "edict": "0010"
+      },
+      {
+        "id": "T-r19",
+        "title": "Model routing experiment: local scorer at session start and subagent dispatch",
+        "status": "pending",
+        "details": "Kohl's idea (2026-10-15): a local model scores the prompt and picks the model. Per-prompt switching inside a session rewrites the per-model prompt cache, so route only where context starts fresh (session start, subagent dispatch), likely via the TUI (0012) which owns the prompt box. Evaluate offline first against recorded digest turns (prompt start, tool_calls, units) before routing anything live. Also weigh the Sonnet-front-desk / long-lived Opus workshop subagent shape. Needs T-r18 data; mind ComfyUI VRAM contention.",
+        "updated": "2026-10-15",
+        "edict": "0010"
       }
     ],
     "deferred": [],

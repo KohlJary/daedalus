@@ -162,3 +162,8 @@ note: from #38: a diff whose tests executed nothing is never verified.
 │ a apply · x drop · s ask Claude to check it first         │
 └───────────────────────────────────────────────────────────┘
 note: a/x call `daedalus gameplan pending apply|drop`. The only direct write in v1.
+
+note (v1 as built, edict 0012): drop is `x` (and `d` on a proposal; on a PR `d` shows the
+diff stat). `o` (open in a browser) is not built in v1. The edict detail shows the Intent
+section; `r` shows the whole edict. PRs, edicts and dissents have no merge, accept or resolve
+key: pressing `a` or `x` on one says where that decision is made.

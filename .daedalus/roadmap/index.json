@@ -9,6 +9,19 @@
       "status": "backlog",
       "created_at": "2026-10-14T23:37:13.842521",
       "created_by": "daedalus"
+    },
+    {
+      "id": "8bbea25b-ee4e-4ba7-b7b9-9338bf47ca05",
+      "title": "Chorus portents: foreboding when work goes back on its requirements (again)",
+      "description": "Kohl, 2026-10-15: the Chorus (PR #59, the audience-reception agent) should give ominous portents of doom when a piece or a plan goes back on its requirements again, the tragic chorus watching the hero walk toward what everyone can see coming. Needs memory, since 'again' is the point: compare the piece against its stated requirements (an edict's acceptance criteria, a ticket, what the author said they were building) and against earlier reversals (edict amendments, earlier reception reports, dropped proposals, epitaphs). Stays reception, not verdict: the Chorus says how it lands and what it dreads; Momus checks whether it's wrong. Also: keep the name Hermes free for inter-agent communication (the board, edict 0009).",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-10-15T05:58:27.046956",
+      "created_by": "daedalus",
+      "origin": {
+        "source": "local"
+      }
     }
   ],
   "version": 1

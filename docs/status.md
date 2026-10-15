@@ -5,7 +5,7 @@ committed gameplan, `.daedalus/roadmap/gameplan.json`: run `daedalus gameplan sh
 and `daedalus doctor`. This file carries what the gameplan can't say. See
 `docs/edicts/README.md`.*
 
-**Last updated:** 2026-10-15, by the night shift (edict 0011); earlier: the reflection session (edict 0010); the TUI-design, Ariadne/experiment and memory-side sessions' notes follow
+**Last updated:** 2026-10-15 overnight (edicts 0012, 0013); earlier: the night shift (edict 0011); earlier: the reflection session (edict 0010); the TUI-design, Ariadne/experiment and memory-side sessions' notes follow
 
 ## Reflection session (2026-10-14)
 - **Edict 0010 written with Kohl** (in chat and with Claude in chat), amended twice: user/self
@@ -22,6 +22,31 @@ and `daedalus doctor`. This file carries what the gameplan can't say. See
   whether reflection works is still to be designed (Kohl: separately from the edict). The
   shipped identity text calls Kohl "he"; a fix awaits Kohl's go-ahead.
 - Digests of this repo's sessions are backfilled in the main checkout's .daedalus/reflection/.
+
+## Overnight 2026-10-15 (Kohl asleep; merge autonomy granted for this night only)
+Everything merged tonight went through Momus and green CI first. Audit trail:
+- **Merged:** #53 hook registration (several commands per event; T-e28); #54 reflection fixes from the first real
+  run (T-r10, T-r12..T-r17); #55 edict 0013 dreaming (accepted, then amended from Momus's readiness review, built,
+  reviewed twice, fixed). Edict 0013 and 0011 are `done`.
+- **Edict 0014 (time and usage)** is on main as `proposed`, not accepted: Momus found 4 blockers; Kohl asked to
+  formalise it later. `autoContinueAtUsageLimit` is on in Kohl's user settings (backup: ~/.claude/settings.json.bak-2026-10-15).
+- **Edict 0012 (the TUI): merged as #61** and `done`. Core by Daedalus, screens by four parallel agents in separate
+  worktrees, integrated; Momus reviewed (4 blockers: Textual's inherited ctrl+q/ctrl+c/ctrl+p reaching past the
+  Claude pane and the palette's screenshot writing a file; two plugin protocols; Rich markup in project text crashing
+  it; branch behind main) and verified the fixes. Not yet run against a real Claude Code session; needs the fresh
+  install below to run here. Momus's open lows: cramped narrow layouts on some screens, no Dream screen, modified
+  Enter is only a newline on terminals that report it.
+- **Hermes → the Chorus** (#59, another session's PR, renamed at Kohl's call); "Chorus portents" is on the roadmap.
+- **Dream-log ideas, as PRs for review, not merged:** #56 edicts with tests attached (pick 38); #57 `daedalus page`
+  (pick 33).
+- **A test leaked into real data:** one TUI test run wrote 4 test entries into `~/.config/daedalus/models/` (the
+  models were empty before). Moved out (backup in the session scratchpad); the suite now redirects XDG config/cache
+  for every test, with a guard test.
+- **Kohl's install is stale:** the live `daedalus` is a Dec 2025 user-site editable named `daedalus` 0.1.0, so new
+  dependencies and entry points (sources, dream, tui) are missing on this machine: `daedalus source list` finds no
+  plugins. Fix: `pip uninstall --break-system-packages daedalus`, then `pipx install --force --editable .` (T-e27).
+- **Found, not fixed:** doctor's `palace-dispatch-ignored` message says run hydrate, but only init writes that
+  negation (TUI agent B).
 
 ## Night shift (2026-10-14/15): what happened
 - **Edict 0011 built: PR #52, open, not merged.** Read its "judgment calls" before merging. Momus reviewed the

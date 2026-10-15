@@ -362,3 +362,16 @@ def test_headless_runs_with_a_bounded_tool_list(monkeypatch, tmp_path):
     runners.run_headless(tmp_path, "go")
     assert seen["args"][:3] == ["claude", "-p", "go"] and seen["args"][3] == "--allowedTools"
     assert "Bash(daedalus reflect:*)" in seen["args"][4] and "Bash " not in seen["args"][4] + " "
+
+
+# ---------- spend ----------
+
+
+def test_spend_digests_then_summarises(project):
+    out = run("reflect", "spend", "--since", "2020-01-01", "--json")
+    assert out.exit_code == 0, out.output
+    summary = json.loads(out.output)
+    assert summary["sessions"] >= 1 and summary["units"] > 0
+    assert summary["by_agent_type"].get("momus", {}).get("count") == 1
+    text = run("reflect", "spend", "--since", "2020-01-01", "--top", "2")
+    assert "By token class" in text.output and "Most expensive turns" in text.output

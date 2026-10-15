@@ -538,6 +538,7 @@ def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Fi
     # DAEDALUS_DOCTOR_SKIP_INSTALL turns it off (the test suite does).
     if not os.environ.get("DAEDALUS_DOCTOR_SKIP_INSTALL"):
         hints += [f"{f.name}: {f.message}" for f in check_install()]
+    hints += edict_test_hints(project_dir, edicts)
     findings += check_project_map(project_dir)
     findings += check_empty_templates_read(project_dir, settings["stale_task_days"], today=today)
     findings += check_sources(project_dir, plans)
@@ -622,3 +623,23 @@ def check_sources(project_dir: Path, plans: Optional[dict] = None) -> list[Findi
                                     "write-back is pending or recorded. Set it done again with "
                                     "`daedalus gameplan task status` to propose one, then apply or drop it."))
     return findings
+
+
+def edict_test_hints(project_dir: Path, edicts: list[dict]) -> list[str]:
+    """Hints, never findings: an accepted edict whose criteria tests (tests/edicts/) are still skeletons."""
+    from . import edict_tests as et
+
+    hints = []
+    for e in edicts:
+        if e.get("status") != "accepted" or not et.skeleton_path(project_dir, e["number"]).exists():
+            continue
+        try:
+            state = et.status(project_dir, e["number"])
+        except Exception:
+            continue
+        open_ = [cid for cid, s in state.items() if s != "tested"]
+        if open_:
+            hints.append(f"edict-criteria-untested: edict {e['number']} has {len(open_)} of {len(state)} acceptance "
+                         f"criteria without a real test (`daedalus edict tests {e['number']}`)")
+    return hints
+

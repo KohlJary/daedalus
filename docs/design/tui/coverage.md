@@ -10,54 +10,82 @@ this whenever the diagrams or the CLI change, and add a row to History.
 | ● | Shown: a diagrammed view covers it |
 | ◐ | Partial: mentioned (a tab label, a single line), but not diagrammed |
 | → | Delegated to Claude: a write or agent operation reached through the Claude pane, by design |
-| ○ | Missing: Kohl would plausibly want to see it, and no view does |
+| ○ | Missing: the owner would plausibly want to see it, and no view does |
 | – | Out of scope: setup or hook plumbing |
 
 The Claude pane technically makes *everything* reachable, so → is not
 coverage. The metric that matters is **direct coverage**: ● and ◐ out of
 everything that isn't → or –.
 
-## CLI (50 leaf commands, `daedalus` 0.2.0)
+## What ships in edict 0012 v1
+
+The shell (NeedsYou, Gameplan, Health, the Claude pane) and the expanded
+screens: NeedsYou, Gameplan (plan, workstreams, roadmap), Health (with the
+`hydrate`/`init` fix allowlist), Edicts (edicts and dissents), Story, Board,
+Config, Sources, Reflection (due, reports, user model, self model,
+experiment), and the plugin menu (`m`). Every panel has an Explain card on
+`?`. The marks below are what that build shows, not what the diagrams draw.
+
+## CLI (92 leaf commands, `daedalus` 0.2.0 plus edicts 0011-0013)
 
 | Group | ● | ◐ | → | ○ | – |
 |-------|---|---|---|---|---|
 | board | threads, read, follow, unfollow | | open, draft, post, check | | |
-| edict | list, show | dissents | dissent | resolve-dissent | |
+| edict | list, show, dissents | | dissent | resolve-dissent | |
 | gameplan | show, phase list, pending apply, pending drop | | pending import, phase activate/add/status, task add/defer/status | | |
 | workstream | list, show | others | claim, new | use | |
-| roadmap | | list | add | | |
+| roadmap | list | show | add | | |
 | doctor | doctor | | | | |
-| hydrate | | hydrate (as a Health fix) | | | |
-| palace | | | callers, callees, impact, path, tests-for | status, languages | init |
+| hydrate | hydrate (a Health fix, after a confirm) | | | | |
+| palace | | | callers, callees, dispatch, impact, path, tests-for | status, languages | init |
 | reconstruct | | | check, gather | | |
 | config | config | | | | |
-| digest | | | | digest | |
-| init, hook | | | | | init, hook board/capture/session-start |
-| **Total** | **14** | **4** | **22** | **5** | **5** |
+| source | list, status | | sync | | login |
+| reflect | due, digest, runner, log export, pending apply, pending drop, model history, model edit, model delete, model forget, model stable | arm | bundle, check, render, done, pending import, model aspire, log correct | | tick, inhale |
+| dream | | | start, prompt, turn, write, done, bundle, keep, review bundle, review record | seeds, due, show, log, review show | |
+| digest (Wonderland runs) | | | | digest | |
+| init, hook, tui | | | | | init, hook board/capture/session-start, tui |
+| **Total** | **30** | **3** | **40** | **10** | **9** |
 
-## Beyond the CLI (11 surfaces)
+Notes on the marks:
+- `dream` (edict 0013, merged after the TUI was designed): the steps /dream drives are → (Claude runs them);
+  seeing a dream, its seeds, what's due and the experiment is ○: no Dream screen yet. A later edict's job.
+- `init` stays –: it's setup, though Health can run it as an allowlisted fix.
+- `source sync` is →: `sources.oph` draws `r sync now`, but syncing isn't one
+  of edict 0012's v1 writes, so the Sources screen hands it to Claude.
+- `reflect arm` is ◐: the Experiment tab shows the session's arm and the
+  counts; drawing an arm happens at inhale, not in the TUI.
+- `roadmap show` is ◐: the Gameplan screen's Roadmap tab lists items; one
+  item's full record is still the CLI's.
+- The group commands that also run alone (`gameplan pending`, `reflect log`,
+  `reflect model`, `reflect pending`) aren't counted separately; their
+  views are the ● rows above.
+
+## Beyond the CLI (13 surfaces)
 
 | Surface | Mark | Note |
 |---------|------|------|
 | Claude Code session | ● | `claude-pane.oph` |
-| Momus ledger and trials (`.daedalus/momus/`) | ◐ | only as "Momus: holds" on a PR |
-| Session narrative: `session-summaries.md`, `docs/status.md` | ● | `story.oph` Now and Sessions |
-| Decisions (`decisions.md`) | ● | `story.oph` Decisions |
-| Lessons, warnings, project-map, observations, notes | ◐ | lessons, warnings and map are tab labels that share a diagrammed shape; observations and notes are absent |
-| Ariadne bus: pending/verified/rejected diffs, conflicts | ○ | matters once T-e11 has local models running unattended |
-| Ariadne plans (`.daedalus/plans/`) | ○ | |
-| Theseus reports | ○ | |
-| Mind Palace / Labyrinth map | ○ | |
-| Agents (9) | → | used from the Claude pane |
-| Skills (inhale, exhale, ariadne, mind-palace) | → | invoked in the Claude pane |
+| Momus ledger and trials (`.daedalus/momus/`) | ◐ | only as "Momus: holds" on a PR and on a reflection report |
+| Session narrative: `session-summaries.md`, `docs/status.md` | ● | Story: Now and Sessions |
+| Decisions (`decisions.md`) | ● | Story: Decisions |
+| Lessons, warnings, project-map, observations, notes | ◐ | lessons, warnings and map are Story tabs; observations and notes are absent |
+| Reflection reports (`.daedalus/reflection/reports/`) | ● | Reflection: Reports (the rendered Markdown; citations don't open their event yet) |
+| User and self models (`~/.config/daedalus/models/`) | ● | Reflection: User model, Self model, with history and self-entry dissents |
+| Ariadne bus: pending/verified/rejected diffs, conflicts | ○ | the design's AR kind in NeedsYou didn't ship in v1; a non-goal of 0012 |
+| Ariadne plans (`.daedalus/plans/`) | ○ | non-goal of 0012 |
+| Theseus reports | ○ | non-goal of 0012 |
+| Mind Palace / Labyrinth map | ○ | non-goal of 0012 |
+| Agents (10, with delphi) | → | used from the Claude pane |
+| Skills (inhale, exhale, reflect, ariadne, mind-palace) | → | invoked in the Claude pane |
 
 ## Totals
 
 | | ● | ◐ | ○ | Direct coverage (● / ●+◐) |
 |---|---|---|---|---|
-| CLI (23 in scope) | 14 | 4 | 5 | 61% / 78% |
-| Beyond CLI (9 in scope) | 3 | 2 | 4 | 33% / 56% |
-| **All (32 in scope)** | **17** | **6** | **9** | **53% / 72%** |
+| CLI (43 in scope) | 30 | 3 | 10 | 70% / 77% |
+| Beyond CLI (11 in scope) | 5 | 2 | 4 | 45% / 64% |
+| **All (54 in scope)** | **35** | **5** | **14** | **65% / 74%** |
 
 ## Legibility
 
@@ -65,56 +93,26 @@ The goal is a TUI someone else can use, so coverage alone isn't enough: a
 view a newcomer can't interpret doesn't count for much. The second measure is
 how many concepts have an Explain card in `glossary.md`.
 
-- **Carded (14):** gameplan, roadmap, pending proposal, edict, dissent,
-  workstream, board, doctor/drift, story, Momus, Ariadne, Mind Palace, Theseus,
-  Claude pane. (Source has a card too, but it's planned, so it isn't counted.)
-- **No card yet:** the agent roster (memory, docs, test-runner and the rest), hooks, init/hydrate.
+- **Carded (25):** gameplan, roadmap, source, pending proposal, edict,
+  dissent, workstream, board, doctor/drift, story, Momus, Ariadne, Mind
+  Palace, Theseus, Claude pane, reflection, digest, due, delphi, user model,
+  self model, machine: employer, config, A/B experiment, TUI plugin.
+- **No card yet:** the agent roster (memory, docs, test-runner and the rest),
+  hooks, init/hydrate, runners, citations.
 
-The design adds things the program doesn't have yet:
-- a list of PRs awaiting review (open question: `gh` or local branches);
-- source plugins (ADO, Jira, …) feeding pending proposals; see README,
-  Extensibility. These are counted once they exist in core.
+## Gaps left for a later edict
 
-## Incoming: open PRs #38 and #39
-
-These aren't on main yet. The design already covers them, so the numbers below
-are what coverage becomes once both merge.
-
-**#39, reflection (edict 0010)**, adds 20 CLI leaves, 11 config keys
-(`reflection.*` and `machine.employer`), the `delphi` agent, the `reflect`
-skill, and seven kinds of file.
-
-| Mark | Commands |
-|------|----------|
-| ● | reflect due, digest, runner, arm, log export, pending apply, pending drop, model history, model edit, model delete, model forget, model stable |
-| → | reflect bundle, check, render, done (delphi's pipeline), pending import, model aspire |
-| – | reflect tick (timer), reflect inhale (skill plumbing) |
-
-**#38, Palace and Ariadne beyond Python**, adds no commands. It adds:
-- two config keys (`ariadne.build_gate` and `ariadne.test_cmds`);
-- more languages behind the existing `palace` commands;
-- one new outcome: a diff whose tests ran nothing goes to review. That
-  outcome is NeedsYou's new **AR** kind, which takes the Ariadne bus from ○
-  to ◐.
-
-**New surfaces beyond the CLI:** reflection reports ● and the user and self
-models ●; `delphi` → and the `reflect` skill →.
-
-| | ● | ◐ | ○ | Direct coverage (● / ●+◐) |
-|---|---|---|---|---|
-| CLI (35 of 70 in scope) | 26 | 4 | 5 | 74% / 86% |
-| Beyond CLI (11 in scope) | 5 | 3 | 3 | 45% / 73% |
-| **All (46 in scope)** | **31** | **7** | **8** | **67% / 83%** |
-
-**Legibility:** #39 brings more vocabulary than any other feature. Cards
-added for reflection, digest, due, delphi, the user model, the self model
-(behavior, interpretation, stance, aspiration) and `machine.employer`. Still
-missing: runners, citations, the A/B experiment.
-
-**Writes:** the Models tab's edit, stable, forget and delete, plus digest-now
-and log export, are writes outside edict 0012's four kinds. They are the
-user's own calls about their own data, so they arguably belong in the TUI, but
-adding them needs an amendment to 0012.
+- **Ariadne, Theseus, Mind Palace:** no views (0012's non-goals). NeedsYou's
+  AR kind, drawn for unattended Ariadne diffs, isn't built.
+- **Reflection citations:** a report is shown as rendered Markdown; following
+  a citation to its event (`enter` in the diagram) isn't built.
+- **`edict resolve-dissent`, `workstream use`, `palace status/languages`:** no
+  view and no hand-off.
+- **Plugins:** a plugin's NeedsYou kind shows its own `detail()` and the
+  `actions()` it declares, in the key row (one protocol: `daedalus.tui.plugin`).
+  Each action runs `run_action` only after the shared confirm, which names the
+  plugin and the action, gets a `y`; undeclared keys say "no such action for
+  this kind". The TUI's own writes are still exactly 0012's list.
 
 ## History
 
@@ -125,6 +123,8 @@ adding them needs an amendment to 0012.
 | 2026-10-14 | 36 | 32 | 50% / 69% | 14 | Extensibility: Sources screen, tracker-import proposal; roadmap carded as intake |
 | 2026-10-14 | 39 | 32 | 53% / 72% | 14 | Config screen: layers, edit modal, secrets in the keyring |
 | 2026-10-14 | 48 | 46 (incl. #38, #39) | 67% / 83% | 21 | Reflection screen; RF and AR kinds in NeedsYou |
+| 2026-10-15 | 48 | 49 | 71% / 82% | 25 | What edict 0012 v1 ships (not just designs): reflection and source commands counted, AR kind not built, plugin menu, A/B experiment and TUI plugin cards |
+| 2026-10-15 | 48 | 54 | 65% / 74% | 25 | Edict 0013 (dreaming) merged before the TUI: 14 `dream` commands, 9 driven through Claude (→), 5 not visible (○): no Dream screen in v1 |
 
 ## Refreshing the CLI inventory
 
