@@ -83,7 +83,8 @@ def fake_gh(tmp_path, monkeypatch, payload=None, hang=False):
 @pytest.mark.parametrize("command, target", [
     ("gh pr merge 12 --merge", "12"), ("cd x && gh pr merge 12", "12"), ("FOO=1 gh pr merge 12", "12"),
     ("gh pr merge https://github.com/o/r/pull/34 --squash", "34"), ("gh pr merge --merge", ""),
-    ("echo gh pr merge", None), ('DAEDALUS_MOMUS_SKIP="two words" gh pr merge 5', "5"), ("gh pr view 12", None), ("git commit -m 'gh pr merge 3'", None),
+    ("echo gh pr merge", None), ('DAEDALUS_MOMUS_SKIP="two words" gh pr merge 5', "5"),
+    ("git commit -m 'then gh pr merge 3'", None), ("cat <<'EOF'\ngh pr merge 4\nEOF", None), ("gh pr view 12", None), ("git commit -m 'gh pr merge 3'", None),
 ])
 def test_merge_target(command, target):
     assert merge_target(command) == target

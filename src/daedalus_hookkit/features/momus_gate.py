@@ -17,13 +17,12 @@ import re
 from pathlib import Path
 
 from ..core import Ctx, Line
+from ..shell import commands
 
-ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 PR_URL = re.compile(r"/pull/(\d+)")
 SKIP_ENV = re.compile(r"""DAEDALUS_MOMUS_SKIP=("[^"]+"|'[^']+'|[^\s;&|]+)""")
 SKIP_BODY = re.compile(r"momus:\s*skip\s+([^\n\"'`]+)", re.IGNORECASE)
 COVERS = re.compile(r"^\s*\**Covers:?\**\s*`?([^\s`@]+)`?\s*@\s*`?([0-9a-f]{7,40})", re.IGNORECASE | re.MULTILINE)
-SEPARATORS = re.compile(r"\|\||&&|;|\||\n")
 GH_TIMEOUT = 5
 
 
@@ -46,29 +45,15 @@ def _git(cwd: Path, *args, timeout: float = 5) -> str:
     return r.stdout.strip()
 
 
-def _segments(command: str) -> list:
-    return [s.strip() for s in SEPARATORS.split(command or "") if s.strip()]
-
-
-def _gh_pr(segment: str, verb: str):
-    """The arguments after `gh pr <verb>` when the segment runs it (after VAR=value words), else None."""
-    import shlex
-
-    try:
-        words = shlex.split(segment)
-    except ValueError:  # an unbalanced quote: fall back to whitespace
-        words = segment.split()
-    while words and ASSIGNMENT.match(words[0]):
-        words = words[1:]
-    if words[:3] == ["gh", "pr", verb]:
-        return words[3:]
-    return None
+def _gh_pr(words: list, verb: str):
+    """The arguments after `gh pr <verb>` when the command runs it, else None."""
+    return words[3:] if words[:3] == ["gh", "pr", verb] else None
 
 
 def merge_target(command: str):
     """The argument of the first `gh pr merge` in a command line ("" for the current branch), or None."""
-    for seg in _segments(command):
-        rest = _gh_pr(seg, "merge")
+    for words in commands(command):
+        rest = _gh_pr(words, "merge")
         if rest is not None:
             args = [a for a in rest if not a.startswith("-")]
             # flags that take a value (--subject x, -t x, --body x, -R repo) are rare here; a number or URL wins
@@ -169,7 +154,7 @@ def _record_create(ctx: Ctx) -> list:
     """After `gh pr create`: remember the PR, and nudge when no trial covers the branch yet."""
     p = ctx.payload
     command = str((p.get("tool_input") or {}).get("command") or "")
-    if not any(_gh_pr(s, "create") is not None for s in _segments(command)):
+    if not any(_gh_pr(w, "create") is not None for w in commands(command)):
         return []
     resp = p.get("tool_response")
     text = json.dumps(resp) if not isinstance(resp, str) else resp
