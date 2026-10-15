@@ -134,3 +134,24 @@ def test_hit_em_up_ships_its_personas_and_frames_and_they_are_generic(tmp_path, 
     for folder, name in shipped:
         installed = tmp_path / ".claude" / "skills" / "hit-em-up" / folder / f"{name}.md"
         assert installed.read_bytes() == (skill / folder / f"{name}.md").read_bytes()
+
+
+def test_hit_em_up_ships_clash_and_its_cast_generic(tmp_path, monkeypatch):
+    skill = get_skills_dir() / "hit-em-up"
+    shipped = ["clash/protocol.md", "clash/crowd.md", "personas/edge-case.md"]
+    for rel in shipped:
+        text = (skill / rel).read_text(encoding="utf-8")
+        assert [t for t in DENY if re.search(rf"\b{re.escape(t)}\b", text)] == []
+        assert text.isascii()
+    assert "clash/protocol.md" in (skill / "SKILL.md").read_text(encoding="utf-8")
+    edge = (skill / "personas" / "edge-case.md").read_text(encoding="utf-8")
+    assert "No amendment may aim her fire at a person." in edge
+    crowd = (skill / "clash" / "crowd.md").read_text(encoding="utf-8")
+    assert "No amendment may let a bar into the ledger on a receipt the crowd did not check." in crowd
+    protocol = (skill / "clash" / "protocol.md").read_text(encoding="utf-8")
+    assert "Answer the verse first." in protocol and "DODGED" in crowd
+
+    run(tmp_path, monkeypatch, "--no-agents", "--no-template")
+    for rel in shipped:
+        installed = tmp_path / ".claude" / "skills" / "hit-em-up" / rel
+        assert installed.read_bytes() == (skill / rel).read_bytes()
