@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Static, TextArea
@@ -16,14 +18,16 @@ class SendToClaude(ModalScreen):
     SendToClaude TextArea { height: 8; }
     """
 
-    def __init__(self, source: str, prompt: str):
+    def __init__(self, source: str, prompt: str, note: Optional[str] = None):
         super().__init__()
-        self.source, self.prompt = source, prompt
+        self.source, self.prompt, self.note = source, prompt, note
 
     def compose(self):
         with Vertical():
             yield Static("[b]Send to Claude[/b]")
             yield Static(f"From: {self.source}", markup=False)
+            if self.note:  # the send form (tui.send_form), shown only when it isn't the default
+                yield Static(self.note, id="send-form", markup=False)
             yield TextArea(self.prompt, id="prompt", read_only=True)
             yield Static("e edit · enter paste into prompt · esc cancel", id="send-keys")
 
@@ -34,7 +38,8 @@ class SendToClaude(ModalScreen):
         self.query_one("#send-keys", Static).update("ctrl+s paste into prompt · esc cancel")
 
     def key_ctrl_s(self) -> None:
-        self.action_paste()
+        # Pastes while editing too: action_paste ignores enter in the editor (a newline), so it can't be the route
+        self.dismiss(self.query_one("#prompt", TextArea).text.rstrip("\n"))
 
     def action_paste(self) -> None:
         area = self.query_one("#prompt", TextArea)
