@@ -216,6 +216,14 @@ def test_task_markers_and_branch_changes(tmp_path):
     ('git commit -m "say \\"T-x9\\" there"', ['say "T-x9" there']),
     ("daedalus gameplan -w hooks task status T-c2 done", ["T-c2"]),
     ("daedalus gameplan --workstream hooks task status T-c3 done", ["T-c3"]),
+    ("daedalus gameplan --workstream=hooks task status T-c4 done", ["T-c4"]),
+    ('git commit --message="T-c5 x"', ["T-c5 x"]),
+    ("git commit -m \"$(cat <<'EOF'\nT-e22: fix\nEOF\n)\"", ["T-e22: fix"]),
+    ("cd x && git commit -m \"$(cat <<'EOF'\nT-e22: say \"hi\"\nEOF\n)\"", ['T-e22: say "hi"']),
+    ("cat <<'A'\nT-e99\nA\ngit commit -F - <<'B'\nT-e22\nB", ["T-e22"]),
+    ('git -C sub commit -m "T-g1"', ["T-g1"]),
+    ("git commit -mT-g2", ["T-g2"]),
+    ("if true; then git commit -qm 'T-g3'; fi", ["T-g3"]),
     ("cat > f <<'EOF'\nT-q7\nEOF", []),
     ("echo 'git commit -m T-z1'", []),
 ])
@@ -328,7 +336,8 @@ def test_sidechain_entries_count_for_nothing(tmp_path):
         "id": "sm", "role": "assistant", "model": "claude-test", "content": [],
         "usage": {"input_tokens": 90_000, "output_tokens": 5, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}})
     t.raw(side).prompt("b").request(1200)
-    assert measure(t.write())["used_tokens"] == 1200
+    m = measure(t.write())
+    assert m["used_tokens"] == 1200 and "other:cleared by Claude Code" not in {r["key"] for r in m["by_subject"]}
 
 
 def test_meta_reminders_are_not_your_messages(tmp_path):
@@ -343,7 +352,8 @@ def test_a_new_first_line_resets_even_when_the_file_grew(tmp_path):
     path = Transcript(tmp_path / "s.jsonl").prompt("a").request(1000).write()
     cmap.refresh(path)
     Transcript(path).prompt("different start " + "q" * 2000).request(5000).request(7000).write()
-    assert cmap.refresh(path)[0]["segment"]["last_ctx"] == 7000
+    data = cmap.refresh(path)[0]
+    assert data["segment"]["last_ctx"] == 7000 and data["segment"]["base"] == 5000  # rebuilt from the top
 
 
 def test_a_shrunk_transcript_with_the_same_first_line_resets(tmp_path):
@@ -414,3 +424,28 @@ def test_cli_prints_the_map_and_json(tmp_path, monkeypatch):
     data = json.loads(CliRunner().invoke(main, ["context", "--json"]).output)
     assert data["used_tokens"] == 1200
     assert "base (before any task" in CliRunner().invoke(main, ["context", "--by", "task"]).output
+
+
+def test_a_synthetic_model_alone_marks_an_entry_as_no_request(tmp_path):
+    t = Transcript(tmp_path / "s.jsonl").prompt("a").request(10_000).prompt("b" * 900).request(11_000)
+    t.raw(t._base("assistant", message={"id": "e2", "role": "assistant", "model": "<synthetic>", "content": [],
+                                         "usage": {"input_tokens": 0, "output_tokens": 0}}))
+    t.prompt("c" * 900).request(12_000)
+    m = measure(t.write())
+    assert m["exact"] is True and "other:cleared by Claude Code" not in {r["key"] for r in m["by_subject"]}
+
+
+def test_an_earlier_request_bigger_than_the_default_window_raises_the_guess(tmp_path):
+    t = Transcript(tmp_path / "s.jsonl").prompt("a").request(300_000)
+    t.events.append(t._base("system", subtype="compact_boundary", compactMetadata={"trigger": "manual"}))
+    t.prompt("summary", isCompactSummary=True).request(50_000)
+    assert measure(t.write())["window_tokens"] == cmap.LARGE_WINDOW
+
+
+def test_an_index_from_an_older_version_is_rebuilt(tmp_path):
+    path = Transcript(tmp_path / "s.jsonl").prompt("a").request(1000).prompt("b").request(1500).write()
+    stale, _ = cmap.refresh(path)
+    stale["version"] = ix.INDEX_VERSION - 1
+    stale["segment"]["last_ctx"] = 99
+    cmap.save_index("s", stale)
+    assert cmap.refresh(path)[0]["segment"]["last_ctx"] == 1500

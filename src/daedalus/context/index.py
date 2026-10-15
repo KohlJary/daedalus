@@ -33,35 +33,60 @@ SEGMENT_KEEP = 10  # finished segments (one per compaction) kept for plans, reca
 SHELL_SKIP = {"for", "while", "until", "if", "case", "done", "fi", "esac", "}", "[", "[[", "test"}
 SHELL_LEAD = {"do", "then", "else", "elif", "time", "!", "env", "exec", "nohup", "{"}
 SUBSTITUTION = re.compile(r"\$\([^()]*\)|`[^`]*`")
-HEREDOC_BODY = re.compile(r"<<-?[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\n(.*?)\n[ \t]*\2[ \t]*(?:\n|$)", re.DOTALL)
+GIT_GLOBAL_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
+
+
+def _git_subcommand(words: list) -> list:
+    """The words from git's subcommand on, past global options (`git -C x commit` -> [commit, ...])."""
+    i = 1
+    while i < len(words) and words[i].startswith("-"):
+        i += 2 if words[i] in GIT_GLOBAL_WITH_VALUE else 1
+    return words[i:]
+
+
+def _resolve(value: str, cmd) -> str:
+    """A -m value, with any $(...) in it replaced by the heredoc text its commands carry."""
+    for key, inner in cmd.substs.items():
+        if key in value:
+            value = value.replace(key, "\n".join(b for c in inner for b in c.heredocs))
+    return value
 
 
 def marker_texts(command: str) -> list:
-    """The text in a Bash command that names the task in play: a commit's message (every -m/--message
-    value, including -am and -qm forms, and a heredoc body given with -F -) and the task id of a
-    `daedalus gameplan [-w X] task ...` command. Never other heredocs, quoted strings or output."""
-    from daedalus_hookkit.shell import commands
+    """The text in a Bash command that names the task in play: a commit's message (each -m/--message
+    value, in the -am, -qm and -mVALUE forms too, `-m "$(cat <<'EOF' ...)"`, and a heredoc given to
+    `-F -`), and the task id of `daedalus gameplan [-w X] task <verb> <id>`. Nothing else: not other
+    heredocs, quoted strings or tool output."""
+    from daedalus_hookkit.shell import parse
 
     out = []
-    bodies = [m.group(3) for m in HEREDOC_BODY.finditer(command or "")]
-    for words in commands(command or ""):
-        if words[:2] == ["git", "commit"]:
-            args = words[2:]
-            for i, w in enumerate(args):
-                if w in ("-m", "--message") or (w.startswith("-") and not w.startswith("--") and w.endswith("m")):
+    for cmd in parse(command or ""):
+        words = cmd.words
+        if words[0] == "git":
+            sub = _git_subcommand(words)
+            if sub[:1] != ["commit"]:
+                continue
+            args, i = sub[1:], 0
+            while i < len(args):
+                w = args[i]
+                if w in ("-m", "--message") or (w.startswith("-") and not w.startswith("--") and w.endswith("m")
+                                                and len(w) > 2 and w[1:].isalpha()):
                     if i + 1 < len(args):
-                        out.append(args[i + 1])
-                elif w.startswith("--message="):
-                    out.append(w.split("=", 1)[1])
-                elif (w in ("-F", "--file") and i + 1 < len(args) and args[i + 1] == "-") or w == "--file=-":
-                    if any(a.startswith("<<") for a in args) and bodies:
-                        out.append(bodies.pop(0))
+                        out.append(_resolve(args[i + 1], cmd))
+                    i += 2
+                    continue
+                if w.startswith("--message="):
+                    out.append(_resolve(w.split("=", 1)[1], cmd))
+                elif w.startswith("-m") and len(w) > 2:
+                    out.append(_resolve(w[2:], cmd))
+                elif ((w in ("-F", "--file") and i + 1 < len(args) and args[i + 1] == "-") or w == "--file=-") \
+                        and cmd.heredocs:
+                    out.append(cmd.heredocs[0])
+                i += 1
         elif words[:2] == ["daedalus", "gameplan"]:
             rest = words[2:]
-            while rest and rest[0] in ("-w", "--workstream"):
-                rest = rest[2:]
-            while rest and rest[0].startswith("--workstream="):
-                rest = rest[1:]
+            while rest and (rest[0] in ("-w", "--workstream") or rest[0].startswith("--workstream=")):
+                rest = rest[1:] if "=" in rest[0] else rest[2:]
             if rest[:1] == ["task"] and len(rest) >= 3:
                 out.append(rest[2])
     return out
