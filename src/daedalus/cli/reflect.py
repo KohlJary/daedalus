@@ -133,6 +133,24 @@ def reflect_log(ctx):
         click.echo(line)
 
 
+@reflect_log.command("correct")
+@click.argument("level", type=click.Choice(["daily", "weekly", "monthly"]))
+@click.argument("period")
+@click.argument("field", type=click.Choice(["models.delphi", "models.momus", "tokens", "check_iterations"]))
+@click.argument("value")
+def reflect_log_correct(level: str, period: str, field: str, value: str):
+    """Correct a field of a logged run (e.g. the model Momus ran as). The run record is kept; the
+    correction is appended and applied when the log is read."""
+    from ..reflection import explog
+
+    try:
+        explog.record_correction(Path.cwd(), level, period, field, value)
+    except (explog.LogError, ValueError) as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(1)
+    click.echo(f"Corrected {field} of the {level} run for {period} to {value}.")
+
+
 @reflect_log.command("export")
 @click.argument("dest", type=click.Path(dir_okay=False))
 def reflect_log_export(dest: str):
@@ -167,9 +185,8 @@ def reflect_bundle(level: str, period: str):
 def reflect_check(report: str, bundle_file: Optional[str]):
     """Validate a report's citations, figures and proposals. Exit 1 on errors."""
     from ..reflection.check import check_report
-    from ..reflection.fsutil import atomic_write_text, read_json
+    from ..reflection.fsutil import read_json
     from ..reflection.pending import verdicts_path
-    from ..reflection.render import render_report
 
     project = Path.cwd()
     data = read_json(Path(report))
@@ -384,7 +401,7 @@ def reflect_model(ctx, which: str):
         status = "" if e.get("status", "active") == "active" else f" [{e['status']}]"
         kind = f"{e.get('kind')}, " if e.get("kind") else ""
         conf = "aspiration" if e.get("kind") == "aspiration" else f"{m.effective_confidence(e, today, hl):.2f}"
-        click.echo(f"{e['id']} ({kind}{e.get('scope', 'any')}, {conf}){status}: {e.get('observation', '')}")
+        click.echo(f"{e['id']} ({kind}{m.canon_scope(e.get('scope'))}, {conf}){status}: {e.get('observation', '')}")
     if not data["entries"]:
         click.echo(f"The {which} model is empty.")
 
@@ -407,7 +424,8 @@ def reflect_model_history(ctx, entry_id: Optional[str]):
 @click.argument("entry_id")
 @click.option("--observation", default=None)
 @click.option("--confidence", type=float, default=None)
-@click.option("--scope", type=click.Choice(["personal", "work", "any"]), default=None)
+@click.option("--scope", type=click.Choice(["private", "work", "anywhere", "personal", "any"]), default=None,
+              help="private, work or anywhere (personal and any are the earlier names)")
 @click.option("--category", default=None)
 @click.pass_context
 def reflect_model_edit(ctx, entry_id, observation, confidence, scope, category):

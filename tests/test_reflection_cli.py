@@ -102,6 +102,7 @@ def test_inhale_reports_what_is_due(project):
     for f in (project / ".daedalus/reflection/sessions").glob("*.json"):  # into a completed month
         d = json.loads(f.read_text(encoding="utf-8"))
         d["start"], d["end"] = "2026-09-15T10:00:00Z", "2026-09-15T11:00:00Z"
+        d["event_days"] = {u: "2026-09-15" for u in d.get("event_days", {})}  # events belong to their day
         f.write_text(json.dumps(d), encoding="utf-8")
     run("config", "reflection.model_summary", "off")
     r = run("reflect", "inhale")

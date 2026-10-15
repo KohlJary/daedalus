@@ -23,7 +23,7 @@ from typing import Any, Iterator, Optional
 from .fsutil import read_json, write_json
 from .paths import norm_path, owner_project, projects_dir, sessions_dir
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # 2: event_days; AskUserQuestion answers are not prompt approvals
 RETRY_WINDOW = 5  # default; reflection.retry_window in config
 
 KNOWN_TYPES = {
@@ -61,6 +61,9 @@ SECRET = re.compile(
 def redact(text: str) -> str:
     return SECRET.sub("[secret]", text)
 EXIT_CODE = re.compile(r"^Exit code (\d+)")
+# Tools whose prompt is a question, not a permission: answering it approves nothing
+NOT_APPROVALS = ("AskUserQuestion",)
+
 INFERRED = ("retries", "re_reads", "interruptions_before_reply", "approved_at_prompt")
 
 
@@ -143,6 +146,7 @@ class Stream:
     assistant_at: list = field(default_factory=list)   # indexes of assistant events
     interruptions: list = field(default_factory=list)
     timestamps: list = field(default_factory=list)
+    stamp_of: dict = field(default_factory=dict)       # event uuid -> timestamp
     versions: set = field(default_factory=set)
     models: set = field(default_factory=set)
     branches: set = field(default_factory=set)
@@ -167,6 +171,8 @@ def parse_stream(events: Iterator[dict], keep_sidechain: bool = False) -> Stream
             continue
         if isinstance(ev.get("timestamp"), str):
             s.timestamps.append(ev["timestamp"])
+            if ev.get("uuid"):
+                s.stamp_of[ev["uuid"]] = ev["timestamp"]
         if ev.get("version"):
             s.versions.add(str(ev["version"]))
         if ev.get("gitBranch"):
@@ -290,7 +296,7 @@ def count_stream(s: Stream, retry_window: int = RETRY_WINDOW) -> dict:
             details[result["uuid"]] = {"tool": call["tool"], "call": what,
                                        "summary": redact(result["text"])[:SUMMARY_CHARS],
                                        **({"exit_code": int(code.group(1))} if code else {})}
-        if result.get("prompted"):
+        if result.get("prompted") and call["tool"] not in NOT_APPROVALS:
             events["approved_at_prompt"].append(result["uuid"])
             details.setdefault(result["uuid"], {"tool": call["tool"], "call": what})
     events["interruptions"] = list(s.interruptions)
@@ -359,6 +365,10 @@ def build_digest(session_file: Path, arms: Optional[dict] = None, previous: Opti
         "calls": [{"uuid": c["uuid"], "tool": c["tool"], "result": (main.results.get(c["id"]) or {}).get("uuid")}
                   for c in main.calls],
         "events": events,
+        # The local day of every counted event, so a daily or weekly reflection cites only its period's events
+        "event_days": event_days(main.stamp_of, {u for v in events.values() for u in v}
+                                 | {c["uuid"] for c in main.calls}
+                                 | {(main.results.get(c["id"]) or {}).get("uuid") for c in main.calls}),
         # Per event: the tool, what was called (command or path), and the start of the error.
         # Local only, like the whole digest. Non-zero exits from probing commands count as failures.
         "details": counted["details"],
@@ -384,6 +394,18 @@ def build_digest(session_file: Path, arms: Optional[dict] = None, previous: Opti
         "notes": (previous or {}).get("notes", ""),
         "digested_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
+
+
+def local_day(stamp: str) -> Optional[str]:
+    """The local calendar day of a transcript timestamp (UTC ISO 8601), or None."""
+    try:
+        return datetime.fromisoformat(stamp.replace("Z", "+00:00")).astimezone().date().isoformat()
+    except (ValueError, AttributeError):
+        return None
+
+
+def event_days(stamp_of: dict, uuids: set) -> dict:
+    return {u: day for u in sorted(x for x in uuids if x) if (day := local_day(stamp_of.get(u, "")))}
 
 
 # ---------- a project ----------

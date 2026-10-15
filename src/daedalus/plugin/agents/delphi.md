@@ -210,4 +210,10 @@ that in the report's `aspirations_compared` (`kept`, `new`, `dropped`, by ID) an
    and label.
 
 Write nothing except your report (and, at the monthly level, aspirations through the CLI). The
-check writes the report's Markdown rendering next to it; that is expected.
+Markdown the user reads is written later by `daedalus reflect render`, after Momus's verdicts;
+you don't write it.
+
+Every number in a finding's text needs a `figures` entry citing the digest field it came from, and
+a daily or weekly report cites only events inside its period (each digest's `in_period` lists
+them; a long session's other events belong to another day's report). Don't propose an entry that
+says the same as one already in the model: affirm it instead.

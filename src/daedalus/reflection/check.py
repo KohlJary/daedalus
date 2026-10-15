@@ -55,6 +55,37 @@ class CheckResult:
         return not self.errors
 
 
+# Numbers in a finding's text: each must be backed by a figure (edict 0010: figures are checked).
+# Citations, IDs, dates, times, versions and paths are not numbers in this sense.
+NUMBER = re.compile(r"(?<![\w.:/#-])(\d+(?:\.\d+)?)(%?)(?![\w:/-]|\.\d)")
+SPELLED = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+           "eleven": 11, "twelve": 12, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "hundred": 100}
+SPELLED_RE = re.compile(r"\b(" + "|".join(SPELLED) + r")\b", re.IGNORECASE)
+
+
+def bare_numbers(text: str) -> list[tuple[float, bool, str]]:
+    """(value, is_percent, as written) for each number in prose, citations and dates removed."""
+    text = CITATION.sub(" ", text or "")
+    text = re.sub(r"\b\d{4}-\d{2}-\d{2}(?:[T ][\d:.+Z-]+)?\b", " ", text)
+    text = re.sub(r"`[^`]*`", " ", text)
+    out = [(float(n), pct == "%", n + pct) for n, pct in NUMBER.findall(text)]
+    out += [(float(SPELLED[w.lower()]), False, w) for w in SPELLED_RE.findall(text)]
+    return out
+
+
+def _backed(value: float, is_percent: bool, figures: list) -> bool:
+    for fig in figures:
+        v = fig.get("value")
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            continue
+        candidates = {float(v), round(float(v), 2), round(float(v), 1), float(round(v))}
+        if is_percent or 0 <= v <= 1:
+            candidates |= {round(v * 100), round(v * 100, 1), round(v * 100, 2)}
+        if value in candidates:
+            return True
+    return False
+
+
 def citations(text: str) -> tuple[list[tuple[str, str, str]], int]:
     """(session, kind, ref) for each well-formed citation, and how many `[s:` starts were malformed."""
     good = CITATION.findall(text or "")
@@ -92,6 +123,17 @@ def check_report(project_dir: Path, report: dict, models_root: Optional[Path] = 
         err(f"level must be one of {LEVELS}")
     digests = {d["session_id"]: d for d in load_digests(project_dir)}
 
+    period = None
+    if level in ("daily", "weekly"):
+        try:
+            from .bundle import period_bounds
+
+            p = (bundle or {}).get("period") or report.get("period")
+            start, end = period_bounds(level, p)
+            period = (start.isoformat(), end.isoformat())
+        except (TypeError, ValueError, AttributeError):
+            period = None
+
     def check_citations(where: str, text: str, require: bool = True) -> list[tuple[str, str, str]]:
         found, malformed = citations(text)
         if malformed:
@@ -104,6 +146,10 @@ def check_report(project_dir: Path, report: dict, models_root: Optional[Path] = 
                 err(f"{where}: cites session {session}, which has no digest")
             elif kind == "e" and ref not in _event_uuids(digest):
                 err(f"{where}: cites event {ref}, which is not in session {session}'s digest")
+            elif kind == "e" and period and (day := (digest.get("event_days") or {}).get(ref)) \
+                    and not period[0] <= day <= period[1]:
+                err(f"{where}: cites event {ref} from {day}, outside the {level} period "
+                    f"{period[0]}{'' if period[0] == period[1] else ' to ' + period[1]}")
             elif kind == "d":
                 try:
                     field_value(digest, ref)
@@ -123,6 +169,11 @@ def check_report(project_dir: Path, report: dict, models_root: Optional[Path] = 
             for session, kind, ref in found:
                 if kind == "e" and session in digests and ref not in (digests[session].get("events") or {}).get(counter, []):
                     err(f"{where}: a {ftype} finding cites event {ref}, which is not one of session {session}'s {counter}")
+        figs = [fig for fig in f.get("figures") or [] if isinstance(fig, dict)]
+        for value, is_pct, written in bare_numbers(f.get("text", "")):
+            if not _backed(value, is_pct, figs):
+                err(f"{where}: the number '{written}' has no figures entry (every number from a digest is "
+                    "a checked figure: add {\"value\", \"cite\": \"[s:<session> d:<field>]\"})")
         for fig in f.get("figures") or []:
             cites, _ = citations(fig.get("cite", ""))
             if len(cites) != 1 or cites[0][1] != "d":
@@ -314,11 +365,14 @@ def _check_model_proposal(where, p, user, self_, behaviors_in_report, scope, err
         err(f"{where}: {existing['id']} is an aspiration: Daedalus's own, not proposed against (the user may delete it)")
         return
     subject = entry if op == "add" else {**existing, **(change.get("changes") or {})}
-    entry_scope = subject.get("scope", "any")
+    entry_scope = m.canon_scope(subject.get("scope"))
+    project_scope = m.canon_scope(scope, "work")
     if entry_scope not in m.SCOPES:
-        err(f"{where}: scope must be one of {m.SCOPES}")
-    elif scope == "work" and entry_scope == "personal":
-        err(f"{where}: a work project proposes only work or any entries, not personal ones")
+        err(f"{where}: scope must be one of {m.SCOPES} (personal and any are read as private and anywhere)")
+    elif project_scope == "work" and entry_scope == "private":
+        err(f"{where}: a work project proposes only work or anywhere entries, not private ones")
+    elif project_scope == "private" and entry_scope == "work":
+        err(f"{where}: a private project proposes only private or anywhere entries, not work ones")
     for item in (entry.get("evidence") if op == "add" else change.get("evidence")) or []:
         keys = set(item) if isinstance(item, dict) else set()
         if not any(keys == shape for shape in EVIDENCE_SHAPES):
@@ -327,6 +381,9 @@ def _check_model_proposal(where, p, user, self_, behaviors_in_report, scope, err
     if op == "add":
         if not str(entry.get("observation") or "").strip():
             err(f"{where}: a new entry needs an observation")
+        twin = m.same_observation(data, entry.get("observation", ""))
+        if twin is not None:
+            err(f"{where}: {twin['id']} already says this; propose an affirm with new evidence instead")
         conf = entry.get("confidence", 0.5)
         if not isinstance(conf, (int, float)) or isinstance(conf, bool) or not 0 <= conf <= 1:
             err(f"{where}: confidence is a number from 0 to 1")

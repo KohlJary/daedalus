@@ -19,7 +19,7 @@ from typing import Optional
 
 from . import models as m
 from .digest import load_digests
-from .due import month_of, session_day
+from .due import month_of, session_day, session_days
 from .fsutil import write_json
 from .paths import reflection_dir
 
@@ -57,7 +57,7 @@ def _digests_in(project_dir: Path, start: date, end: date) -> list[dict]:
     running = current_session_id()
     hidden = ("model_summary_arm", "model_summary_mode", "model_summary_seed")  # never shown to delphi
     return [{k: v for k, v in d.items() if k not in hidden} for d in load_digests(project_dir)
-            if (day := session_day(d)) and start <= day <= end and d.get("session_id") != running]
+            if any(start <= day <= end for day in session_days(d)) and d.get("session_id") != running]
 
 
 def _model_view(model: str, settings: dict, today: date, root: Optional[Path], aspirations: bool = True) -> dict:
@@ -105,6 +105,14 @@ def build_bundle(project_dir: Path, level: str, period: str, settings: dict, sco
     today = today or date.today()
     start, end = period_bounds(level, period)
     digests = _digests_in(project_dir, start, end)
+    if level in ("daily", "weekly"):
+        # A session can run for days: say which of its events fall in this period. Only those may be cited.
+        for d in digests:
+            days = d.get("event_days") or {}
+            d["in_period"] = {k: [u for u in v if start.isoformat() <= days.get(u, start.isoformat()) <= end.isoformat()]
+                              for k, v in (d.get("events") or {}).items()}
+            first, last = (d.get("start") or "")[:10], (d.get("end") or "")[:10]
+            d["spans_days"] = bool(first and last and first != last)
     bundle = {
         "schema": BUNDLE_SCHEMA, "level": level, "period": period,
         "start": start.isoformat(), "end": end.isoformat(), "scope": scope,

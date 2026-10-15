@@ -114,7 +114,8 @@ class ReflectionConfig:
     runner: str = "inhale"          # inhale | local | headless (local/headless need machine.employer false)
     model_summary: str = "ab"       # off | on | ab: the models at inhale, as an A/B test
     forget: str = "purge"           # purge | retain: what `forget` does to a user-model entry's history
-    scope: str = "work"             # work | personal: this project's scope (set per project)
+    scope: str = "work"             # work | private: this project's scope (set per project; personal = private)
+    share_private: bool = False     # show private model entries in work projects' inhale summary
     activity_threshold: int = 20    # a day with fewer tool calls is not due as a daily
     retry_window: int = 5           # tool calls after a failure in which the same call is a retry
     half_life_self: int = 60        # days
@@ -146,7 +147,7 @@ SETTING_CHOICES = {
     "reflection.runner": ("inhale", "local", "headless"),
     "reflection.model_summary": ("off", "on", "ab"),
     "reflection.forget": ("purge", "retain"),
-    "reflection.scope": ("work", "personal"),
+    "reflection.scope": ("work", "private", "personal"),
 }
 
 # Settings that hold true, false, or unset (null)

@@ -29,7 +29,10 @@ FIELDS = {
                    "outcome", "days_waited"},
     "arm": {"record", "at", "session", "mode", "arm"},
     "model_changes": {"record", "at", "period", "counts"},
+    # Append-only, so a mistake in a run record is corrected by a later record, never by editing it
+    "correction": {"record", "at", "level", "period", "field", "value"},
 }
+CORRECTABLE = ("models.delphi", "models.momus", "tokens", "check_iterations")
 
 
 class LogError(Exception):
@@ -161,10 +164,41 @@ def record_model_changes(project_dir: Path, period: str, start: date, end: date,
     return append(project_dir, {"record": "model_changes", "period": period, "counts": dict(counts)})
 
 
+def record_correction(project_dir: Path, level: str, period: str, field: str, value: Any) -> dict:
+    """Correct one field of an earlier run record. The run record stays; readers apply the latest correction."""
+    if field not in CORRECTABLE:
+        raise LogError(f"Only {', '.join(CORRECTABLE)} can be corrected")
+    runs = [r for r in load(project_dir) if r.get("record") == "run" and r.get("level") == level and r.get("period") == period]
+    if not runs:
+        raise LogError(f"No {level} run for {period} in the log")
+    if field in ("tokens", "check_iterations"):
+        value = int(value)
+    return append(project_dir, {"record": "correction", "level": level, "period": period, "field": field,
+                                "value": value})
+
+
+def corrected(records: list[dict]) -> list[dict]:
+    """The run records with later corrections applied (the file itself is never rewritten)."""
+    import copy
+
+    out = copy.deepcopy(records)
+    runs = {(r.get("level"), r.get("period")): r for r in out if r.get("record") == "run"}
+    for c in [r for r in out if r.get("record") == "correction"]:
+        run = runs.get((c.get("level"), c.get("period")))
+        if run is None:
+            continue
+        if c["field"].startswith("models."):
+            run.setdefault("models", {})[c["field"].split(".", 1)[1]] = c["value"]
+        else:
+            run[c["field"]] = c["value"]
+    return out
+
+
 # ---------- reading it back ----------
 
 
 def summary(records: list[dict]) -> list[str]:
+    records = corrected(records)
     runs = [r for r in records if r.get("record") == "run"]
     res = [r for r in records if r.get("record") == "resolution"]
     arms = [r for r in records if r.get("record") == "arm"]

@@ -32,7 +32,9 @@ from .paths import models_dir
 SCHEMA_VERSION = 1
 MODELS = ("user", "self")
 SELF_KINDS = ("behavior", "interpretation", "stance", "aspiration")
-SCOPES = ("personal", "work", "any")
+SCOPES = ("private", "work", "anywhere")
+# The earlier names, read wherever a scope is read; entries are written with the new names
+SCOPE_ALIASES = {"personal": "private", "any": "anywhere"}
 LABELS = ("shown", "inferred", "unknown")
 USER_FORBIDDEN_CATEGORIES = ("character", "health", "mood", "private-life", "private_life", "personal-life")
 WORKING_PREFERENCE = "working-preference"
@@ -63,6 +65,24 @@ def _now() -> str:
 
 def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def canon_scope(scope: Optional[str], default: str = "anywhere") -> str:
+    """A scope under its current name (personal -> private, any -> anywhere)."""
+    if not scope:
+        return default
+    return SCOPE_ALIASES.get(str(scope), str(scope))
+
+
+def same_observation(data: dict, observation: str, exclude_id: Optional[str] = None) -> Optional[dict]:
+    """An active entry saying the same thing (compared after normalising case and punctuation)."""
+    key = normalise(observation)
+    if not key:
+        return None
+    for e in data.get("entries", []):
+        if e.get("status", "active") == "active" and e.get("id") != exclude_id and normalise(e.get("observation", "")) == key:
+            return e
+    return None
 
 
 def normalise(text: str) -> str:
@@ -250,10 +270,13 @@ def apply_change(model: str, change: dict, by: str, proposal_id: Optional[str] =
             entry.setdefault("id", _next_id(data, model))
             if find(data, entry["id"]):
                 raise ModelError(f"Entry {entry['id']} already exists")
+            twin = same_observation(data, entry.get("observation", ""))
+            if twin is not None:
+                raise ModelError(f"{twin['id']} already says this; affirm it with new evidence instead of adding a copy")
             entry.setdefault("first_noticed", today.isoformat())
             entry.setdefault("last_affirmed", today.isoformat())
             entry.setdefault("status", "active")
-            entry.setdefault("scope", "any")
+            entry["scope"] = canon_scope(entry.get("scope"))
             entry.setdefault("stable", False)
             entry.setdefault("evidence", [])
             entry.setdefault("model_ids", [])
@@ -277,6 +300,8 @@ def apply_change(model: str, change: dict, by: str, proposal_id: Optional[str] =
                 for key in ("observation", "confidence", "label", "category", "scope"):
                     if key in change.get("changes", {}):
                         entry[key] = change["changes"][key]
+                if "scope" in change.get("changes", {}):
+                    entry["scope"] = canon_scope(entry["scope"])
                 if change.get("evidence"):
                     entry["evidence"] = entry.get("evidence", []) + list(change["evidence"])
             elif op == "retire":
@@ -301,7 +326,7 @@ def aspire(text: str, model_id: str, period: str, category: str = "aspiration",
     path = model_path("self", root)
     with file_lock(path):
         data = _load_locked("self", root)
-        entry = {"id": _next_id(data, "self"), "kind": "aspiration", "category": category, "scope": "any",
+        entry = {"id": _next_id(data, "self"), "kind": "aspiration", "category": category, "scope": "anywhere",
                  "observation": text.strip(), "confidence": 1.0, "label": "aspiration", "evidence": [],
                  "first_noticed": today.isoformat(), "last_affirmed": today.isoformat(), "status": "active",
                  "stable": False, "model_ids": [model_id] if model_id else [], "period": period,
@@ -392,13 +417,17 @@ def summary(project_scope: str, settings: dict, root: Optional[Path] = None,
     """
     today = today or date.today()
     cap_chars = int(settings.get("summary_tokens", 400)) * 4
-    excluded_scope = "personal" if project_scope == "work" else "work"
+    project_scope = canon_scope(project_scope, "work")
+    if project_scope == "work":
+        excluded = set() if settings.get("share_private") else {"private"}
+    else:
+        excluded = {"work"}
     rows = []
     for model in MODELS:
         data = load(model, root)
         hl = half_life(model, settings)
         for e in active_entries(data):
-            if e.get("label") == "unknown" or e.get("scope") == excluded_scope:
+            if e.get("label") == "unknown" or canon_scope(e.get("scope")) in excluded:
                 continue
             rows.append((effective_confidence(e, today, hl), model, e))
     rows.sort(key=lambda r: -r[0])
@@ -458,6 +487,8 @@ def user_edit(model: str, entry_id: str, changes: dict, root: Optional[Path] = N
         for key in ("observation", "confidence", "label", "category", "scope"):
             if key in changes:
                 entry[key] = changes[key]
+        if "scope" in changes:
+            entry["scope"] = canon_scope(entry["scope"])
         _save_locked(model, data, root)
         record(root, model, entry_id, "user-edit", before, copy.deepcopy(entry), by="user")
         return entry

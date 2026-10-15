@@ -356,7 +356,8 @@ setting for one project, in `.daedalus/config.json`, which is never committed.
 | `reflection.runner` | `inhale` | `inhale`, `headless` or `local`; the last two need `machine.employer false` |
 | `reflection.model_summary` | `ab` | The models at inhale: `on`, `off`, or `ab` (an A/B test, arm chosen per session) |
 | `reflection.forget` | `purge` | `purge`: `forget` also removes the entry's history. `retain`: keeps it |
-| `reflection.scope` | `work` | Per project: `work` keeps personal entries out, `personal` keeps work ones out |
+| `reflection.scope` | `work` | Per project: `work` keeps `private` entries out, `private` keeps `work` ones out (`personal` is the earlier name) |
+| `reflection.share_private` | `false` | Show `private` entries in a work project's inhale summary (it then reaches the work account) |
 | `reflection.activity_threshold`, `.half_life_self`, `.half_life_user`, `.summary_tokens`, `.cleanup_warning_days` | `20`, `60`, `180`, `400`, `7` | Thresholds |
 | `machine.employer` | unset | Unset or `true`: no model calls outside your session |
 | `ariadne.worker_model`, `ariadne.judge_model` | SDK default | Model casting; recorded on every diff and review |
