@@ -69,3 +69,5 @@ skills:
     description: Run a due reflection over session logs (bundle, delphi, check, Momus); never applies proposals
   - name: dream
     description: Dream (edict 0013) - seeds, a dream generated before it is judged, a cold waking pass; picks reach the plan only as proposals
+  - name: hit-em-up
+    description: Work the board - plan a route, push each eligible item to its policy gate, triage the backlog, dry-run anything; one approval batch and a closing verse
