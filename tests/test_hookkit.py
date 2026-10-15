@@ -85,7 +85,7 @@ def test_kit_paths_match_platformdirs(monkeypatch):
         importlib.reload(paths)
 
 
-def test_project_overrides_global_and_mistyped_values_fall_back(tmp_path):
+def test_project_overrides_global_and_switches_read_as_written(tmp_path):
     p = project(tmp_path)
     paths.config_dir().mkdir(parents=True, exist_ok=True)
     (paths.config_dir() / "config.json").write_text(json.dumps({"hooks": {"budget_per_hour": 3, "board": False}}))
@@ -93,7 +93,8 @@ def test_project_overrides_global_and_mistyped_values_fall_back(tmp_path):
     s = kit_settings.Settings(p)
     assert s.get("hooks", "budget_per_hour") == 9
     assert s.enabled("board") is False
-    assert s.enabled("capture") is False  # "yes" isn't a bool: the default stands
+    assert s.enabled("capture") is True  # switches read as written: anything but false/off/0/"" is on
+    assert s.get("hooks", "budget_per_hour") == 9
 
 
 # ---------- output channels ----------

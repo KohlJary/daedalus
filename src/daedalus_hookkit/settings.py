@@ -37,6 +37,17 @@ class Settings:
         self._global = _read(paths.config_dir() / "config.json")
         self._project = _read(Path(project_dir) / ".daedalus" / "config.json")
 
+    def raw(self, group: str, key: str) -> object:
+        """The value as written (project over global over default), without the type check."""
+        value = DEFAULTS.get(group, {}).get(key)
+        g = self._global.get(group)
+        if isinstance(g, dict) and key in g:
+            value = g[key]
+        p = self._project.get(group)
+        if group in PROJECT_GROUPS and isinstance(p, dict) and key in p:
+            value = p[key]
+        return value
+
     def get(self, group: str, key: str) -> object:
         default = DEFAULTS.get(group, {}).get(key)
         value = default
@@ -51,4 +62,11 @@ class Settings:
         return value
 
     def enabled(self, key: str) -> bool:
-        return bool(self.get("hooks", key))
+        """Whether a feature is on. Read as written, so a hand-edited false or "off" turns any switch off,
+        whatever its type."""
+        return is_on(self.raw("hooks", key))
+
+
+def is_on(value: object) -> bool:
+    """A hooks.* switch: true, or a mode other than "off" (hooks.momus_gate is gate | nudge | off)."""
+    return value not in (False, None, 0, "", "off")
