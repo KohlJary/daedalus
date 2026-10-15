@@ -1,15 +1,18 @@
 """
 The Momus gate (edict 0016, trigger 1): Daedalus doesn't merge a PR that no Momus trial covers.
 
-- PostToolUse on `gh pr create`: record the PR (number -> branch, head, skip reason) in session state,
-  and nudge when no trial covers the branch yet.
-- PreToolUse on `gh pr merge`: deny unless a trial's `Covers: <branch> @ <sha>` names the PR's head, or
-  an earlier commit followed only by docs commits; a docs-only diff, `DAEDALUS_MOMUS_SKIP="<reason>"` in
-  the command, or `momus: skip <reason>` in the PR body passes (logged).
+- PreToolUse (Bash): every `gh pr merge` the line runs (shell.parse sees `then gh pr merge`, $(...),
+  bash -c, wrappers and the second of two merges) is denied unless a trial's `Covers: <branch> @ <sha>`
+  names the PR's head, or an ancestor of it followed only by docs commits. A docs-only diff, a
+  DAEDALUS_MOMUS_SKIP="<reason>" on that merge command, or a `momus: skip <reason>` line in the PR body
+  passes (logged with its reason).
+- PostToolUse after `gh pr create`: remember the PR (number -> branch, head) and nudge when no trial
+  covers the branch yet.
 
-Only Claude's tool calls reach hooks, so a merge done by hand is never gated. hooks.momus_gate is
-`gate` (default), `nudge` or `off`. The PR is found from session state first, then
-`gh pr view` (5 s timeout: the only network call any hook makes, on a merge, which is itself one).
+The PR's head and files come from `gh pr view` at merge time (a merge is a network action anyway), so a
+commit pushed after `gh pr create` is checked. Session state is the fallback when gh can't answer; with
+neither, the gate errors and the dispatcher allows the merge with a visible notice. Only Claude's tool
+calls reach hooks, so a merge by hand is never gated. hooks.momus_gate: gate (default) | nudge | off.
 """
 
 import json
@@ -17,13 +20,14 @@ import re
 from pathlib import Path
 
 from ..core import Ctx, Line
-from ..shell import commands
+from ..shell import parse
 
-PR_URL = re.compile(r"/pull/(\d+)")
-SKIP_ENV = re.compile(r"""DAEDALUS_MOMUS_SKIP=("[^"]+"|'[^']+'|[^\s;&|]+)""")
-SKIP_BODY = re.compile(r"momus:\s*skip\s+([^\n\"'`]+)", re.IGNORECASE)
+PR_URL = re.compile(r"github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)")
+SKIP_BODY = re.compile(r"^[ \t>*-]*momus:[ \t]*skip[ \t]+(\S[^\n]*)$", re.IGNORECASE | re.MULTILINE)
+PLACEHOLDER = re.compile(r"^<[^>]*>$|^\.\.\.$")
 COVERS = re.compile(r"^\s*\**Covers:?\**\s*`?([^\s`@]+)`?\s*@\s*`?([0-9a-f]{7,40})", re.IGNORECASE | re.MULTILINE)
 GH_TIMEOUT = 5
+MODES = ("gate", "nudge", "off")
 
 
 class _Lazy:
@@ -38,6 +42,13 @@ class _Lazy:
 subprocess = _Lazy()
 
 
+def mode(ctx: Ctx) -> str:
+    """The setting, normalized; anything unrecognized (a hand edit) means the safe choice, gate."""
+    value = ctx.settings.get("hooks", "momus_gate")
+    value = str(value).strip().lower() if value is not None else "gate"
+    return value if value in MODES else ("off" if value in ("false", "0", "no") else "gate")
+
+
 def _git(cwd: Path, *args, timeout: float = 5) -> str:
     r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=timeout)
     if r.returncode != 0:
@@ -45,187 +56,204 @@ def _git(cwd: Path, *args, timeout: float = 5) -> str:
     return r.stdout.strip()
 
 
-def _gh_pr(words: list, verb: str):
-    """The arguments after `gh pr <verb>` when the command runs it, else None."""
-    return words[3:] if words[:3] == ["gh", "pr", verb] else None
+def merges(command: str) -> list:
+    """[(target, repo, skip_reason)] for every `gh pr merge` the line runs. target is the PR number, URL
+    or branch ("" for the current branch); repo is -R/--repo or the URL's repo, if any."""
+    out = []
+    for cmd in parse(command or ""):
+        if cmd.words[:3] != ["gh", "pr", "merge"]:
+            continue
+        args, target, repo, i = cmd.words[3:], None, "", 0
+        while i < len(args):
+            a = args[i]
+            if a in ("-R", "--repo") and i + 1 < len(args):
+                repo, i = args[i + 1], i + 2
+                continue
+            if a.startswith("--repo="):
+                repo = a.split("=", 1)[1]
+            elif a in ("-t", "--subject", "-b", "--body", "-F", "--body-file", "-A", "--author-email",
+                       "--match-head-commit"):
+                i += 2
+                continue
+            elif not a.startswith("-") and target is None:
+                url = PR_URL.search(a)
+                target, repo = (url.group(2), url.group(1)) if url else (a, repo)
+            i += 1
+        out.append((target or "", repo, cmd.env.get("DAEDALUS_MOMUS_SKIP", "").strip()))
+    return out
 
 
 def merge_target(command: str):
-    """The argument of the first `gh pr merge` in a command line ("" for the current branch), or None."""
-    for words in commands(command):
-        rest = _gh_pr(words, "merge")
-        if rest is not None:
-            args = [a for a in rest if not a.startswith("-")]
-            # flags that take a value (--subject x, -t x, --body x, -R repo) are rare here; a number or URL wins
-            for a in args:
-                if a.isdigit() or PR_URL.search(a):
-                    return PR_URL.search(a).group(1) if PR_URL.search(a) else a
-            return args[0] if args else ""
-    return None
+    """The first merge's target ("" for the current branch), or None when the line runs no merge."""
+    found = merges(command)
+    return found[0][0] if found else None
 
 
-def skip_reason(text: str) -> str:
-    m = SKIP_ENV.search(text or "")
-    return m.group(1).strip("\"'") if m else ""
-
-
-def trials_dir(ctx: Ctx) -> Path:
-    return ctx.project_dir / ".daedalus" / "momus" / "trials"
+def body_skip(body: str) -> str:
+    """The reason of a `momus: skip <reason>` line in a PR body; a placeholder like <reason> is no reason."""
+    for m in SKIP_BODY.finditer(body or ""):
+        reason = m.group(1).strip().strip("`").strip()
+        if reason and not PLACEHOLDER.match(reason):
+            return reason
+    return ""
 
 
 def covers(ctx: Ctx) -> list:
-    """(branch, sha) from every trial's Covers line."""
+    """(branch, sha) from every trial's Covers lines."""
     out = []
-    folder = trials_dir(ctx)
+    folder = ctx.project_dir / ".daedalus" / "momus" / "trials"
     if not folder.is_dir():
         return out
     for f in folder.glob("*.md"):
         try:
-            text = f.read_text(encoding="utf-8", errors="replace")
+            out += COVERS.findall(f.read_text(encoding="utf-8", errors="replace"))
         except OSError:
             continue
-        out += [(b, s) for b, s in COVERS.findall(text)]
     return out
 
 
 def docs_only(paths: list) -> bool:
+    """Every changed file is Markdown or under docs/ (an empty diff is not docs-only)."""
     return bool(paths) and all(p.endswith(".md") or p.startswith("docs/") for p in paths)
 
 
+def _is_ancestor(cwd: Path, sha: str, head: str) -> bool:
+    try:
+        return subprocess.run(["git", "merge-base", "--is-ancestor", sha, head], cwd=cwd, capture_output=True,
+                              text=True, timeout=5).returncode == 0
+    except Exception:  # no git, a timeout: not shown to be an ancestor
+        return False
+
+
 def covered(ctx: Ctx, branch: str, head: str) -> tuple:
-    """(True, how) when a trial covers the branch at its head, or at an earlier commit followed only by docs
-    commits; (False, why) otherwise."""
-    behind = None
+    """(True, how) when a trial covers the branch at its head, or at an ancestor followed only by docs
+    commits; (False, why) otherwise, saying what was found."""
+    behind, orphan = None, None
     for b, sha in covers(ctx):
         if b != branch:
             continue
         if head and (head.startswith(sha) or sha.startswith(head)):
             return True, f"trial at {sha[:7]}"
+        if not _is_ancestor(ctx.project_dir, sha, head):
+            orphan = sha
+            continue
         try:
-            _git(ctx.project_dir, "merge-base", "--is-ancestor", sha, head)
             later = _git(ctx.project_dir, "rev-list", f"{sha}..{head}").split()
             changed = _git(ctx.project_dir, "diff", "--name-only", sha, head).split()
-        except (RuntimeError, OSError, subprocess.SubprocessError):
+        except (RuntimeError, OSError):
             continue
         if docs_only(changed):
             return True, f"trial at {sha[:7]}, then docs only"
         behind = len(later) if behind is None else min(behind, len(later))
     if behind is not None:
         return False, f"{behind} commit{'s' if behind != 1 else ''} since the trial"
+    if orphan:
+        return False, (f"a trial at {orphan[:7]} exists but isn't in the head's history (rebased, or the head "
+                       "isn't fetched here): review the new head")
     return False, "no Momus trial covers it"
 
 
-def pr_info(ctx: Ctx, target: str) -> dict:
-    """{number, branch, head, files, body} for the PR being merged: session state first, then gh."""
-    prs = ctx.state.get("prs", {})
-    if target and target in prs:
-        rec = dict(prs[target])
-    elif not target:
-        branch = _git(ctx.project_dir, "rev-parse", "--abbrev-ref", "HEAD")
-        rec = next((dict(r, number=n) for n, r in prs.items() if r.get("branch") == branch), {})
-        if not rec:
-            rec = {"branch": branch, "head": _git(ctx.project_dir, "rev-parse", "HEAD")}
-    else:
-        rec = {}
-    if not rec.get("branch") or "files" not in rec:
-        args = ["gh", "pr", "view"] + ([target] if target else []) + ["--json", "number,headRefName,headRefOid,files,body"]
+def pr_info(ctx: Ctx, target: str, repo: str = "") -> dict:
+    """{number, branch, head, files, skip} for the PR being merged, from gh at merge time; the PR recorded
+    at `gh pr create` this session is the fallback when gh can't answer."""
+    args = ["gh", "pr", "view"] + ([target] if target else []) + (["-R", repo] if repo else []) + \
+        ["--json", "number,headRefName,headRefOid,files,body"]
+    data, err = None, None
+    try:
         r = subprocess.run(args, cwd=ctx.project_dir, capture_output=True, text=True, timeout=GH_TIMEOUT)
-        if r.returncode != 0:
-            raise RuntimeError(f"gh pr view: {r.stderr.strip()[:160]}")
-        data = json.loads(r.stdout)
-        body_skip = SKIP_BODY.search(data.get("body") or "")
-        rec = {"number": str(data.get("number", target)), "branch": data.get("headRefName", ""),
-               "head": data.get("headRefOid", ""), "files": [f.get("path", "") for f in data.get("files", [])],
-               "skip": body_skip.group(1).strip() if body_skip else rec.get("skip", "")}
-    return rec
-
-
-def _base(cwd: Path) -> str:
-    """The commit the branch forked from: against origin's default branch, else main or master."""
-    for ref in ("origin/HEAD", "origin/main", "origin/master", "main", "master"):
-        try:
-            return _git(cwd, "merge-base", "HEAD", ref)
-        except (RuntimeError, OSError, subprocess.SubprocessError):
-            continue
-    raise RuntimeError("no base branch found")
+        if r.returncode == 0:
+            data = json.loads(r.stdout)
+        else:
+            err = RuntimeError(f"gh pr view: {r.stderr.strip()[:160]}")
+    except Exception as e:  # TimeoutExpired, no gh, bad JSON
+        err = e
+    if isinstance(data, dict) and data.get("headRefName") and data.get("headRefOid"):
+        return {"number": str(data.get("number") or target), "branch": data["headRefName"],
+                "head": data["headRefOid"], "files": [f.get("path", "") for f in data.get("files") or []],
+                "skip": body_skip(data.get("body") or ""), "source": "gh"}
+    rec = ctx.state.get("prs", {}).get(target) if target and not repo else None
+    if rec and rec.get("branch") and rec.get("head"):
+        return {"number": target, **rec, "source": "session state (gh unavailable)"}
+    raise err or RuntimeError(f"gh pr view {target or '(current branch)'} gave no head")
 
 
 def _record_create(ctx: Ctx) -> list:
     """After `gh pr create`: remember the PR, and nudge when no trial covers the branch yet."""
     p = ctx.payload
     command = str((p.get("tool_input") or {}).get("command") or "")
-    if not any(_gh_pr(w, "create") is not None for w in commands(command)):
+    created = [c for c in parse(command) if c.words[:3] == ["gh", "pr", "create"]]
+    if not created:
         return []
     resp = p.get("tool_response")
-    text = json.dumps(resp) if not isinstance(resp, str) else resp
-    m = PR_URL.search(text or "")
+    m = PR_URL.search(resp if isinstance(resp, str) else json.dumps(resp))
     if not m:
         return []
+    words = created[0].words
+    head_arg = next((words[i + 1] for i, w in enumerate(words[:-1]) if w in ("-H", "--head")), "")
     try:
-        branch = _git(ctx.project_dir, "rev-parse", "--abbrev-ref", "HEAD")
-        head = _git(ctx.project_dir, "rev-parse", "HEAD")
-        files = _git(ctx.project_dir, "diff", "--name-only", _base(ctx.project_dir), head).split()
-    except (RuntimeError, OSError, subprocess.SubprocessError):
-        branch, head, files = "", "", None
-    skip = SKIP_BODY.search(command)
-    rec = {"branch": branch, "head": head, "skip": skip.group(1).strip()[:200] if skip else ""}
-    if files is not None:
-        rec["files"] = files
-    ctx.touch().setdefault("prs", {})[m.group(1)] = rec
-    if not branch or docs_only(files or []) or rec["skip"]:
+        branch = head_arg.split(":")[-1] or _git(ctx.project_dir, "rev-parse", "--abbrev-ref", "HEAD")
+        head = _git(ctx.project_dir, "rev-parse", branch if head_arg else "HEAD")
+    except (RuntimeError, OSError):
+        return []
+    if branch == "HEAD":
+        return []
+    body = "\n".join(words) + "\n" + "\n".join(created[0].heredocs)
+    for inner in created[0].substs.values():
+        body += "\n" + "\n".join(b for c in inner for b in c.heredocs)
+    rec = {"branch": branch, "head": head, "skip": body_skip(body)}
+    ctx.touch().setdefault("prs", {})[m.group(2)] = rec
+    if rec["skip"]:
         return []
     ok, _ = covered(ctx, branch, head)
     if ok:
         return []
-    return [Line(f"Daedalus: no Momus trial covers {branch} yet (PR #{m.group(1)}). Run momus on it before "
+    return [Line(f"Daedalus: no Momus trial covers {branch} yet (PR #{m.group(2)}). Run momus on it before "
                  "merging; its trial's `Covers:` line is what the merge gate checks.",
                  nudge="momus_gate:create", tool="agent:momus", cycle=head)]
 
 
-def _gate(ctx: Ctx) -> list:
-    command = str((ctx.payload.get("tool_input") or {}).get("command") or "")
-    target = merge_target(command)
-    if target is None:
-        return []
-    mode = ctx.settings.get("hooks", "momus_gate")
+def _check(ctx: Ctx, target: str, repo: str, env_skip: str) -> list:
     st = ctx.touch()
     gate = st["gate"]
-    reason = skip_reason(command)
-    if reason:
+    if env_skip and not PLACEHOLDER.match(env_skip):
         gate["skips"] = gate.get("skips", 0) + 1
-        st.setdefault("skips", []).append({"at": ctx.now, "pr": target, "reason": reason[:200], "how": "env"})
+        st.setdefault("skips", []).append({"at": ctx.now, "pr": target, "reason": env_skip[:200], "how": "env"})
         return []
-    info = pr_info(ctx, target)
-    branch, head = info.get("branch", ""), info.get("head", "")
+    info = pr_info(ctx, target, repo)
     if info.get("skip"):
         gate["skips"] = gate.get("skips", 0) + 1
-        st.setdefault("skips", []).append({"at": ctx.now, "pr": target, "reason": info["skip"][:200], "how": "body"})
+        st.setdefault("skips", []).append({"at": ctx.now, "pr": info["number"], "reason": info["skip"][:200],
+                                           "how": "body"})
         return []
     if docs_only(info.get("files") or []):
         gate["passes"] = gate.get("passes", 0) + 1
         return []
+    branch, head = info["branch"], info["head"]
     ok, why = covered(ctx, branch, head)
     if ok:
         gate["passes"] = gate.get("passes", 0) + 1
         return []
-    pr = f"PR #{info.get('number') or target}" if (info.get("number") or target) else "this PR"
-    text = (f"Daedalus merge gate: {pr} ({branch} @ {head[:7]}): {why}. Run momus on the branch (its trial's "
-            f"`Covers: {branch} @ <sha>` line is what this checks), or merge with "
-            "DAEDALUS_MOMUS_SKIP=\"<reason>\" / put `momus: skip <reason>` in the PR body. Turn the gate off "
-            "with `daedalus config hooks.momus_gate nudge`.")
-    if mode == "gate":
+    source = "" if info.get("source") == "gh" else f" (from {info.get('source')})"
+    text = (f"Daedalus merge gate: PR #{info['number']} ({branch} @ {head[:7]}{source}): {why}. Run momus on "
+            f"the branch (its trial's `Covers: {branch} @ <sha>` line is what this checks), or merge with "
+            "DAEDALUS_MOMUS_SKIP=\"<reason>\" / a `momus: skip <reason>` line in the PR body. Turn the gate "
+            "off with `daedalus config hooks.momus_gate nudge`.")
+    if mode(ctx) == "gate":
         gate["blocks"] = gate.get("blocks", 0) + 1
-        return [Line(text, kind="gate", decision="deny", limit=600)]
-    return [Line(text, nudge="momus_gate:merge", tool="agent:momus", cycle=head, limit=600)]
+        return [Line(text, kind="gate", decision="deny", limit=700)]
+    return [Line(text, nudge="momus_gate:merge", tool="agent:momus", cycle=head, limit=700)]
 
 
 def run_pre(ctx: Ctx) -> list:
-    if ctx.payload.get("tool_name") != "Bash" or ctx.settings.get("hooks", "momus_gate") == "off":
+    if ctx.payload.get("tool_name") != "Bash" or mode(ctx) == "off":
         return []
-    return _gate(ctx)
+    out = []
+    for target, repo, env_skip in merges(str((ctx.payload.get("tool_input") or {}).get("command") or "")):
+        out += _check(ctx, target, repo, env_skip)
+    return out
 
 
 def run_post(ctx: Ctx) -> list:
-    if ctx.payload.get("tool_name") != "Bash" or ctx.settings.get("hooks", "momus_gate") == "off":
+    if ctx.payload.get("tool_name") != "Bash" or mode(ctx) == "off":
         return []
     return _record_create(ctx)

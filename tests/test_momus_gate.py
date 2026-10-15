@@ -67,14 +67,33 @@ def create(r, number=7, body=""):
                 {"stdout": f"https://github.com/o/r/pull/{number}\n", "stderr": ""})
 
 
-def fake_gh(tmp_path, monkeypatch, payload=None, hang=False):
+def fake_gh(tmp_path, monkeypatch, payload=None, hang=False, fail=False):
+    """A gh on PATH that prints `payload` as JSON (or fails, or hangs). Replaces any earlier fake."""
     bindir = tmp_path / "bin"
     bindir.mkdir(exist_ok=True)
     gh = bindir / "gh"
-    body = "import time; time.sleep(30)" if hang else f"print({json.dumps(json.dumps(payload or {}))})"
+    if hang:
+        body = "import time; time.sleep(30)"
+    elif fail:
+        body = "import sys; sys.stderr.write('not a github repo'); sys.exit(1)"
+    else:
+        body = f"print({json.dumps(json.dumps(payload or {}))})"
     gh.write_text(f"#!{sys.executable}\n{body}\n")
     gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
-    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+    if str(bindir) not in os.environ["PATH"]:
+        monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+
+
+@pytest.fixture(autouse=True)
+def no_real_gh(tmp_path, monkeypatch):
+    """No test reaches GitHub: by default gh fails, so the gate falls back to session state."""
+    fake_gh(tmp_path, monkeypatch, fail=True)
+
+
+def gh_says(tmp_path, monkeypatch, repo, number=7, files=("a.py",), body="", head=None, branch="feat/x"):
+    fake_gh(tmp_path, monkeypatch, {"number": number, "headRefName": branch,
+                                    "headRefOid": head or git(repo, "rev-parse", "HEAD"),
+                                    "files": [{"path": f} for f in files], "body": body})
 
 
 # ---------- parsing ----------
@@ -84,6 +103,7 @@ def fake_gh(tmp_path, monkeypatch, payload=None, hang=False):
     ("gh pr merge 12 --merge", "12"), ("cd x && gh pr merge 12", "12"), ("FOO=1 gh pr merge 12", "12"),
     ("gh pr merge https://github.com/o/r/pull/34 --squash", "34"), ("gh pr merge --merge", ""),
     ("echo gh pr merge", None), ('DAEDALUS_MOMUS_SKIP="two words" gh pr merge 5', "5"),
+    ("if ok; then gh pr merge 53 --merge; fi", "53"), ("gh pr merge --subject 'x y' 12", "12"),
     ("git commit -m 'then gh pr merge 3'", None), ("cat <<'EOF'\ngh pr merge 4\nEOF", None), ("gh pr view 12", None), ("git commit -m 'gh pr merge 3'", None),
 ])
 def test_merge_target(command, target):
@@ -126,12 +146,13 @@ def test_an_older_trial_covers_only_docs_commits_after_it(repo):
     assert out["permissionDecision"] == "deny" and "2 commits since the trial" in out["permissionDecisionReason"]
 
 
-def test_a_docs_only_pr_passes(repo):
-    git(repo, "checkout", "-q", "main")
-    git(repo, "checkout", "-qb", "docs/y")
-    commit(repo, "docs/a.md", "a")
-    create(repo, 10)
+def test_a_docs_only_pr_passes_and_an_empty_one_does_not(repo, tmp_path, monkeypatch):
+    gh_says(tmp_path, monkeypatch, repo, 10, files=["docs/guide/setup.txt", "README.md"])
     assert call(repo, "PreToolUse", "gh pr merge 10") == {}
+    gh_says(tmp_path, monkeypatch, repo, 10, files=["src/docs.py"])
+    assert call(repo, "PreToolUse", "gh pr merge 10")["permissionDecision"] == "deny"
+    gh_says(tmp_path, monkeypatch, repo, 10, files=[])
+    assert call(repo, "PreToolUse", "gh pr merge 10")["permissionDecision"] == "deny"
 
 
 def test_skips_pass_and_are_logged_with_their_reason(repo):
@@ -151,6 +172,10 @@ def test_a_pr_not_in_session_state_comes_from_gh(repo, tmp_path, monkeypatch):
     assert call(repo, "PreToolUse", "gh pr merge 21")["permissionDecision"] == "deny"
     trial(repo, "feat/x", head)
     assert call(repo, "PreToolUse", "gh pr merge 21") == {}
+
+
+def test_the_gh_timeout_is_five_seconds():
+    assert momus_gate.GH_TIMEOUT == 5
 
 
 def test_a_hanging_gh_allows_the_merge_and_says_so(repo, tmp_path, monkeypatch):
@@ -218,3 +243,102 @@ def test_momus_constitution_requires_the_covers_line():
     assert "Covers: <branch> @ <full head sha>" in text
     parsed = momus_gate.COVERS.findall("# Trial\n\nCovers: feat/0016-hook-kit @ f04d4b23e9b5226c8989676b4636a3e78a05b1bd\n")
     assert parsed == [("feat/0016-hook-kit", "f04d4b23e9b5226c8989676b4636a3e78a05b1bd")]
+
+
+# ---------- Momus's review of the first version (trial 2026-10-15-momus-gate.md) ----------
+
+
+def test_d1_a_commit_after_create_is_checked_at_merge_time(repo, tmp_path, monkeypatch):
+    create(repo)
+    reviewed = git(repo, "rev-parse", "HEAD")
+    trial(repo, "feat/x", reviewed)
+    newer = commit(repo, "b.py", "y = 2\n")
+    gh_says(tmp_path, monkeypatch, repo, head=newer)
+    out = call(repo, "PreToolUse", "gh pr merge 7")
+    assert out["permissionDecision"] == "deny" and "1 commit since the trial" in out["permissionDecisionReason"]
+    trial(repo, "feat/x", newer, name="t2.md")
+    assert call(repo, "PreToolUse", "gh pr merge 7") == {}
+
+
+def test_d2_the_then_form_and_every_merge_on_a_line_are_gated(repo, tmp_path, monkeypatch):
+    gh_says(tmp_path, monkeypatch, repo)
+    out = call(repo, "PreToolUse", "if ! gh pr checks 7 | grep -q fail; then gh pr merge 7 --merge; fi")
+    assert out["permissionDecision"] == "deny"
+    trial(repo, "feat/x", git(repo, "rev-parse", "HEAD"))
+    assert call(repo, "PreToolUse", "gh pr merge 7 && gh pr merge 7") == {}
+    assert kit_state.load("s1")["gate"]["passes"] == 2
+
+
+def test_d3_placeholder_and_quoted_skip_phrases_are_not_skips(repo, tmp_path, monkeypatch):
+    pr76 = "- Passes: `momus: skip <reason>` in the PR body.\nmomus: skip <reason>\nmomus: skip ..."
+    gh_says(tmp_path, monkeypatch, repo, body=pr76)
+    assert call(repo, "PreToolUse", "gh pr merge 7")["permissionDecision"] == "deny"
+    out = call(repo, "PreToolUse", 'echo "set DAEDALUS_MOMUS_SKIP=x"; gh pr merge 7')
+    assert out["permissionDecision"] == "deny"
+    assert call(repo, "PreToolUse", 'DAEDALUS_MOMUS_SKIP="<reason>" gh pr merge 7')["permissionDecision"] == "deny"
+    gh_says(tmp_path, monkeypatch, repo, body="Fixes a typo.\n\nmomus: skip one-word typo in a comment")
+    assert call(repo, "PreToolUse", "gh pr merge 7") == {}
+    assert kit_state.load("s1")["skips"][-1]["reason"] == "one-word typo in a comment"
+
+
+def test_a_rebased_trial_says_it_is_not_in_the_heads_history(repo, tmp_path, monkeypatch):
+    old = git(repo, "rev-parse", "HEAD")
+    trial(repo, "feat/x", old)
+    git(repo, "commit", "-q", "--amend", "-m", "change (rebased)")
+    gh_says(tmp_path, monkeypatch, repo)
+    out = call(repo, "PreToolUse", "gh pr merge 7")
+    assert f"a trial at {old[:7]} exists but isn't in the head's history" in out["permissionDecisionReason"]
+
+
+def test_a_merge_of_the_current_branch_asks_gh_about_it(repo, tmp_path, monkeypatch):
+    gh_says(tmp_path, monkeypatch, repo, number=31)
+    out = call(repo, "PreToolUse", "gh pr merge --squash")
+    assert out["permissionDecision"] == "deny" and "PR #31" in out["permissionDecisionReason"]
+
+
+def test_gh_with_no_head_and_no_state_allows_with_a_notice(repo, tmp_path, monkeypatch):
+    fake_gh(tmp_path, monkeypatch, {})
+    out = call(repo, "PreToolUse", "gh pr merge 62")
+    assert "permissionDecision" not in out and "didn't run" in out["additionalContext"]
+
+
+def test_create_nudges_in_nudge_mode_and_not_when_off(repo):
+    (repo / ".daedalus/config.json").write_text(json.dumps({"hooks": {"momus_gate": "nudge"}}))
+    assert "no Momus trial covers" in create(repo, 40)["additionalContext"]
+    (repo / ".daedalus/config.json").write_text(json.dumps({"hooks": {"momus_gate": "off"}}))
+    assert create(repo, 41) == {}
+
+
+def test_create_says_nothing_once_a_trial_covers_the_head(repo):
+    trial(repo, "feat/x", git(repo, "rev-parse", "HEAD"))
+    assert create(repo, 42) == {}
+
+
+@pytest.mark.parametrize("value, mode", [("Gate", "gate"), ("deny", "gate"), ("NUDGE", "nudge"), ("off", "off"),
+                                         (True, "gate")])
+def test_hand_edited_modes_are_normalized(repo, value, mode):
+    from daedalus_hookkit.core import Ctx
+    from daedalus_hookkit.settings import Settings
+
+    (repo / ".daedalus/config.json").write_text(json.dumps({"hooks": {"momus_gate": value}}))
+    assert momus_gate.mode(Ctx("PreToolUse", {}, repo, Settings(repo), 0)) == mode
+
+
+def test_false_turns_the_gate_off(repo):
+    create(repo)
+    (repo / ".daedalus/config.json").write_text(json.dumps({"hooks": {"momus_gate": False}}))
+    assert call(repo, "PreToolUse", "gh pr merge 7") == {}
+
+
+def test_trials_are_read_from_a_submodule_project(repo, tmp_path, monkeypatch):
+    """The project's .git is a gitlink file into another git dir, as in a submodule."""
+    gitdir = tmp_path / "modules" / "proj"
+    gitdir.parent.mkdir()
+    (repo / ".git").rename(gitdir)
+    (repo / ".git").write_text(f"gitdir: {gitdir}\n")
+    git(repo, "config", "core.worktree", str(repo))
+    trial(repo, "feat/x", git(repo, "rev-parse", "HEAD"))
+    gh_says(tmp_path, monkeypatch, repo)
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(repo))
+    p = {"session_id": "s1", "cwd": str(tmp_path), "tool_name": "Bash", "tool_input": {"command": "gh pr merge 7"}}
+    assert dispatch("PreToolUse", p, GATE) == ""
