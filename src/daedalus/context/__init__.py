@@ -93,15 +93,16 @@ def _minutes_since(stamp: Optional[str], now: datetime) -> Optional[float]:
 LARGE_WINDOW = 1_000_000
 
 
-def window_for(model: Optional[str], override: int = 0, used: int = 0) -> tuple[int, bool]:
+def window_for(model: Optional[str], override: int = 0, seen: int = 0) -> tuple[int, bool]:
     """The model's context window and whether it is known. An unknown model gets DEFAULT_WINDOW, or the
-    large window once the context has outgrown the default (so it can't read over 100%)."""
+    large window once the session has shown a bigger context: any request's size, or a compaction's
+    preTokens, is a lower bound on the window. Nudges that depend on the window must check `known`."""
     if override:
         return override, True
     for prefix, size in WINDOWS.items():
         if model and model.startswith(prefix):
             return size, True
-    return (LARGE_WINDOW if used > DEFAULT_WINDOW else DEFAULT_WINDOW), False
+    return (LARGE_WINDOW if seen > DEFAULT_WINDOW else DEFAULT_WINDOW), False
 
 
 def view(data: dict, session_id: str, now: Optional[datetime] = None, quiet_minutes: int = QUIET_MINUTES,
@@ -111,7 +112,7 @@ def view(data: dict, session_id: str, now: Optional[datetime] = None, quiet_minu
     seg = data["segment"]
     used = seg["last_ctx"] or 0
     rate = ix.ratio(data)
-    window, known = window_for(data.get("model"), window_tokens, used)
+    window, known = window_for(data.get("model"), window_tokens, max(used, int(data.get("max_seen") or 0)))
 
     def quiet(stamp):
         m = _minutes_since(stamp, now)

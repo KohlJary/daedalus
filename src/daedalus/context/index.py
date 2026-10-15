@@ -21,29 +21,60 @@ import re
 from pathlib import Path
 from typing import Optional
 
-INDEX_VERSION = 1
+INDEX_VERSION = 2  # 2: max_seen; API error entries are not requests
 TASK_ID = re.compile(r"(?<![\w-])T-[a-z]{0,3}\d+[a-z]?\b")
 AGENT_ID = re.compile(r'<agent-message from="([A-Za-z0-9_-]+)"|<task-id>([A-Za-z0-9_-]+)</task-id>')
-LAUNCHED_ID = re.compile(r"agentId: ([A-Za-z0-9_-]+)")
+TOOL_USE_ID = re.compile(r"<tool-use-id>([A-Za-z0-9_-]+)</tool-use-id>")
 FILE_TOOLS = {"Read", "Edit", "Write", "MultiEdit", "NotebookEdit", "NotebookRead"}
 AGENT_TOOLS = {"Agent", "Task"}
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=\S*$")
 SEPARATORS = re.compile(r"\|\||&&|;|\|")
 SEGMENT_KEEP = 10  # finished segments (one per compaction) kept for plans, recall and checks
-SHELL_SKIP = {"for", "while", "until", "if", "case", "done", "fi", "esac", "}", "{", "[", "[[", "test"}
-SHELL_LEAD = {"do", "then", "else", "elif", "time", "!", "env", "exec", "nohup"}
-# Bash commands whose text names the task in play: commits and gameplan updates (not heredocs that quote IDs)
-MARKER_COMMANDS = re.compile(r"(?:^|&&|;|\|)\s*(?:git\s+commit\b[^\n]*?-m\s*(\"[^\"]*\"|'[^']*')"
-                             r"|daedalus\s+gameplan(?:\s+-w\s+\S+)?\s+task\s+\w+\s+(T-[a-z]{0,3}\d+[a-z]?))")
+SHELL_SKIP = {"for", "while", "until", "if", "case", "done", "fi", "esac", "}", "[", "[[", "test"}
+SHELL_LEAD = {"do", "then", "else", "elif", "time", "!", "env", "exec", "nohup", "{"}
+SUBSTITUTION = re.compile(r"\$\([^()]*\)|`[^`]*`")
+HEREDOC_BODY = re.compile(r"<<-?[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\n(.*?)\n[ \t]*\2[ \t]*(?:\n|$)", re.DOTALL)
+
+
+def marker_texts(command: str) -> list:
+    """The text in a Bash command that names the task in play: a commit's message (every -m/--message
+    value, including -am and -qm forms, and a heredoc body given with -F -) and the task id of a
+    `daedalus gameplan [-w X] task ...` command. Never other heredocs, quoted strings or output."""
+    from daedalus_hookkit.shell import commands
+
+    out = []
+    bodies = [m.group(3) for m in HEREDOC_BODY.finditer(command or "")]
+    for words in commands(command or ""):
+        if words[:2] == ["git", "commit"]:
+            args = words[2:]
+            for i, w in enumerate(args):
+                if w in ("-m", "--message") or (w.startswith("-") and not w.startswith("--") and w.endswith("m")):
+                    if i + 1 < len(args):
+                        out.append(args[i + 1])
+                elif w.startswith("--message="):
+                    out.append(w.split("=", 1)[1])
+                elif (w in ("-F", "--file") and i + 1 < len(args) and args[i + 1] == "-") or w == "--file=-":
+                    if any(a.startswith("<<") for a in args) and bodies:
+                        out.append(bodies.pop(0))
+        elif words[:2] == ["daedalus", "gameplan"]:
+            rest = words[2:]
+            while rest and rest[0] in ("-w", "--workstream"):
+                rest = rest[2:]
+            while rest and rest[0].startswith("--workstream="):
+                rest = rest[1:]
+            if rest[:1] == ["task"] and len(rest) >= 3:
+                out.append(rest[2])
+    return out
 
 
 def command_name(command: str) -> str:
     """The command a Bash line runs: split on && || ; |, drop segments that only cd or set variables, and take
     the first word of the first segment left (`cd x && FOO=1 pytest -q` -> pytest)."""
-    first_line = (command or "").split("\n", 1)[0]
+    first_line = SUBSTITUTION.sub("X", (command or "").split("\n", 1)[0])
     for seg in SEPARATORS.split(first_line):
-        words = seg.strip().split()
-        while words and (ASSIGNMENT.match(words[0]) or words[0] in SHELL_LEAD):
+        words = [w if w.endswith("()") else w.strip("()") for w in seg.strip().split()]
+        words = [w for w in words if w]
+        while words and (ASSIGNMENT.match(words[0]) or words[0] in SHELL_LEAD or words[0].endswith("()")):
             words = words[1:]
         if not words or words[0] == "cd" or words[0] in SHELL_SKIP:
             continue
@@ -82,7 +113,7 @@ def empty_segment(boundary_uuid: Optional[str] = None, at: Optional[str] = None)
 
 def empty_index(path: str, first_hash: str) -> dict:
     return {"version": INDEX_VERSION, "transcript": path, "first_line_hash": first_hash, "offset": 0,
-            "ratio": {"chars": 0, "tokens": 0}, "tool_subjects": {}, "launched": {}, "segment": empty_segment(),
+            "ratio": {"chars": 0, "tokens": 0}, "tool_subjects": {}, "max_seen": 0, "segment": empty_segment(),
             "finished": [], "last_at": None, "root": None}
 
 
@@ -178,9 +209,11 @@ class Indexer:
             return
         msg = ev.get("message") if isinstance(ev.get("message"), dict) else {}
         if etype == "assistant":
-            if msg.get("model") and not str(msg["model"]).startswith("<"):
+            synthetic = ev.get("isApiErrorMessage") or str(msg.get("model") or "").startswith("<")
+            if msg.get("model") and not synthetic:
                 self.ix["model"] = str(msg["model"])
-            self._request(seg, ev, msg)
+            if not synthetic:  # an API error notice carries zero usage: it isn't a request
+                self._request(seg, ev, msg)
             for block in msg.get("content") if isinstance(msg.get("content"), list) else []:
                 if not isinstance(block, dict):
                     continue
@@ -189,8 +222,8 @@ class Indexer:
                     self.ix["tool_subjects"][str(block.get("id"))] = key
                     inp = block.get("input") if isinstance(block.get("input"), dict) else {}
                     if block.get("name") == "Bash":
-                        for m in MARKER_COMMANDS.finditer(str(inp.get("command") or "")):
-                            self._markers(seg, m.group(1) or m.group(2) or "")
+                        for text in marker_texts(str(inp.get("command") or "")):
+                            self._markers(seg, text)
                 out = self._subject(seg, "output", "output")
                 self._add(seg, out, _size(block), uuid, at, is_output=True)
             return
@@ -203,10 +236,6 @@ class Indexer:
                     key = self.ix["tool_subjects"].get(str(b.get("tool_use_id")))
                     if key is None or key not in seg["subjects"]:
                         key = self._subject(seg, "other", "tool results")
-                    text = json.dumps(b.get("content"), default=str)
-                    launched = LAUNCHED_ID.search(text)
-                    if launched and seg["subjects"][key]["kind"] == "agent":
-                        self.ix["launched"][launched.group(1)] = key
                     self._add(seg, key, _size(b), uuid, at)
                 return
             text = content if isinstance(content, str) else " ".join(
@@ -217,8 +246,14 @@ class Indexer:
             elif AGENT_ID.search(text[:300]) and ("<task-notification" in text[:50] or "agent-message" in text[:300]):
                 m = AGENT_ID.search(text[:300])
                 agent_id = m.group(1) or m.group(2)
-                kind = self.agent_types.get(agent_id) or "agent"
-                key = self._subject(seg, "agent", f"Agent: {kind}")
+                use = TOOL_USE_ID.search(text[:600])
+                origin = self.ix["tool_subjects"].get(use.group(1)) if use else None
+                if agent_id in self.agent_types:
+                    key = self._subject(seg, "agent", f"Agent: {self.agent_types[agent_id]}")
+                elif origin and origin in seg["subjects"] and seg["subjects"][origin]["kind"] != "agent":
+                    key = origin  # a background command's completion notice: it belongs to that command
+                else:
+                    key = self._subject(seg, "agent", "Agent: agent")
             elif ev.get("isMeta"):
                 key = self._subject(seg, "other", "reminders and attachments")
             else:
@@ -240,6 +275,7 @@ class Indexer:
             return
         ctx = sum(int(usage.get(k) or 0) for k in
                   ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+        self.ix["max_seen"] = max(int(self.ix.get("max_seen") or 0), ctx)
         if seg["base"] is None:
             seg["base"] = ctx
             for subject, task, chars, *_ in seg["pending"]:
@@ -285,6 +321,8 @@ class Indexer:
         seg["tasks"].setdefault(task, {"tokens": 0.0, "last_touched": None})["tokens"] += tokens
 
     def _boundary(self, ev: dict, at) -> None:
+        meta = ev.get("compactMetadata") if isinstance(ev.get("compactMetadata"), dict) else {}
+        self.ix["max_seen"] = max(int(self.ix.get("max_seen") or 0), int(meta.get("preTokens") or 0))
         seg = self.ix["segment"]
         if seg["base"] is not None or seg["subjects"]:
             done = dict(seg)

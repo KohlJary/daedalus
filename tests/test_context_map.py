@@ -208,15 +208,28 @@ def test_task_markers_and_branch_changes(tmp_path):
     assert "task:T-z9" not in tasks  # an ID inside a tool result is not a marker
 
 
-def test_commit_messages_and_gameplan_commands_are_markers_but_heredocs_are_not():
-    seg = ix.empty_segment()
-    indexer = ix.Indexer(ix.empty_index("x", "h"), {})
-    for cmd, task in [("git commit -m \"T-h1: the kit\"", "T-h1"),
-                      ("daedalus gameplan -w hooks task status T-c2 done", "T-c2"),
-                      ("cat > f <<'EOF'\nT-q7\nEOF", "T-c2")]:
-        for mt in ix.MARKER_COMMANDS.finditer(cmd):
-            indexer._markers(seg, mt.group(1) or mt.group(2) or "")
-        assert seg["task"] == task
+@pytest.mark.parametrize("command, texts", [
+    ('git commit -m "T-h1: the kit"', ["T-h1: the kit"]),
+    ("git commit -q -F - <<'EOF'\nT-c2: views\n\nbody\nEOF", ["T-c2: views\n\nbody"]),
+    ('git commit -am "T-a3 fix"', ["T-a3 fix"]),
+    ('git commit -m "first" -m "T-b4 second"', ["first", "T-b4 second"]),
+    ('git commit -m "say \\"T-x9\\" there"', ['say "T-x9" there']),
+    ("daedalus gameplan -w hooks task status T-c2 done", ["T-c2"]),
+    ("daedalus gameplan --workstream hooks task status T-c3 done", ["T-c3"]),
+    ("cat > f <<'EOF'\nT-q7\nEOF", []),
+    ("echo 'git commit -m T-z1'", []),
+])
+def test_marker_texts(command, texts):
+    assert ix.marker_texts(command) == texts
+
+
+def test_the_latest_id_in_a_message_wins_and_a_task_survives_a_compaction(tmp_path):
+    t = Transcript(tmp_path / "s.jsonl")
+    t.prompt("from T-a1 to T-b2 " + "x" * 600).request(1000).request(2000)
+    t.boundary().prompt("summary", isCompactSummary=True).request(3000).prompt("go on " + "y" * 600).request(4000)
+    m = measure(t.write())
+    assert row(m, "task:T-b2", "by_task")["tokens"] > 0
+    assert "task:T-a1" not in {r["key"] for r in m["by_task"]}
 
 
 # ---------- quiet, incremental, cold ----------
@@ -271,6 +284,101 @@ def test_a_cold_start_catches_up_in_slices(tmp_path):
         slices += 1
     assert slices == 3
     assert cmap.load_index("s")["segment"]["last_ctx"] == 30_000
+
+
+# ---------- Momus's review of the first version (trial 2026-10-15-context-measure.md) ----------
+
+
+def test_d1_an_api_error_entry_is_not_a_request(tmp_path):
+    t = Transcript(tmp_path / "s.jsonl").prompt("a").request(10_000).prompt("b" * 900).request(11_000)
+    err = t._base("assistant", requestId=None, isApiErrorMessage=True, message={
+        "id": "e1", "role": "assistant", "model": "<synthetic>", "content": [{"type": "text", "text": "API Error"}],
+        "usage": {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}})
+    t.raw(err).prompt("c" * 900).request(12_000)
+    m = measure(t.write())
+    assert m["exact"] is True and m["model"] == "claude-test"
+    assert "other:cleared by Claude Code" not in {r["key"] for r in m["by_subject"]}
+    assert sum(r["tokens"] for r in m["by_subject"]) == 12_000
+
+
+def test_d3_a_compaction_bigger_than_the_default_window_raises_the_guess(tmp_path):
+    t = Transcript(tmp_path / "s.jsonl").prompt("a").request(150_000)
+    t.events.append(t._base("system", subtype="compact_boundary", compactMetadata={"trigger": "auto", "preTokens": 582_761}))
+    t.prompt("summary", isCompactSummary=True).request(145_000)
+    m = measure(t.write())
+    assert m["window_tokens"] == cmap.LARGE_WINDOW and m["window_known"] is False
+
+
+def test_a_background_command_notice_belongs_to_its_command(tmp_path):
+    t = Transcript(tmp_path / "s.jsonl")
+    t.prompt("a").request(1000, blocks=[t.tool_use("toolu_b1", "Bash", command="pytest -q", run_in_background=True)])
+    t.result("toolu_b1", "Command running in background with ID: b77")
+    t.request(1100)
+    t.prompt("<task-notification>\n<task-id>b77</task-id>\n<tool-use-id>toolu_b1</tool-use-id>\n<status>completed</status>"
+             + "z" * 3000, isMeta=True)
+    t.request(3000)
+    m = measure(t.write())
+    keys = {r["key"] for r in m["by_subject"]}
+    assert "agent:Agent: agent" not in keys and row(m, "command:pytest")["tokens"] > 900
+
+
+def test_sidechain_entries_count_for_nothing(tmp_path):
+    t = Transcript(tmp_path / "s.jsonl").prompt("a").request(1000)
+    side = t._base("assistant", requestId="side", isSidechain=True, message={
+        "id": "sm", "role": "assistant", "model": "claude-test", "content": [],
+        "usage": {"input_tokens": 90_000, "output_tokens": 5, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}})
+    t.raw(side).prompt("b").request(1200)
+    assert measure(t.write())["used_tokens"] == 1200
+
+
+def test_meta_reminders_are_not_your_messages(tmp_path):
+    t = Transcript(tmp_path / "s.jsonl").prompt("a").request(1000)
+    t.prompt("<system-reminder>" + "r" * 900, isMeta=True).request(1500)
+    m = measure(t.write())
+    assert row(m, "other:reminders and attachments")["tokens"] > 400
+    assert "conversation:your messages" not in {r["key"] for r in m["by_subject"]}
+
+
+def test_a_new_first_line_resets_even_when_the_file_grew(tmp_path):
+    path = Transcript(tmp_path / "s.jsonl").prompt("a").request(1000).write()
+    cmap.refresh(path)
+    Transcript(path).prompt("different start " + "q" * 2000).request(5000).request(7000).write()
+    assert cmap.refresh(path)[0]["segment"]["last_ctx"] == 7000
+
+
+def test_a_shrunk_transcript_with_the_same_first_line_resets(tmp_path):
+    t = Transcript(tmp_path / "s.jsonl").prompt("a").request(1000)
+    for i in range(5):
+        t.prompt("p").request(2000 + i)
+    path = t.write()
+    cmap.refresh(path)
+    lines = path.read_text().splitlines(keepends=True)
+    path.write_text("".join(lines[:2]))
+    assert cmap.refresh(path)[0]["segment"]["last_ctx"] == 1000
+
+
+def test_a_complete_line_without_its_newline_waits_and_is_read_once(tmp_path):
+    t = Transcript(tmp_path / "s.jsonl").prompt("a").request(1000)
+    path = t.write()
+    t2 = Transcript(tmp_path / "x")
+    t2.n, t2.req = 40, 40
+    t2.request(2500)
+    line = json.dumps(t2.events[0])
+    with open(path, "a") as f:
+        f.write(line)  # valid JSON, no newline yet
+    data, _ = cmap.refresh(path)
+    assert data["segment"]["last_ctx"] == 1000
+    with open(path, "a") as f:
+        f.write("\n")
+    data, _ = cmap.refresh(path)
+    assert data["segment"]["last_ctx"] == 2500 and data["offset"] == path.stat().st_size
+
+
+@pytest.mark.parametrize("command, name", [
+    ("T=$(mktemp -d) && cd $T && make", "make"), ("(cd x && pytest)", "pytest"), ("D() { ls; }; D", "ls"),
+])
+def test_more_command_names(command, name):
+    assert command_name(command) == name
 
 
 # ---------- the library and the CLI ----------
