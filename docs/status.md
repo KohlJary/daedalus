@@ -37,6 +37,25 @@ Everything merged tonight went through Momus and green CI first. Audit trail:
   install below to run here. Momus's open lows: cramped narrow layouts on some screens, no Dream screen, modified
   Enter is only a newline on terminals that report it.
 - **Hermes → the Chorus** (#59, another session's PR, renamed at Kohl's call); "Chorus portents" is on the roadmap.
+- **Later the same night (Kohl awake on and off; merge grant still on):**
+  - **Merged:**
+    - #65: doctor sees a stale or shadowed install (T-e27), which is what broke `source list` here.
+    - #66: reflection-check leaks. Ratios and ranges now count as numbers; multi-day totals are refused, figures
+      included; old tombstones still match, so forgetting stays forgotten.
+  - **Dream-log PRs:** #56, #57, #58 and #62 were merged by Kohl. #64 (the `self` source) is open for review. The
+    first dream moved to `.daedalus/dreams/2026-10-15/`, and its picks are roadmap `idea` items whose status tracks
+    what's built (`daedalus roadmap list`).
+  - **Edict 0017 (Ophanic, `proposed`):** Momus's readiness review is folded in as an amendment. It is built on
+    `feat/0017-ophanic` (`oph check`, `oph map`, `oph draw`, the skill, a doctor finding) and is in Momus's build
+    review. It waits for Kohl to accept or not.
+  - **The Ophanic perception experiment:** pre-registered in `experiments/ophanic-perception/DESIGN.md`, on branch
+    `exp/ophanic-perception`. The harness is built and a local pilot is running (qwen3:8b). Paid Claude runs wait for
+    Kohl.
+  - **Coordination with the other session (daedalus-42):** it has 0015 (context map) and 0016 (toolbox hooks). The
+    Ophanic edict was renumbered 0017. The file split is agreed, and the TUI's panel shapes are written into its
+    edicts.
+  - **A stand-in clock hook** is in this checkout's `.claude/settings.local.json` (`.claude/hooks/clock.sh`). Remove
+    it when 0016's kit or 0014 provides the clock.
 - **Dream-log ideas, as PRs for review, not merged:** #56 edicts with tests attached (pick 38); #57 `daedalus page`
   (pick 33).
 - **A test leaked into real data:** one TUI test run wrote 4 test entries into `~/.config/daedalus/models/` (the
