@@ -178,8 +178,9 @@ def _box(lines: list[str], w: int) -> list[str]:
     return ["┌" + "─" * inner + "┐", *body, "└" + "─" * inner + "┘"]
 
 
-def draw(graph: dict, width: int = 100) -> tuple[str, dict]:
-    """(diagram text, the JSON it was drawn from: nodes with slugs, edges marked drawn or listed)."""
+def draw(graph: dict, width: int = 100, max_columns: Optional[int] = None) -> tuple[str, dict]:
+    """(diagram text, the JSON it was drawn from: nodes with slugs, edges marked drawn or listed). `max_columns`
+    caps the boxes side by side (the TUI's send form uses 1, so boxes are full width and cut fewer labels)."""
     validate(graph)
     nodes, notes = _dedupe(list(graph.get("nodes") or []))
     edges = [{**e, "from": str(e["from"]), "to": str(e["to"])} for e in graph.get("edges") or []
@@ -216,6 +217,8 @@ def draw(graph: dict, width: int = 100) -> tuple[str, dict]:
     ncols = max(1, inner // (MIN_BOX + 2))
     while ncols > 1 and (inner - (ncols - 1) * 2) // ncols < READABLE:
         ncols -= 1
+    if max_columns:
+        ncols = max(1, min(ncols, max_columns))
     box_w = (inner - (ncols - 1) * 2) // ncols
     legend_only = box_w < MIN_BOX or not top
     rows: list[str] = []

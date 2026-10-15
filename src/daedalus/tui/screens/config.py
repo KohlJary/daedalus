@@ -537,5 +537,5 @@ class ConfigScreen(Screen):
             return
         key = row.setting.key
         self.shell.ask_to_send(f"Setting {key}", f"Explain the setting {key} (`daedalus config --schema {key}`) "
-                                                  "and whether I should change it for this project. Don't change it.")
+                                                  "and whether I should change it for this project. Don't change it.", "config")
 

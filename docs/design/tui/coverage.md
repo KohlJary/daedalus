@@ -44,8 +44,8 @@ experiment), Dream (`D`: dreams, picks, themes, due), and the plugin menu (`m`).
 | reflect | due, digest, runner, log export, pending apply, pending drop, model history, model edit, model delete, model forget, model stable | arm | bundle, check, render, done, pending import, model aspire, log correct | | tick, inhale |
 | dream | show, due | log, review show | start, prompt, turn, write, done, bundle, keep, review bundle, review record | seeds | |
 | digest (Wonderland runs) | | | | digest | |
-| init, hook, tui | | | | | init, hook board/capture/session-start, tui |
-| **Total** | **33** | **4** | **40** | **6** | **9** |
+| init, hook, tui | | | | tui sends | init, hook board/capture/session-start, tui |
+| **Total** | **32** | **5** | **40** | **7** | **9** |
 
 Notes on the marks:
 - `dream` (edict 0013, merged after the TUI was designed): the steps /dream drives are → (Claude runs them).
@@ -57,6 +57,8 @@ Notes on the marks:
   or built would let a reader attribute a dream's mode. Syncing picks (`source sync dream`) is handed
   to Claude.
 - `init` stays –: it's setup, though Health can run it as an allowlisted fix.
+- `tui sends` is ○: the send-form log's counts are only in the CLI; the TUI shows the setting (Config), not the
+  counts.
 - `source sync` is →: `sources.oph` draws `r sync now`, but syncing isn't one
   of edict 0012's v1 writes, so the Sources screen hands it to Claude.
 - `reflect arm` is ◐: the Experiment tab shows the session's arm and the
@@ -89,9 +91,9 @@ Notes on the marks:
 
 | | ● | ◐ | ○ | Direct coverage (● / ●+◐) |
 |---|---|---|---|---|
-| CLI (43 in scope) | 32 | 5 | 6 | 74% / 86% |
+| CLI (44 in scope) | 32 | 5 | 7 | 73% / 84% |
 | Beyond CLI (11 in scope) | 5 | 2 | 4 | 45% / 64% |
-| **All (54 in scope)** | **37** | **7** | **10** | **69% / 81%** |
+| **All (55 in scope)** | **37** | **7** | **11** | **67% / 80%** |
 
 ## Legibility
 
@@ -99,10 +101,10 @@ The goal is a TUI someone else can use, so coverage alone isn't enough: a
 view a newcomer can't interpret doesn't count for much. The second measure is
 how many concepts have an Explain card in `glossary.md`.
 
-- **Carded (26):** gameplan, roadmap, source, pending proposal, edict,
+- **Carded (27):** gameplan, roadmap, source, pending proposal, edict,
   dissent, workstream, board, doctor/drift, story, Momus, Ariadne, Mind
   Palace, Theseus, Claude pane, reflection, digest, due, delphi, user model,
-  self model, machine: employer, config, A/B experiment, TUI plugin, dream.
+  self model, machine: employer, config, A/B experiment, TUI plugin, dream, send form.
 - **No card yet:** the agent roster (memory, docs, test-runner and the rest),
   hooks, init/hydrate, runners, citations.
 
@@ -132,6 +134,7 @@ how many concepts have an Explain card in `glossary.md`.
 | 2026-10-15 | 48 | 49 | 71% / 82% | 25 | What edict 0012 v1 ships (not just designs): reflection and source commands counted, AR kind not built, plugin menu, A/B experiment and TUI plugin cards |
 | 2026-10-15 | 48 | 54 | 65% / 74% | 25 | Edict 0013 (dreaming) merged before the TUI: 14 `dream` commands, 9 driven through Claude (→), 5 not visible (○): no Dream screen in v1 |
 | 2026-10-15 | 54 | 54 | 69% / 81% | 26 | Dream screen (`dream.oph`, `D`): dreams, picks with their roadmap status, themes, due; `dream show`, `due` ●, `log` and `review show` ◐ (Due shows totals only, no per-mode lines); Dream card |
+| 2026-10-15 | 54 | 55 | 67% / 80% | 27 | Send form (dream pick p2): `tui.send_form`, a Send form card, and `tui sends` (○: counts only in the CLI) |
 
 ## Refreshing the CLI inventory
 

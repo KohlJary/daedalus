@@ -224,8 +224,8 @@ class SourcesScreen(Screen):
         r = self.selected()
         if r is None:
             self.shell.ask_to_send("Sources", "Run `daedalus source list` and help me connect a tracker to this "
-                                              "project's roadmap. Don't sync anything yet.")
+                                              "project's roadmap. Don't sync anything yet.", "sources")
             return
         name = r["name"]
         self.shell.ask_to_send(f"Source {name}", f"Run `daedalus source sync {name} --dry-run` and summarise the "
-                                                 "proposals it would make. Don't run a real sync until I say so.")
+                                                 "proposals it would make. Don't run a real sync until I say so.", "sources")

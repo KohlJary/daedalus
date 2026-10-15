@@ -269,7 +269,7 @@ class StoryScreen(Screen):
         else:
             source = rel
             prompt = f"{rel} doesn't exist yet. Draft it from what you know of this project, for me to review."
-        self.shell.ask_to_send(source, prompt)
+        self.shell.ask_to_send(source, prompt, "story")
 
     def action_goto_task(self) -> None:
         entry = self._selected()
