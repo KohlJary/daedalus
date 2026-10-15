@@ -63,14 +63,6 @@
       "edict": "0009"
     },
     {
-      "id": "p7-reflection",
-      "title": "Reflection over session logs: digests, delphi, user/self models",
-      "status": "planned",
-      "roadmapItems": [],
-      "notes": "Start with the real fixture capture (interrupt, user rejection, classifier denial, failed Bash, subagent) and the CLAUDE_CONFIG_DIR check; digests first so the benchmark gets a baseline before any reflection runs. Local runner waits on T-e5. Benchmark designed separately (Kohl, 2026-10-14).",
-      "edict": "0010"
-    },
-    {
       "id": "p8-tui",
       "title": "Daedalus TUI: dashboard + embedded Claude pane",
       "status": "planned",
