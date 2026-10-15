@@ -1,7 +1,7 @@
 """
 What `delphi` reads (edict 0010): one bundle per reflection run, built deterministically.
 
-A level bundle holds the period's digests, both models (with confidence after decay), the
+A level bundle holds the period's digests, a spend summary of them, both models (with confidence after decay), the
 tombstones not to propose again, and at the monthly level the evolution, lineage flags and
 unmoved aspirations the report must list. On the first monthly run, with both models empty, it
 also holds the seed sources: the identity files and Claude Code's memory notes for the project.
@@ -22,6 +22,7 @@ from .digest import load_digests
 from .due import month_of, session_day, session_days
 from .fsutil import write_json
 from .paths import reflection_dir
+from .spend import summarize
 
 BUNDLE_SCHEMA = "daedalus.reflection-bundle/1"
 IN_USE_DAYS = 30
@@ -118,6 +119,9 @@ def build_bundle(project_dir: Path, level: str, period: str, settings: dict, sco
         "start": start.isoformat(), "end": end.isoformat(), "scope": scope,
         "digests": digests,
         "models": {model: _model_view(model, settings, today, root) for model in m.MODELS},
+        # Where the period's tokens went (estimated), for tokens findings. Figures in a finding
+        # still cite digest fields (turns.N.units, units, tokens_by_model...), not this summary.
+        "spend": summarize(digests, start, end),
     }
     if level == "monthly":
         bundle["evolution"] = m.evolution(start, end, root)

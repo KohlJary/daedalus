@@ -40,10 +40,37 @@ so two projects can look alike. On Windows, paths are compared without regard to
 | retries | the same call (same `file_path`, or same Bash command) within 5 calls after a failure | inferred |
 | re-reads | a `Read` of a path already read, with no `Edit`/`Write` of it in between | inferred |
 | subagents | each subagent transcript; `reported_tokens` from each background agent's completion notice | shown |
+| turns, compactions | per prompt the user typed; `compact_boundary` events (see Spend) | shown |
 
 Subagent transcripts record streaming placeholders for output tokens, so their per-message output
 totals are a lower bound; `reported_tokens` is the real total. Interrupting a running tool call is
 not counted: it has never been captured in a real transcript.
+
+## Spend
+
+Each digest also records where its tokens went: `tokens_by_model`, the cache writes split by
+lifetime (`cache_creation_5m`, `cache_creation_1h`), `compactions` (each with its trigger and the
+context size before it), and `turns`. A turn is a prompt you typed and everything until the next
+one, replies to background-agent notifications included: its tokens by model, tool calls, prompt
+length and the start of the prompt (redacted like `details`).
+
+Tokens are weighed into **units**, an estimate of relative spend: one unit is one fresh input
+token on Haiku. The weights are API list-price ratios: Opus 5, Sonnet 3, Haiku 1 for input;
+output 5x input; cache reads 0.1x; cache writes 1.25x (5-minute) or 2x (1-hour). How a
+subscription's usage limits weigh tokens isn't published, so units compare sessions, models and
+turns with each other. They are not a price.
+
+`daedalus reflect spend` digests what's new and prints the summary: by model (main thread and
+subagents), by token class, by subagent type, cache hit rate and the share spent on cache writes,
+compactions, the dearest turns, and the share spent on *light turns on the top model* (a short
+prompt, at most one tool call: the turns a cheaper model might have handled; inferred). `--days`,
+`--since`, `--all` (every project), `--top`, `--json`. Every reflection bundle carries the same
+summary for its period as `spend`, so delphi can make `tokens` findings, citing turns by their
+prompt's UUID (`[s:<session> e:<prompt-uuid>]`) and figures by digest field (`turns.3.units`).
+
+The prompt cache is per model, so moving a long conversation to a cheaper model mid-session
+re-writes its whole context at the cache-write rate. Read a high cache-read share as a sign that
+context size, not the model, is where the spend is.
 
 ## Citations
 

@@ -96,6 +96,40 @@ def reflect_tick():
         click.echo(f"Runner: inhale{note}. Due reflections run in your next session, when you say so.")
 
 
+@reflect.command("spend")
+@click.option("--days", type=int, default=7, show_default=True, help="The last N days, today included")
+@click.option("--since", default=None, help="From this date (YYYY-MM-DD) instead of --days")
+@click.option("--all", "all_projects", is_flag=True, help="Every project with sessions, not only this one")
+@click.option("--top", type=int, default=10, show_default=True, help="How many of the dearest turns to list")
+@click.option("--json", "as_json", is_flag=True, help="Print the summary as JSON")
+def reflect_spend(days: int, since: Optional[str], all_projects: bool, top: int, as_json: bool):
+    """Where the tokens went: estimated spend by model, token class, subagent, project and turn.
+
+    Digests first (new or grown sessions only), so the figures are current. Units are relative
+    spend from API list-price ratios (one unit: one fresh input token on Haiku), not a price.
+    """
+    from datetime import timedelta
+
+    from ..reflection.digest import digest_project, load_digests
+    from ..reflection.spend import render, summarize
+    from ..reflection.tick import projects_with_sessions
+
+    end = date.today()
+    start = date.fromisoformat(since) if since else end - timedelta(days=max(days, 1) - 1)
+    projects = sorted(projects_with_sessions()) if all_projects else [str(Path.cwd())]
+    digests, project_of = [], {}
+    for project in projects:
+        digest_project(Path(project))
+        for d in load_digests(Path(project)):
+            digests.append(d)
+            project_of[d["session_id"]] = project
+    summary = summarize(digests, start, end, top=top, project_of=project_of if all_projects else None)
+    if as_json:
+        click.echo(json.dumps(summary, indent=2))
+    else:
+        click.echo(render(summary, "Spend, all projects" if all_projects else "Spend"))
+
+
 @reflect.command("due")
 @click.option("--json", "as_json", is_flag=True, help="Print the due list as JSON")
 def reflect_due(as_json: bool):

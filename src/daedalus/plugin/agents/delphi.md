@@ -30,6 +30,18 @@ A bundle at `.daedalus/reflection/bundles/<level>-<period>.json`
   `reported_tokens`: each background agent's real total); `labels` (`inferred` marks a
   heuristic count: retries, re-reads, interruptions before a reply); `notes` (the session's own
   few lines at exhale); `model_summary_arm` (on, off or none: the A/B test; never mention it).
+- Each digest also has `tokens_by_model`, `units` (estimated spend; one unit is one fresh input
+  token on Haiku, from API list-price ratios: relative, never a price), `turns` (per prompt the
+  user typed: `uuid`, `units`, `tokens_by_model`, `tool_calls`, `chars`, the start of the
+  prompt) and `compactions`.
+- `spend`: the period's spend summary across its digests: by model, token class and subagent
+  type, the cache-write share, compactions, the dearest turns, and light turns on the top model
+  (inferred). Use it to see where the tokens went, then make `tokens` findings that cite turns
+  (`[s:<session> e:<turn uuid>]`) and take figures from digest fields (`turns.N.units`,
+  `units`, `tokens_by_model.<model>.output`), never from the summary. The prompt cache is per
+  model: switching a long session to a cheaper model rewrites its context, so when cache reads
+  dominate, propose ways to keep context small (delegating exploration, exhaling sooner) before
+  proposing a different model.
 - `models`: the user and self models, every entry with its `effective_confidence` after decay,
   and the `tombstones`: observations the user deleted or forgot. Never propose one again.
 - Monthly only: `evolution` (the month's model changes, from the history), `lineage` (self
