@@ -1,5 +1,5 @@
 # Edict 0017: Ophanic, Daedalus's spatial language
-Status: proposed
+Status: accepted
 Depends on: Edict 0012 (the TUI and its .oph designs); Edicts 0008, 0011, 0013 for the structures it maps
 
 *Numbered 0017 after a collision with the toolbox-hooks edict (0016, another session's). Drafted by Daedalus at Kohl's request ("first class Ophanic understanding, for both the obvious frontend design

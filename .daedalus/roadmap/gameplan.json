@@ -298,9 +298,18 @@
       {
         "id": "T-e29",
         "title": "Overnight review PRs: 0017 Ophanic build, perception experiment, Dream screen, send form",
-        "status": "in_progress",
+        "status": "done",
         "details": "All Momus-reviewed, awaiting Kohl: #70 (0017 build, edict proposed), #69 (experiment, pilots 1-3, A1-A13 proposed), #68 (Dream screen), #71 (send form, stacked on #70). No code merged to main from these.",
-        "updated": "2026-10-15"
+        "updated": "2026-10-15",
+        "resolution": "Kohl merged #68 (Dream screen), #69 (perception experiment, pilots 1-3; A1-A13 still proposed), #70 (0017 build) and #73 (send form, carried over from #71) on 2026-10-15."
+      },
+      {
+        "id": "T-e30",
+        "title": "Edict 0017 Ophanic: lint, maps, draw, skill, doctor, send form",
+        "status": "in_progress",
+        "details": "Built in #70 (b28ca53, 5ab9cf3) and #73 (send form), Momus-verified; accepted by Kohl 2026-10-15 after merge. Open: skill untested in a real session (amendment 11); send-form digest join not built; deferred: map palace, oph outline (amendment 12).",
+        "updated": "2026-10-15",
+        "edict": "0017"
       }
     ],
     "deferred": []
