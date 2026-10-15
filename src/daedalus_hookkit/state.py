@@ -46,6 +46,9 @@ def empty(session_id: str, now: float) -> dict:
         "events": [],
         "gate": {"blocks": 0, "passes": 0, "skips": 0, "allowed_by_error": 0},
         "budget": {"per_hour": 0, "used": 0},
+        "budget_log": [],
+        "fired": {},
+        "dropped": {},
     }
 
 
@@ -143,8 +146,44 @@ def _unlock(fd: int) -> None:
 def prune(now: float | None = None) -> None:
     now = time.time() if now is None else now
     try:
-        for p in list(state_dir().glob("*.json")) + list(state_dir().glob("*.json.lock")):
+        files = list(state_dir().glob("*.json"))
+    except OSError:
+        return
+    for p in files:
+        try:
             if now - p.stat().st_mtime > STATE_DAYS * 86400:
                 p.unlink()
+        except OSError:  # one locked or vanished file (Windows) doesn't stop the rest
+            continue
+    for lock in state_dir().glob("*.json.lock"):
+        # a lock file goes only with its state (flock never touches mtime, so age says nothing)
+        try:
+            if not lock.with_suffix("").exists():
+                lock.unlink()
+        except OSError:
+            continue
+
+
+def heartbeat_path() -> Path:
+    return state_dir() / "last-run.json"
+
+
+def heartbeat(event: str, now: float) -> None:
+    """Record that a dispatcher ran, so doctor can tell a registered hook that never runs (its command
+    isn't on the PATH Claude Code uses) from one that does."""
+    path = heartbeat_path()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data = data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        data = {}
+    if now - float(data.get(event, 0) or 0) < 3600:
+        return
+    data[event] = now
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(data), encoding="utf-8")
+        os.replace(tmp, path)
     except OSError:
         pass

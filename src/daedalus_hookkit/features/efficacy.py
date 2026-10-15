@@ -10,24 +10,13 @@ hooks.efficacy_window of its own observable events, and ignored once that window
 nothing is pending, this feature reads the state and writes nothing.
 """
 
-import re
-
 from ..core import Ctx
-
-SEPARATORS = re.compile(r"\|\||&&|;|\||\n")
-ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=\S*$")
+from ..shell import commands
 
 
 def _segments(command: str) -> list:
-    """Each command in a shell line, without leading `cd ...` segments or VAR=value words."""
-    out = []
-    for seg in SEPARATORS.split(command or ""):
-        words = seg.strip().split()
-        while words and ASSIGNMENT.match(words[0]):
-            words = words[1:]
-        if words and words[0] != "cd":
-            out.append(" ".join(words))
-    return out
+    """Each command in a shell line as text (quote-aware, heredoc bodies dropped)."""
+    return [" ".join(words) for words in commands(command)]
 
 
 def _skill_name(name: str) -> str:
@@ -48,7 +37,8 @@ def _matches(spec: str, tool_name: str, tool_input: dict, prompt: str) -> bool:
         return kind == "skill" and bool(words) and _skill_name(words[0].lstrip("/")) == want \
             and words[0].startswith("/")
     if kind == "agent":
-        return tool_name in ("Agent", "Task") and str(tool_input.get("subagent_type") or "general-purpose") == want
+        agent = _skill_name(str(tool_input.get("subagent_type") or "general-purpose"))
+        return tool_name in ("Agent", "Task") and agent == want
     if kind == "skill":
         return tool_name == "Skill" and _skill_name(str(tool_input.get("skill") or "")) == want
     if kind == "bash":

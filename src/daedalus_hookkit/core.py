@@ -106,14 +106,17 @@ def _budgeted(ctx: Ctx, lines: list) -> list:
         if line.cycle and fired.get(line.nudge) == line.cycle:
             continue  # already said this cycle: not a drop, just not news
         if spoke or len(log) >= per_hour:
+            # one dropped event per nudge id, updated in place, so drops can never evict the counted
+            # nudges efficacy reads; the totals are in st["dropped"]
             dropped = st.setdefault("dropped", {})
             dropped[line.nudge] = dropped.get(line.nudge, 0) + 1
-            last = st["events"][-1] if st["events"] else {}
-            if last.get("dropped") and last.get("nudge") == line.nudge:
-                last["dropped_count"] = last.get("dropped_count", 1) + 1
-            else:
+            entry = next((e for e in st["events"] if e.get("dropped") and e.get("nudge") == line.nudge), None)
+            if entry is None:
                 st["events"].append({"at": ctx.now, "hook": line.nudge.split(":")[0], "event": ctx.event,
-                                     "nudge": line.nudge, "followed": None, "tool": line.tool, "dropped": True})
+                                     "nudge": line.nudge, "followed": None, "tool": line.tool, "dropped": True,
+                                     "dropped_count": 1})
+            else:
+                entry["at"], entry["dropped_count"] = ctx.now, entry.get("dropped_count", 1) + 1
             continue
         log.append(ctx.now)
         spoke = True
@@ -165,10 +168,12 @@ def dispatch(event: str, payload: dict, features: list | None = None, now: float
     ctx = Ctx(event, payload, project_dir, settings, time.time() if now is None else now)
     if event in ("SessionStart", "SessionEnd"):
         state_mod.prune(ctx.now)
+    if event == "SessionStart":
+        state_mod.heartbeat(event, ctx.now)
     # One dispatcher of a session at a time: parallel tool calls fire parallel hooks, and state is
     # load-modify-save. A lock that can't be had in time means this call reads but doesn't write.
     with state_mod.locked(ctx.session_id) as have_lock:
-        out = _run(ctx, event, features)
+        out = _run(ctx, event, features, counted=have_lock or not ctx.session_id)
         if ctx.dirty and ctx.session_id and have_lock:
             try:
                 state_mod.save(ctx.state)
@@ -177,7 +182,9 @@ def dispatch(event: str, payload: dict, features: list | None = None, now: float
     return out
 
 
-def _run(ctx: Ctx, event: str, features: list) -> str:
+def _run(ctx: Ctx, event: str, features: list, counted: bool = True) -> str:
+    """counted=False when the state can't be saved (the lock wasn't had): nudges are then held back,
+    since a nudge the budget can't count would let a stuck holder push the budget over."""
     settings = ctx.settings
     lines: list = []
     for feature in features:
@@ -190,5 +197,7 @@ def _run(ctx: Ctx, event: str, features: list) -> str:
                 ctx.touch()["gate"]["allowed_by_error"] = ctx.state["gate"].get("allowed_by_error", 0) + 1
                 lines.append(Line(f"Daedalus: the {feature.name} check didn't run ({type(e).__name__}: {e}); "
                                   "the call was allowed.", kind="notice"))
+    if not counted:
+        lines = [ln for ln in lines if ln.kind != "nudge"]
     lines = _budgeted(ctx, lines) if any(ln.kind == "nudge" for ln in lines) else lines
     return render(event, lines)

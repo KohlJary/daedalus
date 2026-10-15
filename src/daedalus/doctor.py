@@ -13,7 +13,7 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -608,10 +608,40 @@ def check_hook_commands(project_dir: Path) -> list[Finding]:
                     words = str(h.get("command", "") if isinstance(h, dict) else "").split()
                     if words and words[0] in ("daedalus-hook", "daedalus") and shutil.which(words[0]) is None:
                         missing.add(words[0])
-    return [Finding("hook-command-missing",
-                    f"Hooks in .claude/ run `{cmd}`, which isn't on this machine's PATH, so they fail silently. "
-                    "Reinstall daedalus-cli (pip install -e, or pipx), then run `daedalus hydrate`.")
-            for cmd in sorted(missing)]
+    found = [Finding("hook-command-missing",
+                     f"Hooks in .claude/ run `{cmd}`, which isn't on this machine's PATH, so they fail silently. "
+                     "Reinstall daedalus-cli (pip install -e, or pipx), then run `daedalus hydrate`.")
+             for cmd in sorted(missing)]
+    found += check_hook_ran(project_dir)
+    return found
+
+
+def check_hook_ran(project_dir: Path) -> list[Finding]:
+    """The kit's SessionStart dispatcher is registered but has never run since it was registered: Claude
+    Code may be running with a PATH that lacks `daedalus-hook` (it reports that as a non-blocking error),
+    even though this shell has it. The dispatcher records each run (daedalus_hookkit.state.heartbeat)."""
+    from daedalus_hookkit import state as kit_state
+
+    settings = project_dir / ".claude" / "settings.json"
+    try:
+        registered = "daedalus-hook SessionStart" in settings.read_text(encoding="utf-8")
+        since = settings.stat().st_mtime
+    except OSError:
+        return []
+    if not registered:
+        return []
+    try:
+        last = float(json.loads(kit_state.heartbeat_path().read_text(encoding="utf-8")).get("SessionStart", 0))
+    except (OSError, ValueError, AttributeError, TypeError):
+        last = 0.0
+    if last >= since:
+        return []
+    when = datetime.fromtimestamp(since).strftime("%Y-%m-%d %H:%M")
+    return [Finding("hook-never-ran",
+                    f"The SessionStart hook (`daedalus-hook SessionStart`) hasn't run on this machine since it was "
+                    f"registered ({when}). If a session has started since, Claude Code can't find `daedalus-hook` "
+                    "on its PATH: install daedalus-cli where that PATH looks (pipx), or start Claude Code from a "
+                    "shell that has it.")]
 
 
 def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Finding], list[str]]:

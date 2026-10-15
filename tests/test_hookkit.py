@@ -537,6 +537,90 @@ def test_doctor_names_hook_commands_missing_from_path(tmp_path, monkeypatch):
                    {"type": "command", "command": "echo mine"}]}]}}))
     monkeypatch.setattr(shutil, "which", lambda cmd: None if cmd == "daedalus-hook" else "/usr/bin/" + cmd)
     found = check_hook_commands(tmp_path)
-    assert [f.name for f in found] == ["hook-command-missing"] and "daedalus-hook" in found[0].message
+    assert [f.name for f in found] == ["hook-command-missing", "hook-never-ran"] and "daedalus-hook" in found[0].message
     monkeypatch.setattr(shutil, "which", lambda cmd: "/usr/bin/" + cmd)
-    assert check_hook_commands(tmp_path) == []
+    assert [f.name for f in check_hook_commands(tmp_path)] == ["hook-never-ran"]
+
+
+# ---------- Momus's re-review (R1, R2, D4, minors) ----------
+
+
+from daedalus_hookkit.shell import commands  # noqa: E402
+
+
+def test_r1_alternating_dropped_ids_never_evict_counted_nudges(tmp_path):
+    p = project(tmp_path)
+    f = feat("x", ["UserPromptSubmit"], lambda ctx: [Line("a", nudge="x:a", tool="tool:Read"),
+                                                      Line("b", nudge="x:b", tool="tool:Read")])
+    for i in range(1200):
+        dispatch("UserPromptSubmit", payload(p), [f], now=1000 + i)
+    st = kit_state.load("s1")
+    assert sum(1 for e in st["events"] if e.get("counted")) == 6
+    s = hookstate.summarize(st)["nudges"]
+    assert s["x:a"]["shown"] == 6 and s["x:a"]["dropped"] == 1 and s["x:b"]["shown"] == 0
+    assert st["dropped"]["x:a"] + st["dropped"]["x:b"] == 2400 - 6
+    assert len(st["events"]) == 8
+
+
+def test_r2_a_mistyped_state_key_is_repaired(tmp_path):
+    p = project(tmp_path)
+    kit_state.state_dir().mkdir(parents=True)
+    kit_state.state_path("s1").write_text(json.dumps({"session_id": "s1", "budget_log": 5, "fired": [], "events": []}))
+    f = feat("x", ["UserPromptSubmit"], lambda ctx: [Line("hi", nudge="x:h")])
+    assert dispatch("UserPromptSubmit", payload(p), [f]) == "hi"
+
+
+def test_without_the_lock_nudges_are_held_back_but_gates_and_briefs_are_not(tmp_path, monkeypatch):
+    p = project(tmp_path)
+
+    class NoLock:
+        def __init__(self, sid): pass
+        def __enter__(self): return False
+        def __exit__(self, *a): pass
+
+    monkeypatch.setattr(kit_state, "locked", NoLock)
+    f = feat("x", ["UserPromptSubmit"], lambda ctx: [Line("nudge", nudge="x:n"), Line("note", kind="notice")])
+    assert dispatch("UserPromptSubmit", payload(p), [f]) == "note"
+
+
+def test_lock_files_go_only_with_their_state(tmp_path):
+    kit_state.save(kit_state.empty("a", 1.0))
+    with kit_state.locked("a"):
+        pass
+    with kit_state.locked("b"):
+        pass
+    kit_state.prune()
+    assert (kit_state.state_dir() / "a.json.lock").exists()
+    assert not (kit_state.state_dir() / "b.json.lock").exists()
+
+
+def test_doctor_says_when_the_registered_session_start_hook_never_ran(tmp_path):
+    from daedalus.doctor import check_hook_ran
+
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude/settings.json").write_text(json.dumps({"hooks": {"SessionStart": [
+        {"hooks": [{"type": "command", "command": "daedalus-hook SessionStart"}]}]}}))
+    assert [f.name for f in check_hook_ran(tmp_path)] == ["hook-never-ran"]
+    project(tmp_path)
+    dispatch("SessionStart", payload(tmp_path), [])
+    assert check_hook_ran(tmp_path) == []
+
+
+@pytest.mark.parametrize("line, expected", [
+    ("cd x && FOO=1 pytest -q", [["pytest", "-q"]]),
+    ("git commit -m 'a && daedalus gameplan pending now'", [["git", "commit", "-m", "a && daedalus gameplan pending now"]]),
+    ('DAEDALUS_MOMUS_SKIP="two words" gh pr merge 5', [["gh", "pr", "merge", "5"]]),
+    ("echo hi\ndaedalus board read t", [["echo", "hi"], ["daedalus", "board", "read", "t"]]),
+    ("cat > f <<'EOF'\ndaedalus board read t\nEOF\necho done", [["cat", ">", "f", "<<EOF"], ["echo", "done"]]),
+])
+def test_shell_commands(line, expected):
+    assert commands(line) == expected
+
+
+@pytest.mark.parametrize("spec, name, inp, hit", [
+    ("bash:daedalus gameplan pending", "Bash", {"command": "git commit -m 'a && daedalus gameplan pending now'"}, False),
+    ("bash:daedalus board read", "Bash", {"command": "cat > f <<'EOF'\ndaedalus board read t\nEOF"}, False),
+    ("agent:momus", "Agent", {"subagent_type": "daedalus:momus"}, True),
+])
+def test_matching_after_re_review(spec, name, inp, hit):
+    assert efficacy._matches(spec, name, inp, "") is hit
