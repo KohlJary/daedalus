@@ -96,6 +96,22 @@
         "updated": "2026-10-14",
         "edict": "0010",
         "resolution": "explog.py: runs (reflect done), resolutions (pending apply/drop), arms, monthly model changes; allowlisted fields, safe strings only; reflect log / log export. Narrative in docs/experiments/reflection.md with the baseline, fixture capture, dry run 1 and Momus's review."
+      },
+      {
+        "id": "T-r10",
+        "title": "Scopes: home/work/anywhere with aliases; relationship entries default anywhere; home_at_work",
+        "status": "pending",
+        "details": "Amendment e812792. Aliases personal->home, any->anywhere wherever a scope is read (model files, proposals, project config); new writes use the new names. Project configs set to 'personal' on 2026-10-14 rely on the alias.",
+        "updated": "2026-10-14",
+        "edict": "0010"
+      },
+      {
+        "id": "T-r11",
+        "title": "Model export/import between machines, with origins, history on both sides, travelling tombstones",
+        "status": "pending",
+        "details": "Amendment e812792. machine.name for origin; preview before any write; default export leaves out home; idempotent import. Format daedalus.models-export/1 is the future server's sync unit (docs/design/command-server.md, PR #45).",
+        "updated": "2026-10-14",
+        "edict": "0010"
       }
     ],
     "deferred": [],
