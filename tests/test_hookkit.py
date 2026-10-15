@@ -624,3 +624,50 @@ def test_shell_commands(line, expected):
 ])
 def test_matching_after_re_review(spec, name, inp, hit):
     assert efficacy._matches(spec, name, inp, "") is hit
+
+
+# ---------- the shell reader, after Momus's gate review (trial 2026-10-15-momus-gate.md) ----------
+
+
+from daedalus_hookkit.shell import parse  # noqa: E402
+
+
+@pytest.mark.parametrize("line, merges", [
+    ("if ! gh pr checks 53 | grep -q fail; then gh pr merge 53 --merge; fi", [["53", "--merge"]]),
+    ("for f in a b; do gh pr merge $f; done", [["$f"]]),
+    ("( cd x && gh pr merge 7 )", [["7"]]),
+    ("{ gh pr merge 7; }", [["7"]]),
+    ("timeout 20 gh pr merge 8", [["8"]]),
+    ("sudo -u x /usr/bin/gh pr merge 9", [["9"]]),
+    ("env A=1 nohup gh pr merge 9", [["9"]]),
+    ("bash -c 'gh pr merge 10'", [["10"]]),
+    ("eval 'gh pr merge 10'", [["10"]]),
+    ("bash <<'EOF'\ngh pr merge 11\nEOF", [["11"]]),
+    ("gh pr \\\nmerge 12", [["12"]]),
+    ("echo $(gh pr merge 13)", [["13"]]),
+    ("echo `gh pr merge 13`", [["13"]]),
+    ("gh pr merge 14 && gh pr merge 15", [["14"], ["15"]]),
+    ("echo 'gh pr merge 1'; git commit -m \"gh pr merge 2\"", []),
+    ("cat <<'EOF'\ngh pr merge 3\nEOF", []),
+])
+def test_every_merge_a_line_runs_is_seen(line, merges):
+    assert [c.words[3:] for c in parse(line) if c.words[:3] == ["gh", "pr", "merge"]] == merges
+
+
+def test_assignments_belong_to_their_own_command():
+    cmds = parse('echo "set DAEDALUS_MOMUS_SKIP=x"; DAEDALUS_MOMUS_SKIP="a b" gh pr merge 5; gh pr merge 6')
+    assert [(c.words[-1], c.env) for c in cmds] == [("set DAEDALUS_MOMUS_SKIP=x", {}),
+                                                    ("5", {"DAEDALUS_MOMUS_SKIP": "a b"}), ("6", {})]
+
+
+def test_heredoc_bodies_attach_to_their_command_and_substitution():
+    cmds = parse("cat <<'A'\nT-e99\nA\ngit commit -F - <<'B'\nT-e22\nB")
+    assert [(c.words[0], c.heredocs) for c in cmds] == [("cat", ["T-e99"]), ("git", ["T-e22"])]
+    commit = [c for c in parse("git commit -m \"$(cat <<'EOF'\nT-e22: fix\nEOF\n)\"") if c.words[0] == "git"][0]
+    assert commit.words[3] == "SUBST0" and commit.substs["SUBST0"][0].heredocs == ["T-e22: fix"]
+
+
+def test_many_heredoc_starts_parse_in_linear_time():
+    t = time.perf_counter()
+    parse("x <<A\n" * 20000)
+    assert time.perf_counter() - t < 2
