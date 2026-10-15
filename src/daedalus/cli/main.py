@@ -737,6 +737,40 @@ def palace_tests_for(target: str, diff: bool, base: str, depth: int, as_json: bo
     tests_for(Path.cwd(), target, diff, base, depth, as_json)
 
 
+@palace.command("dispatch")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output")
+def palace_dispatch(as_json: bool):
+    """Dispatch rules in effect, and the dispatch edges they find here (issue #47)."""
+    import json as _json
+    from collections import Counter
+    from ..labyrinth.query import (BUS_NAMES, CELERY_CALLS, HANDLER_INTERFACES, _rule_ok, all_dispatch_rules,
+                                   build_query_graph, project_root_for)
+
+    root = project_root_for(Path.cwd())
+    rules = all_dispatch_rules(root)
+    graph = build_query_graph(root).graph
+    found = Counter(label for label in getattr(graph, "edge_labels", {}).values() if not label.startswith("framework"))
+    if as_json:
+        click.echo(_json.dumps({"rules": [{"rule": r, "valid": _rule_ok(r)} for r in rules],
+                                "edges": dict(found)}, indent=2))
+        return
+    click.echo("Built in:")
+    click.echo(f"  message buses: {', '.join(sorted(set(BUS_NAMES.values())))} of a message reach the handler of its "
+               f"type ({', '.join(sorted(HANDLER_INTERFACES))})")
+    click.echo("  Hangfire: Enqueue/Schedule/AddOrUpdate lambdas")
+    click.echo(f"  Celery: task.{'/'.join(sorted(CELERY_CALLS))} on a @task function")
+    click.echo("Project (.daedalus/dispatch.json, shared; .daedalus/config.json palace.dispatch, local):")
+    for rule in rules:
+        click.echo(f"  {'ok     ' if _rule_ok(rule) else 'SKIPPED'} {_json.dumps(rule)}")
+    if not rules:
+        click.echo("  (none)")
+    click.echo("Dispatch edges found here:")
+    for label, count in sorted(found.items()):
+        click.echo(f"  {count:4}  {label}")
+    if not found:
+        click.echo("  (none)")
+
+
 @palace.command("languages")
 def palace_languages():
     """Which languages the palace analyzes here, and where each grammar comes from."""

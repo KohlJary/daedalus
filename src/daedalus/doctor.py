@@ -464,6 +464,29 @@ def check_install(installed_from=_installed_from) -> list[Finding]:
     return findings
 
 
+def check_dispatch_rules(project_dir: Path) -> list[Finding]:
+    """Dispatch rules the palace skips (malformed), and a shared rules file git ignores (so the team never
+    gets it)."""
+    from .labyrinth.query import _rule_ok, all_dispatch_rules
+
+    findings: list[Finding] = []
+    bad = [r for r in all_dispatch_rules(project_dir) if not _rule_ok(r)]
+    if bad:
+        findings.append(Finding(
+            "palace-dispatch-invalid",
+            f"{len(bad)} palace dispatch rule(s) are skipped: {', '.join(json.dumps(r) for r in bad[:3])}. "
+            'A rule is {"publish": "Type.Method", "to": "enclosing:Iface.Method" or "Type.Method"} or '
+            '{"factory": "Iface.Method", "entry": "Base.Method"}.'))
+    shared = project_dir / ".daedalus" / "dispatch.json"
+    if shared.is_file() and _is_git_repo(project_dir) and _git(project_dir, "check-ignore", "-q",
+                                                                 ".daedalus/dispatch.json") is not None:
+        findings.append(Finding(
+            "palace-dispatch-ignored",
+            ".daedalus/dispatch.json is ignored by git, so teammates won't get these rules. "
+            "Run `daedalus hydrate`, or add `!.daedalus/dispatch.json` to .gitignore."))
+    return findings
+
+
 def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Finding], list[str]]:
     """(findings, hints). Hints are informational and never fail the run."""
     from . import workstreams as ws
@@ -510,6 +533,7 @@ def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Fi
 
     findings += check_board_ask_rule(project_dir)
     findings += check_undigested_sessions(project_dir)
+    findings += check_dispatch_rules(project_dir)
     # The install, not the project: reported as hints, so a machine's setup never fails a project's CI.
     # DAEDALUS_DOCTOR_SKIP_INSTALL turns it off (the test suite does).
     if not os.environ.get("DAEDALUS_DOCTOR_SKIP_INSTALL"):
