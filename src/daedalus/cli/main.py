@@ -881,6 +881,23 @@ def roadmap_show(item_id: str):
     show_roadmap_item(Path.cwd(), item_id)
 
 
+@roadmap.command("epitaphs")
+@click.option("--recurring", is_flag=True, help="Only requests dropped three times or more")
+def roadmap_epitaphs(recurring: bool):
+    """Intake that was dropped, when, from where, and why."""
+    from .. import epitaphs
+
+    rows = epitaphs.recurring(Path.cwd()) if recurring else epitaphs.load(Path.cwd())
+    if not rows:
+        click.echo("Nothing dropped yet." if not recurring else "Nothing dropped three times or more.")
+    for r in rows:
+        if recurring:
+            click.echo(f"{r['count']}x {r['title']} (from {', '.join(r['sources'])})"
+                       + (f": last reason: {r['last_why']}" if r["last_why"] else ""))
+        else:
+            click.echo(f"{r['at'][:10]} {r['kind']} {r['key']}: {r['title']}" + (f" ({r['why']})" if r.get("why") else ""))
+
+
 @roadmap.command("add")
 @click.argument("title")
 @click.option("--description", "-d", help="Item description")
@@ -1058,11 +1075,12 @@ def gameplan_pending_apply(proposal_id: str):
 
 @gameplan_pending.command("drop")
 @click.argument("proposal_id")
-def gameplan_pending_drop(proposal_id: str):
-    """Discard a proposal (P1, P2, ... or 'all')."""
+@click.option("--why", default=None, help="Why, in a line: kept with the epitaph of dropped intake")
+def gameplan_pending_drop(proposal_id: str, why: str):
+    """Discard a proposal (P1, P2, ... or 'all'). Dropped intake leaves an epitaph (`daedalus roadmap epitaphs`)."""
     from .commands import drop_pending
 
-    drop_pending(Path.cwd(), proposal_id)
+    drop_pending(Path.cwd(), proposal_id, why)
 
 
 from .reflect import reflect as _reflect  # noqa: E402

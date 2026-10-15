@@ -806,11 +806,11 @@ def apply_pending(project_dir: Path, which: str):
         raise SystemExit(1)
 
 
-def drop_pending(project_dir: Path, which: str):
+def drop_pending(project_dir: Path, which: str, why: Optional[str] = None):
     from . import gameplan as gp
 
     try:
-        dropped = gp.drop_pending(project_dir, which)
+        dropped = gp.drop_pending(project_dir, which, why)
     except gp.GameplanError as e:
         click.echo(str(e), err=True)
         return
