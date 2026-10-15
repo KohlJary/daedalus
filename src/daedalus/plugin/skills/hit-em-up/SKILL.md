@@ -1,6 +1,6 @@
 ---
 name: hit-em-up
-description: Plan a route through the whole work board and push every eligible item as far as the project's policy allows, then report with a route table, the gates reached, one batch of outward-facing actions for approval, and an original closing verse. Use when the user says "hit em up" or asks to work through the board, the backlog or the sprint on their own. Takes a policy name (a file in policies/), 'plan' to stop after the route, a persona ('workplace' or 'full-bore', a file in personas/), a frame ('neutral' or 'battle', a file in frames/), and 'compare' to dry-run personas and frames as a blind 2x2 on the same board.
+description: Plan a route through the whole work board and push every eligible item as far as the project's policy allows, then report with a route table, the gates reached, one batch of outward-facing actions for approval, and an original closing verse. Use when the user says "hit em up" or asks to work through the board, the backlog or the sprint on their own. Takes a policy name (a file in policies/), 'plan' to stop after the route, a persona ('workplace' or 'full-bore', a file in personas/), a frame ('neutral' or 'battle', a file in frames/), 'compare' to dry-run personas and frames as a blind 2x2 on the same board, and 'clash <task>' to have two persona MCs battle over a plan of attack while a crowd checks every receipt.
 ---
 
 # Hit 'em up
@@ -32,6 +32,7 @@ Defaults come from the project's '.daedalus/config.json':
 - 'persona': a file in 'personas/' by its first word ('full-bore' -> 'personas/full-bore.md'). Unset:
   'workplace'. See Personas and frames.
 - 'frame': a file in 'frames/' by its first word ('battle' -> 'frames/battle.md'). Unset: 'neutral'.
+- 'clash': settings for clash mode (see Clash mode).
 - 'maxItems', 'verse': as below.
 
 The sample above leaves 'trust' and 'mode' out on purpose so their adaptive defaults apply; setting them
@@ -51,6 +52,8 @@ Say in the report which values came from config and which from arguments.
 - A frame name ('neutral', 'battle'; overrides 'frame').
 - 'compare' (optionally two persona names and two frame names; default 'workplace full-bore neutral
   battle'): see Compare mode.
+- 'clash <task>': plan one task as a battle between two personas instead of working the board. See Clash
+  mode.
 - A number ('3'): work at most that many items.
 
 ## Steps
@@ -181,6 +184,8 @@ shadow is. Two ship:
 - **workplace** (default): plain voice, no character.
 - **full-bore**: an original battle-rapper character who takes wasted effort personally. He clusters harder,
   refuses busywork, and only brags with checked receipts.
+- **edge-case**: his opposite, an original lyricist who takes fragile work personally. She reads deeper,
+  ranks risk first, and only calls a risk she can show breaks.
 
 A **frame** (a file in 'frames/') is the situation the agent is in: the scene and the stakes, nothing about
 identity. Two ship:
@@ -230,6 +235,16 @@ For testing whether persona and frame change the work, not just the voice, and w
      that identity does work of its own rather than adding energy.
    Say which differences held up under the checks. One compare run is an anecdote: say so, and say how
    many more runs would make it evidence.
+
+## Clash mode
+
+'clash <task>' plans one task instead of working the board. Two personas (default 'full-bore' against
+'edge-case') write blind opening plans, then battle over them in rounds: every bar disses the other side's
+plan and carries a receipt and a move. A crowd ('clash/crowd.md') checks every receipt itself and rules each
+bar; only bars that landed change the plan of record. Out come a plain-voice plan in which every step traces
+to an opening or a landed bar, and a transcript of the battle that stays in the report folder. Clash is
+read-only, like a dry run. The full protocol, including the 'solo' comparison that tests whether the battle
+beats each MC planning alone, is in 'clash/protocol.md'; read it completely before a clash.
 
 ## Never
 
