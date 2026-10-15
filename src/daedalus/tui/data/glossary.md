@@ -150,3 +150,17 @@ values it takes. A setting can be set for you (globally) or for one project;
 the project's value wins. Tokens are never settings: they live in the system
 keyring and are never shown.
 *Lives in* `~/.config/daedalus/config.json` (yours) and `.daedalus/config.json` (this project's, not committed). *CLI:* `daedalus config --schema`, `daedalus config <key> <value>`
+
+## A/B experiment
+Whether showing Daedalus its models at the start of a session helps. Each
+session is put in an arm, `on` (it sees the models) or `off`, chosen in code
+from a logged seed so nothing being measured can steer it. The experiment log
+records runs, resolutions, arms and model changes as counts and IDs only, so
+it can be shared.
+*Lives in* `.daedalus/reflection/experiment-log.jsonl` and `arms.json`. *CLI:* `daedalus reflect log`, `daedalus reflect arm`
+
+## TUI plugin
+A package that adds to the TUI: a kind of item in Needs you, Explain cards, or
+a screen in the plugin menu (`m`). It registers through the `daedalus.tui`
+entry point. Plugins can't change the home screen's layout or add writes.
+*Lives in* an installed package's `daedalus.tui` entry point. *CLI:* `pip show <package>`
