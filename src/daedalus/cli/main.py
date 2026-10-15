@@ -310,6 +310,36 @@ def edict_show(number: str):
     show_edict(Path.cwd(), number)
 
 
+@edict.command("tests")
+@click.argument("number")
+@click.option("--write", is_flag=True, help="Add a skipped test for every criterion that has none")
+def edict_tests(number: str, write: bool):
+    """The edict's acceptance criteria as tests: which are tested, which are still skeletons.
+
+    With --write, adds tests/edicts/test_edict_NNNN.py entries for criteria that have none (never
+    overwriting a test). Replace each skip with a real test as you build.
+    """
+    from .. import edict_tests as et
+    from ..edicts import EdictError
+
+    try:
+        if write:
+            path, added = et.write_skeleton(Path.cwd(), number)
+            click.echo(f"{path}: added {len(added)} skeleton test(s)" + (": " + ", ".join(added) if added else ""))
+        state = et.status(Path.cwd(), number)
+    except EdictError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(1)
+    if not state:
+        click.echo("No acceptance criteria found (a bulleted '## Acceptance criteria' section).")
+        return
+    marks = {"tested": "[x]", "skeleton": "[ ]", "missing": "[-]"}
+    for cid, s in state.items():
+        click.echo(f"{marks[s]} {cid} ({s})")
+    counts = {k: sum(1 for v in state.values() if v == k) for k in marks}
+    click.echo(f"{counts['tested']} tested, {counts['skeleton']} skeleton, {counts['missing']} without a test")
+
+
 @edict.command("dissent")
 @click.argument("number")
 @click.option("--agent", default="daedalus", show_default=True, help="Who is dissenting")
