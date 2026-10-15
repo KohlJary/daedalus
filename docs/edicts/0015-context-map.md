@@ -5,7 +5,9 @@ Depends on: Edict 0007 (hooks registered by init and hydrate; hooks make no mode
 
 *Drafted by Daedalus at Kohl's request in conversation on 2026-10-15. Momus reviewed the first
 draft (`.daedalus/momus/trials/2026-10-15-edict-0015-readiness.md`), and this text folds in its
-findings. Kohl accepted it on 2026-10-15.*
+findings. Kohl accepted it on 2026-10-15. Before the PR merged, it was aligned with Edict 0016 (the shared
+hook kit; Stop never prints), following 0016's readiness review, and given library functions for
+the TUI.*
 
 ## Intent
 Today the context window is one undifferentiated block. Daedalus can't see what fills it, and
@@ -60,27 +62,27 @@ to look by hand; nothing depends on anyone running them.
 
 | Event | Command | Does |
 |---|---|---|
-| PostToolUse, throttled; Stop | `daedalus hook context` | Extends the map's index from the transcript's new bytes. Prints nothing unless a threshold is crossed (below). |
-| PreCompact | `daedalus hook context` | Saves the plan for this boundary. No output: the docs give PreCompact no way to add instructions. |
-| SessionStart (source `compact`) | `daedalus hook context` | Runs the check against the saved plan and puts back what the summary lost (below). |
+| PostToolUse | the context feature | Extends the map's index from the transcript's new bytes. Prints nothing unless a threshold is crossed (below). |
+| Stop | the context feature | Extends the index. **Never prints:** any Stop output continues the turn and costs a full extra one. |
+| PreCompact | the context feature | Saves the plan for this boundary. No output: the docs give PreCompact no way to add instructions. |
+| SessionStart (source `compact`) | the context feature | Runs the check against the saved plan and puts back what the summary lost (below). |
 
-- **Registration** goes through `HOOKS` in `hooks.py`, beside the existing commands on the same
-  events, under the config key `hooks.context` (default true). `init` and `hydrate` add the hook,
-  and turning the key off removes it. Other hooks are never touched.
-- **A small hook module.** The hook path imports only the standard library and a small stdlib-only
-  module, not `daedalus.config` or the CLI. It reads its few settings from the project's config
-  JSON directly. It finishes in under 100 ms on a warm index.
+- **It runs on Edict 0016's hook kit.** The context hook is a feature of the kit's dispatchers,
+  under the config key `hooks.context` (default true). 0016 owns registration, the standard-library
+  kit and the shared noise budget. Whichever of the two edicts is built first builds the kit as 0016
+  specifies. The hook path imports only the standard library, and on a warm index it finishes in
+  under 100 ms.
 - **Cold start.** If there's no index yet and the transcript is over `context.cold_limit_mb`
   (default 5), the hook indexes in slices of that size, one per call, and stays silent until it
   has caught up. It never blocks a turn on a full parse.
 - **Fail soft.** On any error the hook prints nothing and exits 0.
 - **The prompt cache is safe.** Hook output goes only where the docs put it, at the end of the
-  context: PostToolUse `additionalContext`, Stop's own channel, or SessionStart output after a
+  context: PostToolUse `additionalContext`, or SessionStart output after a
   compaction, when the cache is rebuilt anyway. Nothing is written into files read at session
   start. This is the same rule as 0014.
-- **A noise budget.** The PostToolUse and Stop paths speak at most once per
-  `context.nudge_minutes` (default 20), and only when what they would say has changed. Each line
-  stays under 300 characters, in a fixed format.
+- **A noise budget.** The PostToolUse path speaks at most once per `context.nudge_minutes`
+  (default 20), and only when what it would say has changed. Its lines also count against 0016's
+  `hooks.budget_per_hour`. Each line stays under 300 characters, in a fixed format.
 
 ### Measuring
 - **The context size is exact.** Every main-thread assistant entry carries its request's `usage`.
@@ -142,6 +144,19 @@ to look by hand; nothing depends on anyone running them.
 - **Output** shows the ten largest lines (`--all` for every line), or `--json`. Each number is
   labelled `exact`, `attributed` or `estimated`. The total is exact, and the lines sum to it
   within one token per line.
+- **Library functions for the TUI (0012),** which calls functions and never parses CLI output:
+  - `context.measure(project_dir, session_id) -> dict` returns `session_id`, `measured_at`,
+    `window_tokens`, `used_tokens`, `measured` (true when exact), `by_subject` (each item has
+    `key`, `subject`, `kind` (file, command, agent, conversation, output or other), `tokens`,
+    `share` (0-1), `quiet`, `last_touched`), `by_task` (`key`, `task`, `tokens`, `share`, `quiet`),
+    `plan` (`key`, `action`, `reason`) and `pins`.
+  - `context.plan(...)`, `context.pin(project_dir, session_id, key)` and `unpin` are the same
+    operations as the CLI.
+  - Each subject and task has a stable `key`, so a pin set from the TUI survives later
+    measurements.
+  - `--json` prints the same dict.
+  - The files the TUI should watch (the per-session index and saved plans under the cache
+    directory) are listed in the README.
 
 ### The plan
 - **Each task** (or each subject, with `--by subject`) gets one mark, checked in this order:
@@ -167,7 +182,7 @@ to look by hand; nothing depends on anyone running them.
   overwrites the one a check needs.
 
 ### Nudges: when to compact
-The PostToolUse/Stop hook says one line, within the noise budget, in two cases.
+The PostToolUse hook says one line, within the noise budget, in two cases.
 
 1. **A natural breakpoint.** The context is past `context.breakpoint_percent` of the window
    (default 40), and the parts marked `drop` make up at least `context.drop_percent` of it
@@ -259,9 +274,12 @@ These keys register in the schema registry (0011), each with a description:
 - `context.window_tokens` and `context.cold_limit_mb`
 
 ## Acceptance criteria
-- **Registration.** `init` and `hydrate` register `daedalus hook context` for PostToolUse, Stop,
-  PreCompact and SessionStart beside the existing hooks. Running hydrate twice doesn't duplicate
-  it, and `hooks.context false` removes only it.
+- **Registration.** With `hooks.context` on, 0016's dispatchers for PostToolUse, Stop, PreCompact
+  and SessionStart run the context feature. With it off, they don't, and nothing else changes. The
+  Stop and PreCompact paths print nothing, even when a nudge would be due.
+- **Library.** `context.measure` returns the dict above for a fixture. Its `key`s are stable
+  across two measurements of a growing transcript. `context.pin` with a key keeps that part in
+  every later plan.
 - **Exact size.** On a fixture with `usage` on its assistant entries (several entries sharing a
   `requestId`), `daedalus context --json` reports the last request's context as the fixture's
   sum. The lines sum to it within one token per line.
