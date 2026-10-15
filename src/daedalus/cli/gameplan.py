@@ -600,7 +600,7 @@ def proposals_from_reconstruction(reconstruction: dict[str, Any]) -> tuple[list[
     return proposals, skipped
 
 
-def drop_pending(project_dir: Path, which: str) -> list[dict[str, Any]]:
+def drop_pending(project_dir: Path, which: str, why: Optional[str] = None) -> list[dict[str, Any]]:
     """Discard proposals. Dropping a source's proposal is remembered so the next sync doesn't bring it
     back: a dropped update keeps the local values (its remote values become the baseline), and a dropped
     write-back is recorded as `dropped` (doctor then knows it wasn't forgotten). Nothing is called."""
@@ -610,5 +610,8 @@ def drop_pending(project_dir: Path, which: str) -> list[dict[str, Any]]:
         from ..sources import sync as source_sync
 
         source_sync.record_drops(project_dir, [p for p in chosen if p.get("kind") in SOURCE_DROP_KINDS])
+    from .. import epitaphs
+
+    epitaphs.record(project_dir, chosen, why)  # dropped intake keeps a one-line epitaph
     save_pending(project_dir, [p for p in proposals if p not in chosen])
     return chosen

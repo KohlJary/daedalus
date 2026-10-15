@@ -538,6 +538,11 @@ def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Fi
     # DAEDALUS_DOCTOR_SKIP_INSTALL turns it off (the test suite does).
     if not os.environ.get("DAEDALUS_DOCTOR_SKIP_INSTALL"):
         hints += [f"{f.name}: {f.message}" for f in check_install()]
+    from . import epitaphs as _ep
+
+    hints += [f"intake-dropped-repeatedly: '{r['title']}' was dropped {r['count']} times (from {', '.join(r['sources'])}). "
+              "An unmet need, or a decision worth writing down. `daedalus roadmap epitaphs --recurring`"
+              for r in _ep.recurring(project_dir)]
     hints += edict_test_hints(project_dir, edicts)
     findings += check_project_map(project_dir)
     findings += check_empty_templates_read(project_dir, settings["stale_task_days"], today=today)
