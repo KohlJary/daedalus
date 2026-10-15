@@ -5,7 +5,7 @@ The model's only job is grouping: which ideas say the same thing. Everything tha
 code:
 - the bundle (every idea since the last review, plus the ideas of earlier themes, the roadmap and the plan);
 - verifying that every idea and roadmap ID a theme names exists (a theme naming an unknown ID is dropped);
-- counting distinct dreams, and distinct top seeds, per theme;
+- counting distinct dreams, and distinct seed sets (order-free), per theme;
 - an idea named by two themes stays with the first; a theme left with no ideas is dropped, not written;
 - theme IDs: a theme takes the ID of the earlier theme it shares the most idea IDs with, or a new one. An
   earlier ID goes to at most one theme per review: when several themes overlap the same earlier theme,
@@ -14,7 +14,7 @@ code:
   this review claimed;
 - earlier themes this review didn't reproduce (merged or renamed away) are kept but superseded: `elevated`
   false, `superseded` true, and `superseded_by` the theme now holding one of their ideas, if any;
-- elevation: at least dream.recur_min dreams that don't share a top seed, and nothing applied covers it.
+- elevation: at least dream.recur_min dreams with different seed sets, and nothing applied covers it.
 
 The review agent is not told recur_min.
 """
@@ -126,6 +126,12 @@ def prompt(bundle: dict) -> str:
     return REVIEW_PROMPT.format(ideas=ideas, plan=plan)
 
 
+def _seed_set(project_dir: Path, dream_id: str) -> Optional[str]:
+    """The dream's seeds as an order-free signature, or None when it had none."""
+    seeds = (read_json(store.dream_dir(project_dir, dream_id) / "seeds.json", {}) or {}).get("seeds", [])
+    return "|".join(sorted(s["id"] for s in seeds)) if seeds else None
+
+
 def _top_seed(project_dir: Path, dream_id: str) -> Optional[str]:
     seeds = (read_json(store.dream_dir(project_dir, dream_id) / "seeds.json", {}) or {}).get("seeds", [])
     return seeds[0]["id"] if seeds else None
@@ -181,7 +187,9 @@ def record(project_dir: Path, bundle: dict, answer: Any, settings: dict, today: 
         # Ideas this theme inherits: the earlier theme's, less any another theme claimed in this review
         all_ids = sorted(set(ids) | (set(old.get("ideas", [])) - (used - set(ids))))
         all_dreams = sorted({i.rsplit(".", 1)[0] for i in all_ids})
-        all_tops = sorted({_top_seed(project_dir, d) or d for d in all_dreams})
+        # Independence is by seed *set*, not top seed: the same seeds in another order (the recency penalty
+        # rotates the top seed on unchanged state) are the same material, so they count once (Momus N1)
+        all_tops = sorted({_seed_set(project_dir, d) or d for d in all_dreams})
         # Only something applied covers a theme. Pending proposals aren't in the roadmap or the plan, so
         # anything `plan` holds is applied: a dream pick that is still pending covers nothing.
         kept.append({"id": tid, "new": n not in claimed, "title": str(t.get("title", ""))[:120],
@@ -226,9 +234,9 @@ def render(themes: list[dict], dropped: list[dict], recur_min: int, name: str,
         state = ("elevated: proposed through the dream source" if t["elevated"] else
                  f"covered by {t['integrated_by']}" if t["integrated_by"] else
                  f"below {recur_min} dreams with different top seeds")
-        indep = "" if t["independent"] else " (some dreams shared a top seed)"
+        indep = "" if t["independent"] else " (some dreams shared their seeds)"
         lines += [f"## {t['id']}: {t['title']}", "", t["summary"], "",
-                  f"- In {t['dreams']} dream(s), {t['distinct_top_seeds']} distinct top seed(s){indep}",
+                  f"- In {t['dreams']} dream(s), {t['distinct_top_seeds']} distinct seed set(s){indep}",
                   f"- {state}", f"- Ideas: {', '.join(t['ideas'])}", ""]
     if superseded:
         lines += ["## Earlier themes this review didn't reproduce (no longer elevated)", ""]

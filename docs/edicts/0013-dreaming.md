@@ -356,3 +356,8 @@ Whether dreaming earns its slot is an open question, so it is recorded like 0010
        unless `--include-private` is given.
      - The first dream is kept by merging branch `docs/dream-2026-10-15`.
      - Cass's wake check matches four words; the point stands that keyword waking is dropped.
+- **2026-10-15: from Momus's build review (`.daedalus/momus/trials/2026-10-15-edict-0013-build.md`).** Recurrence is
+  independent when the dreams' seed *sets* differ, not their top seeds: seeds are deterministic, so unchanged state
+  gives the same seeds, and the recency penalty that varies the top seed would otherwise make reordered material look
+  independent. A recurring theme on unchanged project state is therefore not elevated; it needs new material or an
+  owner's theme. `dream keep` refuses to overwrite an existing file unless `--force`. Made under Kohl's overnight grant.

@@ -547,3 +547,16 @@ def test_the_log_reports_elevated_theme_outcomes(dreaming):
     theme = next(p for p in pending(dreaming) if p["origin"]["external_id"].startswith("theme:"))
     run("gameplan", "pending", "drop", theme["id"])
     assert "Elevated themes (synced / applied / dropped / built): 0 / 0 / 1 / 0." in run("dream", "log").output
+
+
+def test_reordered_seeds_are_not_independent_recurrence(dreaming, monkeypatch):
+    """Momus N1: the recency penalty rotates the top seed on unchanged state; the same seed set in another
+    order is the same material and counts once."""
+    ids = [make_dream(dreaming, today=date(2026, 10, 1 + k)) for k in range(3)]
+    sets = {"|".join(sorted(s["id"] for s in json.loads((store.dream_dir(dreaming, d) / "seeds.json").read_text())["seeds"]))
+            for d in ids}
+    out = _review(dreaming, [{"title": "Same stuff", "summary": "x", "ideas": [f"{d}.i4" for d in ids],
+                              "integrated_by": None}])
+    assert out["themes"][0]["distinct_top_seeds"] == len(sets)
+    if len(sets) == 1:
+        assert not out["themes"][0]["elevated"]
