@@ -15,7 +15,7 @@ broken source is a kind of drift.
 │                                      │       Task → gameplan task                                │
 │                                      │ Writes back: state on task done (asks first)              │
 │                                      ├───────────────────────────────────────────────────────────┤
-│                                      │ r sync now · c configure (opens Config) · ? explain       │
+│                                      │ s send to Claude (dry-run sync) · c configure · ? explain │
 ├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
 │ ◆KeyBar                                                                                          │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -33,8 +33,10 @@ note: the source declares its own mapping and write-back; the TUI just shows the
 │                                      │ Writes back: close + resolution comment (asks first)      │
 │                                      │ Auth: gh CLI token ✓                                      │
 │                                      ├───────────────────────────────────────────────────────────┤
-│                                      │ r sync now · c configure (opens Config) · ? explain       │
+│                                      │ s send to Claude (dry-run sync) · c configure · ? explain │
 ├──────────────────────────────────────┴───────────────────────────────────────────────────────────┤
 │ ◆KeyBar                                                                                          │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 note: zero-config on a GitHub repo: the repository comes from origin, auth from gh.
+note: no sync key. A sync reaches the tracker, so the TUI offers it to Claude
+as `daedalus source sync <name> --dry-run` instead (edict 0012's v1 writes).
