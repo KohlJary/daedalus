@@ -45,3 +45,17 @@ def test_a_matching_install_reports_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(metadata, "distribution", lambda name: FakeDist() if name == "daedalus-cli" else real(name))
     monkeypatch.setattr(metadata, "packages_distributions", lambda: {"daedalus": ["daedalus-cli"]})
     assert doctor.check_install_metadata(tmp_path) == []
+
+
+def test_markers_and_unusual_toml_are_read(tmp_path):
+    import sys
+
+    if sys.version_info < (3, 11):
+        return
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'daedalus-cli'\ndependencies = ['click>=8', \"pywin32; sys_platform=='win32'\", "
+        "\"tomli; python_version<'3.0'\"]\n[project.entry-points.'daedalus.sources']\nx = 'a:b'\n")
+    groups, deps = doctor._declared(tmp_path)
+    assert groups == {"daedalus.sources": {"x"}} and "click" in deps
+    if sys.platform != "win32":
+        assert "pywin32" not in deps and "tomli" not in deps

@@ -438,11 +438,37 @@ def _same_version(a: str, b: str) -> bool:
     return norm(a) == norm(b)
 
 
+def _marker_holds(marker: str) -> bool:
+    """Whether a PEP 508 environment marker holds here; unknown markers count as holding."""
+    try:
+        from packaging.markers import Marker
+
+        return Marker(marker.strip()).evaluate()
+    except Exception:
+        return True
+
+
 def _declared(source: Path) -> tuple[dict[str, set], set]:
     """({entry-point group: names}, dependency distribution names) that the checkout's pyproject.toml declares."""
     try:
         text = (source / "pyproject.toml").read_text(encoding="utf-8")
     except OSError:
+        return {}, set()
+    try:
+        import tomllib  # Python 3.11+: real TOML, any formatting
+
+        project = tomllib.loads(text).get("project", {})
+        groups = {g: set(eps) for g, eps in (project.get("entry-points") or {}).items()}
+        deps = set()
+        for spec in project.get("dependencies") or []:
+            name, _, marker = spec.partition(";")
+            if marker.strip() and not _marker_holds(marker):
+                continue  # e.g. tomli; python_version < '3.11' on a newer Python
+            deps.add(re.split(r"[\s<>=!~\[(]", name.strip(), maxsplit=1)[0].lower().replace("_", "-"))
+        return groups, deps
+    except ImportError:
+        pass
+    except Exception:
         return {}, set()
     groups: dict[str, set] = {}
     for m in re.finditer(r'^\[project\.entry-points\."([^"]+)"\]\s*$(.*?)(?=^\[|\Z)', text, re.M | re.S):
