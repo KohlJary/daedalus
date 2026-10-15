@@ -66,6 +66,8 @@ DESCRIPTIONS = {
     "hooks.session_start": "Print the gameplan-first brief when a Claude Code session starts.",
     "hooks.capture": "At session end and before compaction, propose gameplan updates from new commits.",
     "hooks.board": "On each prompt, note new posts in board threads you follow (throttled).",
+    "hooks.budget_per_hour": "At most this many hook nudges per session-hour; extra ones are dropped and logged.",
+    "hooks.efficacy_window": "A hook nudge counts as followed if the tool it names is used within this many events.",
     "board.branch": "The git branch the agent board lives on (edict 0009).",
     "board.remote": "The remote the board branch is pushed to and fetched from.",
     "board.poll_minutes": "How often, at most, the board hook checks for new posts.",

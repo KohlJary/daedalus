@@ -24,7 +24,8 @@ from .fsutil import read_json, write_json
 from .spend import units_by_model
 from .paths import norm_path, owner_project, projects_dir, sessions_dir
 
-SCHEMA_VERSION = 3  # 2: event_days; AskUserQuestion answers are not prompt approvals. 3: spend (turns, by model)
+SCHEMA_VERSION = 4  # 2: event_days; AskUserQuestion answers are not prompt approvals. 3: spend (turns, by model).
+# 4: agent_calls, skill_calls, hooks (edict 0016)
 RETRY_WINDOW = 5  # default; reflection.retry_window in config
 
 KNOWN_TYPES = {
@@ -366,6 +367,30 @@ def count_stream(s: Stream, retry_window: int = RETRY_WINDOW) -> dict:
     return {"events": events, "tools": tools, "details": details}
 
 
+def calls_by(calls: list, tools: tuple, field: str, default: str = "") -> dict:
+    """Tool calls of the given tools, counted by one input field (subagent type, skill name)."""
+    counts: dict[str, int] = {}
+    for c in calls:
+        if c["tool"] in tools:
+            name = str((c.get("input") or {}).get(field) or default)
+            name = name.rsplit(":", 1)[-1] if field == "skill" else name
+            counts[name] = counts.get(name, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def hook_summary(session_id: str) -> Optional[dict]:
+    """The hook kit's efficacy summary for the session (edict 0016), or None when the kit kept no state.
+    The kit prunes its state after a week, so a digest built later has none."""
+    from .. import hookstate
+
+    try:
+        if not hookstate.exists(session_id):
+            return None
+        return hookstate.summarize(hookstate.load(None, session_id))
+    except Exception:
+        return None
+
+
 # ---------- a session ----------
 
 
@@ -408,6 +433,7 @@ def build_digest(session_file: Path, arms: Optional[dict] = None, previous: Opti
     session_id = session_file.stem
     assigned = (arms or {}).get(session_id, {})
     arm = assigned.get("arm", "none")
+    hooks_now = hook_summary(session_id)
     states = [{"file": session_file.name, **transcript_state(session_file)}]
     states += [{"file": f"{session_id}/subagents/{f.name}", **transcript_state(f)} for f in subagent_files(session_file)]
     return {
@@ -430,6 +456,11 @@ def build_digest(session_file: Path, arms: Optional[dict] = None, previous: Opti
         "tool_calls": len(main.calls),
         "prompts": len(main.prompts),
         "tools": counted["tools"],
+        # Which subagents and skills were used (edict 0016's audit, as a query instead of a regex hunt)
+        "agent_calls": calls_by(main.calls, ("Agent", "Task"), "subagent_type", "general-purpose"),
+        "skill_calls": calls_by(main.calls, ("Skill",), "skill"),
+        # The hook kit's nudges: shown, followed, ignored, pending, dropped; the gate's counts
+        "hooks": hooks_now if hooks_now is not None else (previous or {}).get("hooks"),
         "counts": {k: len(v) for k, v in events.items()},
         # Every tool call (assistant event) and its result (user event), so findings can cite them
         "calls": [{"uuid": c["uuid"], "tool": c["tool"], "result": (main.results.get(c["id"]) or {}).get("uuid")}
