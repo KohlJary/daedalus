@@ -1,0 +1,93 @@
+{
+  "description": "Multi-phase plans currently in flight. Each phase references roadmap item ids; the activePhase section breaks the current phase into concrete tasks with status. Survives conversation compactions \u2014 a fresh session can pick up by reading this file.",
+  "phases": [
+    {
+      "id": "p9-sources",
+      "title": "Sources and roadmap intake: ADO + GitHub Issues, plugin seam for Jira",
+      "status": "in_progress",
+      "roadmapItems": [],
+      "notes": "",
+      "edict": "0011"
+    }
+  ],
+  "activePhase": {
+    "id": "p9-sources",
+    "title": "Sources and roadmap intake: ADO + GitHub Issues, plugin seam for Jira",
+    "started": "2026-10-14",
+    "goal": "Build edict 0011 (as amended 2026-10-14) to its acceptance criteria, offline, in a worktree, ending in a PR with Momus's review.",
+    "sequencing": "Night shift 2026-10-14/15, unattended. Work in a worktree on feat/0011-sources from main. Order (Momus F14): T-s1 schema registry -> T-s2 proposal kinds -> T-s3 roadmap storage -> T-s4 plugin interface + GitHub -> T-s5 ADO (synthetic, unverified; Kohl finishes it live at work) -> T-s6 write-back + doctor -> T-s7 Momus + PR -> T-s8 dream. PR #44 is open and touches doctor.py: put source checks in their own function after run_checks. Never: live sync, real gh/keyring calls in tests, push to main, edit edicts. If the edict is unclear, write a dissent or a note in the PR and skip that part; don't guess.",
+    "tasks": [
+      {
+        "id": "T-s1",
+        "title": "Config schema registry + sources group",
+        "status": "pending",
+        "details": "config_schema.py (key, type, default, description, choices); core keys from dataclasses + SETTING_CHOICES; free-form sources group, project-overridable; daedalus config validates. 0012 reuses it.",
+        "updated": "2026-10-14",
+        "edict": "0011"
+      },
+      {
+        "id": "T-s2",
+        "title": "New proposal kinds: roadmap-new, roadmap-update, write-back",
+        "status": "pending",
+        "details": "PROPOSAL_KINDS, proposal_key (src:/wb: keys), describe, apply_pending; unknown kind raises; re-sync idempotent against index.json and every workstream's pending.",
+        "updated": "2026-10-14",
+        "edict": "0011"
+      },
+      {
+        "id": "T-s3",
+        "title": "Roadmap as committed intake",
+        "status": "pending",
+        "details": "index.json committed (gitignore blocks + _ensure_gameplan_tracked migration); item origin + synced baseline; task origin + roadmapItem; roadmap show.",
+        "updated": "2026-10-14",
+        "edict": "0011"
+      },
+      {
+        "id": "T-s4",
+        "title": "Source plugin interface + GitHub Issues source",
+        "status": "pending",
+        "details": "daedalus.sources entry point; mapping with owned fields + state map; on_conflict; GitHub zero-config from origin + gh token (stubbed in tests); synthetic labelled fixtures; source list/sync/status, --dry-run; separate-package plugin test.",
+        "updated": "2026-10-14",
+        "edict": "0011"
+      },
+      {
+        "id": "T-s5",
+        "title": "ADO source (synthetic, unverified)",
+        "status": "pending",
+        "details": "WIQL @Me/@CurrentIteration default; Epic/Feature/Story/Bug/Task mapping; synthetic fixtures with doc URLs; status reports unverified. Kohl finishes and verifies it live on the work machine.",
+        "updated": "2026-10-14",
+        "edict": "0011"
+      },
+      {
+        "id": "T-s6",
+        "title": "Write-back + doctor source checks",
+        "status": "pending",
+        "details": "write-back proposals on task done (origin or roadmapItem); applied/dropped recorded on the item; doctor: source health, closed-outside drift, unrecorded write-back; own function after run_checks.",
+        "updated": "2026-10-14",
+        "edict": "0011"
+      },
+      {
+        "id": "T-s7",
+        "title": "Momus review + PR",
+        "status": "pending",
+        "details": "Momus against 0011's criteria; fix what he finds with tests; PR 'Implements edict 0011' from the branch; CI green. Do not merge.",
+        "updated": "2026-10-14",
+        "edict": "0011"
+      },
+      {
+        "id": "T-s8",
+        "title": "Dream",
+        "status": "pending",
+        "details": "After the PR: open-ended speculation on where Daedalus could go, for Kohl. docs/dreams/2026-10-15.md, labelled speculative. No feasibility filter while writing, no Momus on it; quantity and range over polish; mark the few you'd most want to build. See the status note for the brief.",
+        "updated": "2026-10-14"
+      }
+    ],
+    "deferred": [],
+    "edict": "0011"
+  },
+  "owner": {
+    "id": "sources",
+    "kind": "session",
+    "git_author": null
+  },
+  "claims": []
+}

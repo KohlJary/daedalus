@@ -23,6 +23,27 @@ and `daedalus doctor`. This file carries what the gameplan can't say. See
   shipped identity text calls Kohl "he"; a fix awaits Kohl's go-ahead.
 - Digests of this repo's sessions are backfilled in the main checkout's .daedalus/reflection/.
 
+## Night shift brief (2026-10-14/15): edict 0011, then a dream
+- **Work:** workstream `sources`, phase p9-sources, tasks T-s1 to T-s8. Run
+  `daedalus gameplan --workstream sources show`. The edict is 0011 as amended. Momus's readiness
+  review that shaped it is in `.daedalus/momus/trials/2026-10-14-edicts-0011-0012-readiness.md`
+  on Kohl's machine only.
+- **Boundaries:** worktree on `feat/0011-sources`. Tests never touch live services. No pushing to
+  main, no edits to edicts, no live sync. Where the edict is unclear, write a dissent or a PR note
+  and skip that part.
+- **The dream (T-s8), at Kohl's request:** after the PR, write `docs/dreams/2026-10-15.md`, open-ended
+  speculation on where Daedalus could go.
+  - *Generate before judging.* Write wide first: thirty-plus ideas, from small to absurd, one or two
+    lines each, without stopping to check feasibility or hedging each one. Then a second pass picks
+    the three to five you would most want to build, and says what would make each one real.
+  - *It is not a proposal.* Ideas may cut against current edicts. Nothing goes into the gameplan
+    or roadmap, and Momus doesn't review it. Label the file speculative at the top.
+  - *Material, if wanted:* the gaps in `docs/design/tui/coverage.md`; what the build taught you; the
+    aspirations idea in edict 0010 (entropy, not evidence); Kohl's "text is all you need" thesis
+    in `~/ophanic/doc/`.
+  - *Why:* Kohl finds full generative speculation hard to get out of Claude, and hopes Daedalus
+    can help with that. This is a first try at giving it a protected slot.
+
 ## TUI design session (2026-10-14)
 - **Edicts 0011 (sources and roadmap intake) and 0012 (the TUI)** are accepted and tracked as p9-sources
   and p8-tui. The design, coverage tracking and glossary are in `docs/design/tui/`. Build 0011 first.
