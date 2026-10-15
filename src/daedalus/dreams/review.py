@@ -6,7 +6,14 @@ code:
 - the bundle (every idea since the last review, plus the ideas of earlier themes, the roadmap and the plan);
 - verifying that every idea and roadmap ID a theme names exists (a theme naming an unknown ID is dropped);
 - counting distinct dreams, and distinct top seeds, per theme;
-- theme IDs: a theme takes the ID of the earlier theme it shares the most idea IDs with, or a new one;
+- an idea named by two themes stays with the first; a theme left with no ideas is dropped, not written;
+- theme IDs: a theme takes the ID of the earlier theme it shares the most idea IDs with, or a new one. An
+  earlier ID goes to at most one theme per review: when several themes overlap the same earlier theme,
+  the largest overlap keeps the ID (ties: the one listed first), and the rest get new IDs with only their
+  own ideas. The theme keeping an ID inherits the earlier theme's ideas, except those another theme in
+  this review claimed;
+- earlier themes this review didn't reproduce (merged or renamed away) are kept but superseded: `elevated`
+  false, `superseded` true, and `superseded_by` the theme now holding one of their ideas, if any;
 - elevation: at least dream.recur_min dreams that don't share a top seed, and nothing applied covers it.
 
 The review agent is not told recur_min.
@@ -137,30 +144,47 @@ def record(project_dir: Path, bundle: dict, answer: Any, settings: dict, today: 
     registry = load_themes(project_dir)
     known = set(bundle["ideas"])
     used: set[str] = set()
-    kept, dropped = [], []
+    valid, dropped = [], []
     for t in proposed:
+        title = str(t.get("title", ""))[:80]
         ids = [i for i in (t.get("ideas") or []) if isinstance(i, str)]
         unknown = [i for i in ids if i not in known]
         covered = t.get("integrated_by")
         if unknown or (covered and covered not in plan) or not ids:
-            dropped.append({"title": str(t.get("title", ""))[:80], "unknown": unknown + ([covered] if covered and covered not in plan else [])})
+            dropped.append({"title": title, "unknown": unknown + ([covered] if covered and covered not in plan else []),
+                            "reason": "unknown" if unknown or (covered and covered not in plan) else "empty"})
             continue
-        ids = [i for i in ids if i not in used]
+        ids = list(dict.fromkeys(i for i in ids if i not in used))  # an idea stays with the first theme
+        if not ids:
+            dropped.append({"title": title, "unknown": [], "reason": "empty"})
+            continue
         used |= set(ids)
-        # Only something applied covers a theme. Pending proposals aren't in the roadmap or the plan, so
-        # anything `plan` holds is applied: a dream pick that is still pending covers nothing.
-        integrated = covered or None
-        best, overlap = None, 0
-        for tid, old in registry["themes"].items():
-            n = len(set(old.get("ideas", [])) & set(ids))
-            if n > overlap:
-                best, overlap = tid, n
-        tid = best or f"t{len(registry['themes']) + 1 + len([k for k in kept if k['new']])}"
-        old = registry["themes"].get(tid, {})
-        all_ids = sorted(set(old.get("ideas", [])) | set(ids))
+        valid.append((t, ids, covered or None))
+
+    # Each earlier theme ID is claimed at most once: largest overlap first, then the order themes were listed
+    pairs = sorted(((len(set(old.get("ideas", [])) & set(ids)), n, tid)
+                    for n, (_, ids, _) in enumerate(valid) for tid, old in registry["themes"].items()),
+                   key=lambda x: (-x[0], x[1], x[2]))
+    claimed: dict[int, str] = {}
+    for overlap, n, tid in pairs:
+        if overlap and n not in claimed and tid not in claimed.values():
+            claimed[n] = tid
+    numbers = [int(k[1:]) for k in registry["themes"] if k[:1] == "t" and k[1:].isdigit()]
+    next_n = max(numbers, default=0) + 1
+
+    kept = []
+    for n, (t, ids, integrated) in enumerate(valid):
+        tid = claimed.get(n)
+        if tid is None:
+            tid, next_n = f"t{next_n}", next_n + 1
+        old = registry["themes"].get(tid, {}) if n in claimed else {}
+        # Ideas this theme inherits: the earlier theme's, less any another theme claimed in this review
+        all_ids = sorted(set(ids) | (set(old.get("ideas", [])) - (used - set(ids))))
         all_dreams = sorted({i.rsplit(".", 1)[0] for i in all_ids})
         all_tops = sorted({_top_seed(project_dir, d) or d for d in all_dreams})
-        kept.append({"id": tid, "new": best is None, "title": str(t.get("title", ""))[:120],
+        # Only something applied covers a theme. Pending proposals aren't in the roadmap or the plan, so
+        # anything `plan` holds is applied: a dream pick that is still pending covers nothing.
+        kept.append({"id": tid, "new": n not in claimed, "title": str(t.get("title", ""))[:120],
                      "summary": str(t.get("summary", ""))[:300], "ideas": all_ids, "dreams": len(all_dreams),
                      "distinct_top_seeds": len(all_tops), "integrated_by": integrated,
                      "elevated": len(all_tops) >= recur_min and len(all_dreams) >= recur_min and not integrated,
@@ -168,7 +192,18 @@ def record(project_dir: Path, bundle: dict, answer: Any, settings: dict, today: 
     for t in kept:
         registry["themes"][t["id"]] = {k: v for k, v in t.items() if k != "new"} | {
             "first_review": registry["themes"].get(t["id"], {}).get("first_review", today.isoformat()),
-            "last_review": today.isoformat()}
+            "last_review": today.isoformat(), "superseded": False, "superseded_by": None}
+    # Earlier themes this review didn't reproduce stop being elevated
+    reproduced = {t["id"] for t in kept}
+    holder = {i: t["id"] for t in kept for i in t["ideas"]}
+    superseded = []
+    for tid, old in registry["themes"].items():
+        if tid in reproduced:
+            continue
+        by = next((holder[i] for i in old.get("ideas", []) if i in holder), None)
+        if old.get("elevated") or not old.get("superseded") or by:
+            old.update(elevated=False, superseded=True, superseded_by=by or old.get("superseded_by"))
+            superseded.append({"id": tid, "title": old.get("title", ""), "by": old["superseded_by"]})
     if bundle["dreams"]:
         registry["last_review_dream"] = bundle["dreams"][-1]
     write_json(themes_path(project_dir), registry)
@@ -176,14 +211,15 @@ def record(project_dir: Path, bundle: dict, answer: Any, settings: dict, today: 
     n = 2
     while (reviews_dir(project_dir) / f"{name}.md").exists():
         name, n = f"{today.isoformat()}-{n}", n + 1
-    atomic_write_text(reviews_dir(project_dir) / f"{name}.md", render(kept, dropped, recur_min, name))
+    atomic_write_text(reviews_dir(project_dir) / f"{name}.md", render(kept, dropped, recur_min, name, superseded))
     store.log(project_dir, {"record": "review", "review": name, "dreams": len(bundle["dreams"]),
                             "themes": len(kept), "recurring": sum(1 for t in kept if t["dreams"] >= recur_min),
                             "elevated": sum(1 for t in kept if t["elevated"])})
-    return {"review": name, "themes": kept, "dropped": dropped}
+    return {"review": name, "themes": kept, "dropped": dropped, "superseded": superseded}
 
 
-def render(themes: list[dict], dropped: list[dict], recur_min: int, name: str) -> str:
+def render(themes: list[dict], dropped: list[dict], recur_min: int, name: str,
+           superseded: Optional[list[dict]] = None) -> str:
     lines = [store.LABEL.rstrip(), "", f"# Dream review {name}", "",
              "How often an idea came back says nothing about whether it's right.", ""]
     for t in sorted(themes, key=lambda t: (-t["distinct_top_seeds"], t["id"])):
@@ -194,9 +230,16 @@ def render(themes: list[dict], dropped: list[dict], recur_min: int, name: str) -
         lines += [f"## {t['id']}: {t['title']}", "", t["summary"], "",
                   f"- In {t['dreams']} dream(s), {t['distinct_top_seeds']} distinct top seed(s){indep}",
                   f"- {state}", f"- Ideas: {', '.join(t['ideas'])}", ""]
+    if superseded:
+        lines += ["## Earlier themes this review didn't reproduce (no longer elevated)", ""]
+        lines += [f"- {s['id']}: {s['title']}" + (f" (its ideas are now in {s['by']})" if s["by"] else "")
+                  for s in superseded]
+        lines.append("")
     if dropped:
         lines += ["## Dropped from this review", ""]
-        lines += [f"- {d['title'] or '(untitled)'}: names unknown IDs {', '.join(map(str, d['unknown']))}" for d in dropped]
+        lines += [f"- {d['title'] or '(untitled)'}: " + (f"names unknown IDs {', '.join(map(str, d['unknown']))}"
+                  if d.get("reason") != "empty" else "no ideas of its own (each was already in another theme)")
+                  for d in dropped]
     return "\n".join(lines) + "\n"
 
 

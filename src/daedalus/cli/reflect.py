@@ -137,10 +137,11 @@ def reflect_done(level, period, report_file, tokens, delphi_model, momus_model, 
     if level == "monthly":
         explog.record_model_changes(project, period, start, end)
     click.echo(f"Recorded the {level} reflection for {period}, and logged the run.")
-    from ..dreams.store import refresh_due
+    if _dream_enabled(project):
+        from ..dreams.store import refresh_due
 
-    if refresh_due(project)["due"] and _dream_enabled(project):
-        click.echo("A dream is now due (edict 0013): run /dream, or defer.")
+        if refresh_due(project, enabled=True)["due"]:
+            click.echo("A dream is now due (edict 0013): run /dream, or defer.")
 
 
 @reflect.group("log", invoke_without_command=True)

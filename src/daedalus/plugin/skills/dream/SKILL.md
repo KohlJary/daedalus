@@ -22,12 +22,13 @@ the dream into your own judgement of the project.
 
 2. **Each step, until it says done.** `daedalus dream prompt <id> next` prints `AGENT: <agent>
    (<role>)`, a `---` line, and the prompt. Hand the prompt, unchanged, to that agent (subagent
-   type as named: `morpheus` or `general-purpose`). Then write back exactly what it returned:
+   type as named; today it is always `general-purpose`, and the persona is in the prompt). Then write back exactly what it returned:
    - role `dreamer` in a list or plain dream, or `waking`: save the reply to a file in the scratchpad
      and run `daedalus dream write <id> dream|waking --file <path>`;
    - role `narrator` or `dreamer` in a narrative dream: `daedalus dream turn <id> narrator|dreamer
-     --file <path>`. The turns alternate; the command says what's next and stops the dream at its
-     turn count or token cap. There is no early waking.
+     --file <path>`. The narrator speaks first and the turns alternate (the command refuses a turn
+     out of order); it says what's next and stops the dream at its turn count or token cap. The
+     waking pass is refused until then. There is no early waking.
 
    In a narrative dream each turn passes through your context: don't comment on it, and don't
    summarise it for the user.

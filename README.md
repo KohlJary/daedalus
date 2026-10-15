@@ -197,7 +197,7 @@ daedalus dream log                        # the experiment: per mode, picks appl
 - **It's an experiment.** Each dream is drawn in code as `list` (a wide numbered list), `narrative` (a
   dreamer and a narrating labyrinth), or `plain` (the same seeds with no dream frame at all), so whether
   the dream framing matters gets measured rather than assumed. Dreams stay local in `.daedalus/dreams/`;
-  `daedalus dream keep <id>` copies one to `docs/dreams/`. [The first one](docs/dreams/2026-10-15.md).
+  `daedalus dream keep <id>` copies one to `docs/dreams/` (it never overwrites a file there without `--force`). [The first one](docs/dreams/2026-10-15.md).
 
 ## Working with others
 

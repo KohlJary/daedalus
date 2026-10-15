@@ -154,7 +154,7 @@ def dream_done(dream_id, tokens, dreamer_model, waking_model):
     models = {k: v for k, v in {"dreamer": dreamer_model, "waking": waking_model}.items() if v}
     try:
         # No runner can set a temperature yet (edict 0013, amendment F1), so it is always logged as unset
-        meta = store.done(project, dream_id, models, tokens, "unset")
+        meta = store.done(project, dream_id, models, tokens, "unset", settings=_settings(project))
     except store.DreamError as e:
         _fail(e)
     click.echo(f"Dream {dream_id}: {meta['ideas']} ideas, {meta['picks']} picks. Read it with "
@@ -190,15 +190,17 @@ def dream_show(dream_id):
 @dream.command("keep")
 @click.argument("dream_id")
 @click.option("--include-private", is_flag=True, help="Keep it even though a seed was private (work projects)")
-def dream_keep(dream_id, include_private):
-    """Copy a dream to docs/dreams/<id>.md, for you to commit if you choose."""
+@click.option("--force", is_flag=True, help="Replace docs/dreams/<id>.md if it already exists")
+def dream_keep(dream_id, include_private, force):
+    """Copy a dream to docs/dreams/<id>.md, for you to commit if you choose. It refuses to overwrite a
+    file already there unless --force."""
     from ..config import get_project_settings
     from ..dreams import store
 
     project = Path.cwd()
     scope = get_project_settings(project, "reflection").get("scope", "work")
     try:
-        path = store.keep(project, dream_id, include_private, scope)
+        path = store.keep(project, dream_id, include_private, scope, force=force)
     except store.DreamError as e:
         _fail(e)
     click.echo(f"Kept {path}. Committing it is your choice.")
@@ -258,10 +260,11 @@ def dream_review_record(answer, bundle_file):
 
 @dream_review.command("show")
 def dream_review_show():
-    """Print the newest dream review."""
+    """Print the newest dream review (by modification time)."""
     from ..dreams import review
 
-    files = sorted(p for p in review.reviews_dir(Path.cwd()).glob("*.md")) if review.reviews_dir(Path.cwd()).is_dir() else []
+    folder = review.reviews_dir(Path.cwd())
+    files = sorted(folder.glob("*.md"), key=lambda p: (p.stat().st_mtime_ns, p.name)) if folder.is_dir() else []
     if not files:
         _fail(Exception("No dream reviews yet."))
     click.echo(files[-1].read_text(encoding="utf-8"))

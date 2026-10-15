@@ -70,12 +70,13 @@ def _first_line(text: str, width: int = 160) -> str:
 
 def _dream_line(project_dir: Path) -> str:
     """One line about dreams (edict 0013), from .daedalus/dreams/due.json read as raw JSON: the hook imports
-    no dream module and never shows dream content."""
+    no dream module and never shows dream content. It says nothing unless due.json carries `"enabled": true`,
+    which only `refresh_due` writes, and only while dream.enabled is on."""
     try:
         state = json.loads((Path(project_dir) / ".daedalus" / "dreams" / "due.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return ""
-    if not isinstance(state, dict):
+    if not isinstance(state, dict) or state.get("enabled") is not True:
         return ""
     parts = []
     if state.get("due") is True:

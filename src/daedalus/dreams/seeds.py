@@ -5,17 +5,29 @@ Seed kinds in v1, each read from something Daedalus already keeps:
 - `stale_task`: tasks in progress past doctor.stale_task_days, in any workstream (aged by `updated`);
 - `dissent`: open dissents (aged by their filing date);
 - `backlog`: roadmap items in `backlog` (aged by `created_at`);
-- `coverage_gap`: rows marked `○` in docs/design/tui/coverage.md (aged by the file's last commit);
-- `finding`: the latest reflection report's findings (aged by the report's period);
+- `coverage_gap`: rows of docs/design/tui/coverage.md's detail tables whose mark cell is `○` (aged by the
+  file's last commit). Header rows, legend rows (first cell a mark), summary and totals rows (bold, empty,
+  or a "Group"/"Total(s)"/"CLI"/"All" first cell), and the summary tables' `○` *columns* are not gaps;
+- `finding`: the latest reflection report's findings (aged by the end of the report's period: a date,
+  a week such as `2026-W42`, or a month such as `2026-10`);
 - `open_question`: bullets under a `## Open questions` heading in docs/status.md (aged by its last commit).
 
 Readiness = 0.4·age + 0.3·recurrence + 0.2·activity + 0.1·convergence, each normalised to 0..1 over the
 candidates:
 - age: days since the seed's date;
-- recurrence: how many earlier dreams' seeds and reflection reports name the same key;
+- recurrence: how many earlier dreams' seeds have the same key, plus how many reflection reports name
+  the key as a whole token (`T-e1` doesn't recur in a report that names only `T-e12`; an empty key never
+  recurs);
 - activity: 1 if the thing changed in the last 7 days, else 0;
 - convergence: how many other seed kinds share a roadmap item ID, task ID or path with it.
 Ties break by seed ID. A theme the owner gives is always first. The clock is injectable (`today`).
+
+Recency penalty: seeds are deterministic, so with the project unchanged the same seed would top every
+night, and a theme could never recur across dreams with different top seeds (F7). So a candidate that was
+the top seed of either of the two latest dreams ranks after every other candidate, keeping its order
+among the penalised by readiness. The penalty is in the ranking only; readiness itself is unchanged and
+reported as computed. With unchanged state the top seed therefore cycles through at least three
+candidates, where there are three.
 """
 
 from __future__ import annotations
@@ -46,6 +58,50 @@ def _last_commit(project_dir: Path, rel: str) -> Optional[str]:
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return None
     return out.stdout.strip() or None
+
+
+MARKS = set("●◐→○–")
+NOT_A_ROW = {"group", "total", "totals", "cli", "all", "surface", "mark"}
+
+
+def _period_end(period: str) -> Optional[str]:
+    """The last day of a reflection period (a date, `YYYY-Www` or `YYYY-MM`), or None if it isn't one."""
+    from ..reflection.bundle import period_bounds
+
+    period = str(period or "")
+    for level, pattern in (("daily", r"\d{4}-\d{2}-\d{2}"), ("weekly", r"\d{4}-W\d{1,2}"), ("monthly", r"\d{4}-\d{2}")):
+        if re.fullmatch(pattern, period):
+            try:
+                return period_bounds(level, period)[1].isoformat()
+            except (ValueError, TypeError):
+                return None
+    return None
+
+
+def _coverage_gaps(text: str) -> list[tuple[str, str]]:
+    """(name, note) for each `○` row of coverage.md's detail tables. A table's first row is its header; a
+    gap is a body row with a cell that is exactly `○` under a column whose header isn't itself `○` (the
+    summary tables have a `○` column of counts or command names, not gaps)."""
+    out, table = [], []
+    for line in text.splitlines() + [""]:
+        if line.lstrip().startswith("|"):
+            table.append([c.strip() for c in line.strip().strip("|").split("|")])
+            continue
+        if table:
+            header, body = table[0], [r for r in table[1:] if not all(set(c) <= set("-: ") for c in r)]
+            for cells in body:
+                first = cells[0] if cells else ""
+                name = re.sub(r"[`*]", "", first).strip()
+                if (not name or first.startswith("**") or set(name) <= MARKS | {" "}
+                        or re.sub(r"\W.*", "", name.lower()) in NOT_A_ROW):
+                    continue
+                marked = [k for k, c in enumerate(cells) if k > 0 and c == "○"
+                          and (k >= len(header) or header[k] != "○")]
+                if marked:
+                    note = " ".join(c for k, c in enumerate(cells[1:], 1) if c and c != "○")
+                    out.append((name, note))
+            table = []
+    return out
 
 
 def _seed(kind: str, key: str, text: str, dated: Optional[str], today: date, active: bool, scope: str = "work") -> dict:
@@ -96,20 +152,18 @@ def candidates(project_dir: Path, settings: dict, today: date) -> list[dict]:
     coverage = project_dir / "docs" / "design" / "tui" / "coverage.md"
     if coverage.exists():
         dated = _last_commit(project_dir, "docs/design/tui/coverage.md")
-        for line in coverage.read_text(encoding="utf-8").splitlines():
-            cells = [c.strip() for c in line.strip().strip("|").split("|")]
-            if line.lstrip().startswith("|") and "○" in cells and len(cells) >= 3 and not cells[0].startswith("**"):
-                name = re.sub(r"[`*]", "", cells[0])
-                note = " ".join(c for c in cells[2:] if c and c != "○")
-                out.append(_seed("coverage_gap", re.sub(r"\W+", "-", name.lower()).strip("-")[:60],
-                                 f"Not visible in the TUI: {name}. {note}", dated, today, _days(dated, today) <= 7))
+        for name, note in _coverage_gaps(coverage.read_text(encoding="utf-8")):
+            key = re.sub(r"\W+", "-", name.lower()).strip("-")[:60]
+            if key:
+                out.append(_seed("coverage_gap", key, f"Not visible in the TUI: {name}. {note}", dated, today,
+                                 _days(dated, today) <= 7))
 
     reports = sorted((project_dir / ".daedalus" / "reflection" / "reports").glob("*.json"))
     reports = [r for r in reports if not r.name.endswith(".verdicts.json")]
     if reports:
         latest = read_json(reports[-1], {}) or {}
-        dated = str(latest.get("period", ""))[:10] if re.match(r"\d{4}-\d{2}-\d{2}", str(latest.get("period", ""))) \
-            else _last_commit(project_dir, str(reports[-1].relative_to(project_dir)))
+        dated = _period_end(str(latest.get("period", ""))) \
+            or _last_commit(project_dir, str(reports[-1].relative_to(project_dir)))
         for f in latest.get("findings") or []:
             text = re.sub(r"\[s:[^\]]+\]", "", str(f.get("text", "")))
             out.append(_seed("finding", f"{reports[-1].stem}.{f.get('id', '')}", text, dated, today, True))
@@ -128,13 +182,16 @@ def candidates(project_dir: Path, settings: dict, today: date) -> list[dict]:
 def _recurrence(project_dir: Path, seed: dict) -> int:
     key = seed["key"]
     n = 0
+    if not key:
+        return 0
+    token = re.compile(rf"(?<![\w-]){re.escape(key)}(?![\w-])")
     dreams = Path(project_dir) / ".daedalus" / "dreams"
     for f in dreams.glob("*/seeds.json") if dreams.is_dir() else []:
         data = read_json(f, {}) or {}
         n += sum(1 for s in data.get("seeds", []) if s.get("key") == key)
     for f in (Path(project_dir) / ".daedalus" / "reflection" / "reports").glob("*.json"):
         try:
-            n += key in f.read_text(encoding="utf-8")
+            n += bool(token.search(f.read_text(encoding="utf-8")))
         except OSError:
             continue
     return n
@@ -143,6 +200,18 @@ def _recurrence(project_dir: Path, seed: dict) -> int:
 def _norm(values: list[float]) -> list[float]:
     lo, hi = min(values, default=0), max(values, default=0)
     return [0.0 if hi == lo else (v - lo) / (hi - lo) for v in values]
+
+
+def recent_tops(project_dir: Path, last: int = 2) -> set[str]:
+    """The top seeds (first in seeds.json) of the `last` latest dreams."""
+    from . import store
+
+    tops = set()
+    for dream_id in store.list_dreams(project_dir)[-last:] if last else []:
+        data = read_json(store.dream_dir(project_dir, dream_id) / "seeds.json", {}) or {}
+        if data.get("seeds"):
+            tops.add(data["seeds"][0].get("id"))
+    return tops
 
 
 def score(project_dir: Path, seeds: list[dict]) -> list[dict]:
@@ -159,7 +228,10 @@ def score(project_dir: Path, seeds: list[dict]) -> list[dict]:
     }
     for i, s in enumerate(seeds):
         s["readiness"] = round(sum(WEIGHTS[k] * parts[k][i] for k in WEIGHTS), 4)
-    return sorted(seeds, key=lambda s: (-s["readiness"], s["id"]))
+    recent = recent_tops(project_dir)
+    for s in seeds:
+        s["recent_top"] = s["id"] in recent
+    return sorted(seeds, key=lambda s: (s["recent_top"], -s["readiness"], s["id"]))
 
 
 def select_seeds(project_dir: Path, settings: dict, theme: Optional[str] = None,

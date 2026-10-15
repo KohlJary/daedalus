@@ -28,7 +28,7 @@ agents:
   - name: memory
     description: Project memory management across sessions
   - name: morpheus
-    description: The dreamer (edict 0013) - writes a dream from a complete prompt; reads nothing, judges nothing
+    description: The dreamer's persona (edict 0013) - documentation; /dream sends its prompts, persona inline, to general-purpose
   - name: mnemosyne
     description: Memory reconstruction - proposes gameplan entries for an unrecorded period, from git evidence
   - name: momus

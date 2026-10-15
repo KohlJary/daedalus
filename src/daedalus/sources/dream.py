@@ -91,6 +91,9 @@ class DreamSource(Source):
                 dream_ids.add(m.group(1))
                 store.log(self.project_dir, {"record": "resolution", "item": ext, "dream": m.group(1),
                                              "outcome": "synced"})
+            elif ext.startswith("theme:"):
+                store.log(self.project_dir, {"record": "resolution", "item": ext, "dream": None,
+                                             "outcome": "synced"})
         store.mark_synced(self.project_dir, sorted(dream_ids))
 
     def on_resolved(self, proposal: dict, outcome: str) -> None:

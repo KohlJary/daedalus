@@ -35,34 +35,52 @@ def summary(project_dir: Path) -> list[str]:
         if o["source"] == "dream" and item.get("status") == "done":
             built_at[str(o.get("external_id"))] = item.get("status_changed_at")
 
-    per = defaultdict(Counter)
-    days = defaultdict(list)
+    # A forced mode (`dream start --mode`) wasn't drawn, so it sits outside the A/B: reported apart
+    forced = {r["dream"] for r in records if r.get("record") in ("start", "run") and r.get("forced")}
+    per = {False: defaultdict(Counter), True: defaultdict(Counter)}
+    days = {False: defaultdict(list), True: defaultdict(list)}
     for r in runs:
-        per[r.get("mode")]["dreams"] += 1
-        per[r.get("mode")]["picks"] += int(r.get("picks") or 0)
-        per[r.get("mode")]["truncated"] += bool(r.get("truncated"))
+        c = per[r["dream"] in forced][r.get("mode")]
+        c["dreams"] += 1
+        c["picks"] += int(r.get("picks") or 0)
+        c["truncated"] += bool(r.get("truncated"))
+    themes = Counter()
     for ext, outcome in outcomes.items():
+        if ext.startswith("theme:"):
+            themes[outcome] += 1
+            continue
         m = store.ITEM_ID.match(ext)
         if not m or m.group(2) != "p":
             continue
+        is_forced = m.group(1) in forced
         mode = mode_of.get(m.group(1))
-        per[mode][outcome] += 1
+        per[is_forced][mode][outcome] += 1
         if ext in built_at:
-            per[mode]["built"] += 1
+            per[is_forced][mode]["built"] += 1
             try:
-                days[mode].append((date.fromisoformat(str(built_at[ext])[:10]) - date.fromisoformat(m.group(1)[:10])).days)
+                days[is_forced][mode].append(
+                    (date.fromisoformat(str(built_at[ext])[:10]) - date.fromisoformat(m.group(1)[:10])).days)
             except ValueError:
                 pass
+    themes["built"] = sum(1 for ext in built_at if ext.startswith("theme:"))
+
+    def mode_lines(group: dict, day_group: dict) -> list[str]:
+        out = []
+        for mode in sorted(group, key=str):
+            c = group[mode]
+            applied_share = f"{c['applied'] / c['picks']:.0%}" if c["picks"] else "-"
+            built_share = f"{c['built'] / c['applied']:.0%}" if c["applied"] else "-"
+            med = f", median {median(day_group[mode]):.0f} days to done" if day_group[mode] else ""
+            out.append(f"  {mode}: {c['dreams']} dream(s), {c['picks']} picks; {c['synced']} / {c['applied']} / "
+                       f"{c['dropped']} / {c['built']}; applied {applied_share} of picks, built {built_share} of "
+                       f"applied{med}" + (f"; {c['truncated']} truncated" if c["truncated"] else ""))
+        return out
 
     lines = ["Dreams per mode (picks: synced / applied / dropped / built):"]
-    for mode in sorted(per, key=str):
-        c = per[mode]
-        applied_share = f"{c['applied'] / c['picks']:.0%}" if c["picks"] else "-"
-        built_share = f"{c['built'] / c['applied']:.0%}" if c["applied"] else "-"
-        med = f", median {median(days[mode]):.0f} days to done" if days[mode] else ""
-        lines.append(f"  {mode}: {c['dreams']} dream(s), {c['picks']} picks; {c['synced']} / {c['applied']} / "
-                     f"{c['dropped']} / {c['built']}; applied {applied_share} of picks, built {built_share} of "
-                     f"applied{med}" + (f"; {c['truncated']} truncated" if c["truncated"] else ""))
+    lines += mode_lines(per[False], days[False]) or ["  none drawn yet"]
+    if per[True]:
+        lines.append("Forced dreams (`dream start --mode`; outside the A/B, not compared):")
+        lines += mode_lines(per[True], days[True])
     others = [i for i in items if roadmap.origin(i)["source"] != "dream"]
     if others:
         done = sum(1 for i in others if i.get("status") == "done")
@@ -70,5 +88,8 @@ def summary(project_dir: Path) -> list[str]:
     reviews = [r for r in records if r.get("record") == "review"]
     if reviews:
         lines.append(f"Reviews: {len(reviews)}; themes elevated {sum(int(r.get('elevated') or 0) for r in reviews)}.")
+    if themes or reviews:
+        lines.append(f"Elevated themes (synced / applied / dropped / built): {themes['synced']} / "
+                     f"{themes['applied']} / {themes['dropped']} / {themes['built']}.")
     lines.append("Whether dreaming beats its baseline is untested until each mode has enough dreams (the benchmark sets how many).")
     return lines

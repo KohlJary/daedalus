@@ -6,7 +6,8 @@ Layout, all local (gitignored with the rest of `.daedalus/`):
     .daedalus/dreams/<id>/seeds.json    the seeds and their scores
     .daedalus/dreams/<id>/dream.md      the dream (narrative: the turns, in order)
     .daedalus/dreams/<id>/waking.md     the waking pass: "## Ideas" (narrative only) and "## Picks"
-    .daedalus/dreams/due.json           what the inhale brief reads: due, waiting
+    .daedalus/dreams/due.json           what the inhale brief reads: enabled, due, waiting (written only
+                                        while dream.enabled is on, and removed when it is off)
     .daedalus/dreams/log.jsonl          the experiment log: counts, IDs, labels, modes and dates only
 
 A dream's ID is its date, with `-2`, `-3`... for a second dream that day. Ideas are `<id>.i<n>` and picks
@@ -73,8 +74,9 @@ def _now() -> str:
 # ---------- the log ----------
 
 LOG_FIELDS = {
-    "start": {"record", "at", "dream", "mode", "seed", "seeds", "seed_kinds", "theme"},
-    "run": {"record", "at", "dream", "mode", "models", "tokens", "temperature", "ideas", "picks", "truncated", "turns"},
+    "start": {"record", "at", "dream", "mode", "seed", "seeds", "seed_kinds", "theme", "forced"},
+    "run": {"record", "at", "dream", "mode", "models", "tokens", "temperature", "ideas", "picks", "truncated", "turns",
+            "forced"},
     "resolution": {"record", "at", "item", "dream", "outcome"},
     "review": {"record", "at", "review", "dreams", "themes", "recurring", "elevated"},
 }
@@ -156,6 +158,8 @@ def draw_mode(configured: str, seed: Optional[int] = None) -> tuple[str, Optiona
 
 def start(project_dir: Path, settings: dict, theme: Optional[str] = None, mode: Optional[str] = None,
           today: Optional[date] = None, seed: Optional[int] = None) -> dict:
+    """Start a dream. `mode` forces a mode (`dream start --mode`): the dream is logged `forced` and the
+    report keeps it outside the A/B comparison."""
     from .seeds import select_seeds
 
     dream_id = next_id(project_dir, today)
@@ -166,10 +170,11 @@ def start(project_dir: Path, settings: dict, theme: Optional[str] = None, mode: 
     write_json(folder / "seeds.json", {"dream": dream_id, "theme": theme, "seeds": seeds})
     meta = {"id": dream_id, "mode": chosen, "seed": drawn, "configured": mode or settings.get("mode", "ab"),
             "theme": bool(theme), "status": "started", "started": _now(), "turns": 0, "chars": 0,
-            "truncated": False}
+            "truncated": False, "forced": mode is not None}
     save_meta(project_dir, dream_id, meta)
     log(project_dir, {"record": "start", "dream": dream_id, "mode": chosen, "seed": drawn, "seeds": len(seeds),
-                      "seed_kinds": sorted({s["kind"] for s in seeds}), "theme": bool(theme)})
+                      "seed_kinds": sorted({s["kind"] for s in seeds}), "theme": bool(theme),
+                      "forced": mode is not None})
     return meta
 
 
@@ -180,7 +185,8 @@ def _strip_label(text: str) -> str:
 
 
 def append_turn(project_dir: Path, dream_id: str, speaker: str, text: str, settings: dict) -> dict:
-    """Narrative mode: one turn, appended in order. Refuses past dream.turns or dream.max_tokens."""
+    """Narrative mode: one turn, appended in order: narrator first, then dreamer, alternating. Refuses
+    out of turn, past dream.turns, or past dream.max_tokens (which also truncates the dream)."""
     meta = load_meta(project_dir, dream_id)
     if meta["mode"] != "narrative":
         raise DreamError("Turns are for a narrative dream; write the whole dream with `dream write`")
@@ -188,7 +194,12 @@ def append_turn(project_dir: Path, dream_id: str, speaker: str, text: str, setti
         raise DreamError(f"Dream {dream_id} is {meta.get('status')}")
     if speaker not in ("narrator", "dreamer"):
         raise DreamError("speaker is narrator or dreamer")
+    if meta.get("truncated"):
+        raise DreamError(f"Dream {dream_id} was truncated; it ends there. Next: the waking pass")
     turns = int(settings.get("turns", 4))
+    expected = "narrator" if meta["turns"] % 2 == 0 else "dreamer"
+    if meta["turns"] < turns * 2 and speaker != expected:
+        raise DreamError(f"It's the {expected}'s turn: the narrator speaks first and the two alternate")
     if meta["turns"] >= turns * 2:
         raise DreamError(f"The dream has had its {turns} turns; it ends there (no early waking, no extra turns)")
     cap = int(settings.get("max_tokens", 60000)) * 4
@@ -211,8 +222,13 @@ def write_part(project_dir: Path, dream_id: str, part: str, text: str, settings:
     if part not in ("dream", "waking"):
         raise DreamError("part is dream or waking")
     meta = load_meta(project_dir, dream_id)
+    if meta.get("status") == "done":
+        raise DreamError(f"Dream {dream_id} is done")
     if part == "dream" and meta["mode"] == "narrative":
         raise DreamError("A narrative dream is written turn by turn (`dream turn`)")
+    if part == "waking" and not narrative_over(meta, settings):
+        raise DreamError(f"Dream {dream_id} has had {meta.get('turns', 0)} of {int(settings.get('turns', 4)) * 2} "
+                         "turns; the waking pass comes after the last one (there is no early waking)")
     if part == "dream" and len(text) > int(settings.get("max_tokens", 60000)) * 4:
         text = text[: int(settings.get("max_tokens", 60000)) * 4]
         meta["truncated"] = True
@@ -222,6 +238,12 @@ def write_part(project_dir: Path, dream_id: str, part: str, text: str, settings:
         meta["chars"] = len(text)
     save_meta(project_dir, dream_id, meta)
     return path
+
+
+def narrative_over(meta: dict, settings: dict) -> bool:
+    """True unless a narrative dream still has turns to take (it ends at its turn count or when truncated)."""
+    return (meta.get("mode") != "narrative" or bool(meta.get("truncated"))
+            or int(meta.get("turns", 0)) >= int(settings.get("turns", 4)) * 2)
 
 
 def read_part(project_dir: Path, dream_id: str, part: str) -> str:
@@ -274,10 +296,17 @@ def picks(project_dir: Path, dream_id: str) -> list[dict]:
 
 # ---------- finishing ----------
 
-def done(project_dir: Path, dream_id: str, models: dict, tokens: Optional[int], temperature: str = "unset") -> dict:
+def done(project_dir: Path, dream_id: str, models: dict, tokens: Optional[int], temperature: str = "unset",
+         settings: Optional[dict] = None) -> dict:
     meta = load_meta(project_dir, dream_id)
+    if meta.get("status") == "done":
+        raise DreamError(f"Dream {dream_id} is already done; it is logged once")
+    if settings is not None and not narrative_over(meta, settings):
+        raise DreamError(f"Dream {dream_id} still has turns to take")
     folder = dream_dir(project_dir, dream_id)
-    for part in ("dream", "waking"):
+    # A narrative dream truncated on its first turn has no dream.md; its waking pass ran on nothing
+    parts = ("waking",) if meta["mode"] == "narrative" and meta.get("truncated") else ("dream", "waking")
+    for part in parts:
         if not (folder / f"{part}.md").exists():
             raise DreamError(f"Dream {dream_id} has no {part}.md yet")
     found_picks = picks(project_dir, dream_id)
@@ -288,7 +317,8 @@ def done(project_dir: Path, dream_id: str, models: dict, tokens: Optional[int], 
     save_meta(project_dir, dream_id, meta)
     log(project_dir, {"record": "run", "dream": dream_id, "mode": meta["mode"], "models": models, "tokens": tokens,
                       "temperature": temperature, "ideas": len(found_ideas), "picks": len(found_picks),
-                      "truncated": bool(meta.get("truncated")), "turns": meta.get("turns", 0)})
+                      "truncated": bool(meta.get("truncated")), "turns": meta.get("turns", 0),
+                      "forced": bool(meta.get("forced"))})
     refresh_due(project_dir)
     return meta
 
@@ -316,12 +346,17 @@ def show(project_dir: Path, dream_id: Optional[str] = None) -> str:
     return "\n".join(parts) + "\n"
 
 
-def keep(project_dir: Path, dream_id: str, include_private: bool = False, scope: str = "work") -> Path:
-    """Copy a dream to docs/dreams/<id>.md, to be committed if the owner chooses."""
+def keep(project_dir: Path, dream_id: str, include_private: bool = False, scope: str = "work",
+         force: bool = False) -> Path:
+    """Copy a dream to docs/dreams/<id>.md, to be committed if the owner chooses. It never overwrites a
+    file already there (a kept or hand-written dream may share the ID) unless `force`."""
     seeds = read_json(dream_dir(project_dir, dream_id) / "seeds.json", {}) or {}
     if scope == "work" and not include_private and any(s.get("scope") == "private" for s in seeds.get("seeds", [])):
         raise DreamError("This dream grew from a private seed; keep it in a work project only with --include-private")
     dest = Path(project_dir) / "docs" / "dreams" / f"{dream_id}.md"
+    if dest.exists() and not force:
+        raise DreamError(f"{dest.relative_to(project_dir)} already exists; keep won't overwrite it (--force to "
+                         "replace it)")
     dest.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(dest, show(project_dir, dream_id))
     return dest
@@ -349,8 +384,26 @@ def compute_due(project_dir: Path, today: Optional[date] = None) -> dict:
     return {"due": bool(newer and not dreamt_today), "waiting": waiting, "computed": today.isoformat()}
 
 
-def refresh_due(project_dir: Path, today: Optional[date] = None) -> dict:
-    state = compute_due(project_dir, today)
+def dreaming_enabled(project_dir: Path) -> bool:
+    from ..config import get_project_settings
+
+    try:
+        return bool(get_project_settings(project_dir, "dream").get("enabled"))
+    except Exception:
+        return False
+
+
+def refresh_due(project_dir: Path, today: Optional[date] = None, enabled: Optional[bool] = None) -> dict:
+    """Recompute what is due and write due.json for the brief. With dreaming off nothing is due and there
+    is no due.json (one left from when it was on is removed): off means silence."""
+    enabled = dreaming_enabled(project_dir) if enabled is None else enabled
+    if not enabled:
+        try:
+            due_path(project_dir).unlink()
+        except OSError:
+            pass
+        return {"enabled": False, "due": False, "waiting": None, "computed": (today or date.today()).isoformat()}
+    state = {"enabled": True, **compute_due(project_dir, today)}
     if dreams_dir(project_dir).is_dir() or state["due"]:
         write_json(due_path(project_dir), state)
     return state
@@ -363,6 +416,8 @@ def brief_line(project_dir: Path) -> str:
     except (OSError, ValueError):
         return ""
     parts = []
+    if not isinstance(state, dict) or state.get("enabled") is not True:
+        return ""
     if state.get("due"):
         parts.append("a dream is due (/dream)")
     if state.get("waiting") and DREAM_ID.match(str(state["waiting"])):
