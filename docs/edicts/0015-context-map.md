@@ -1,11 +1,11 @@
 # Edict 0015: The context map
-Status: proposed
+Status: accepted
 Depends on: Edict 0007 (hooks registered by init and hydrate; hooks make no model calls); Edict
 0010 (the transcript parser in `reflection/digest.py`)
 
 *Drafted by Daedalus at Kohl's request in conversation on 2026-10-15. Momus reviewed the first
 draft (`.daedalus/momus/trials/2026-10-15-edict-0015-readiness.md`), and this text folds in its
-findings. Kohl accepts it by setting `Status: accepted`.*
+findings. Kohl accepted it on 2026-10-15.*
 
 ## Intent
 Today the context window is one undifferentiated block. Daedalus can't see what fills it, and
