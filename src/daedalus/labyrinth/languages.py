@@ -46,6 +46,11 @@ class CodeElement:
     # Each call as (qualifier, name): "" for a plain call, an identifier for `mod.name()` / `Foo.name()`,
     # "self" for self/this, "?" for anything more complex. Used to resolve calls through imports.
     call_sites: List[Tuple[str, str]] = field(default_factory=list)
+    # Base classes and interfaces a class names (simple names), where the analyzer reads them
+    bases: List[str] = field(default_factory=list)
+    # Declared types of the names a definition can call through (fields, properties, parameters, locals):
+    # name -> simple type name. Lets `inventory.Find()` resolve through IInventoryStore (C#).
+    receiver_types: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         # Derive simple_name from name if not set

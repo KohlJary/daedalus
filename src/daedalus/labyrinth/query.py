@@ -124,6 +124,7 @@ def _collect_nodes(project_root: Path, imports: Optional[Dict[str, dict]] = None
                             "end_line": el.end_line, "attr_calls": sorted(set(el.member_calls)),
                             "is_test": el.is_test, "signature": el.signature,
                             "call_sites": [tuple(site) for site in el.call_sites],
+                            "receiver_types": dict(el.receiver_types), "bases": list(el.bases),
                             "docstring": (el.docstring or "")[:200], "calls": list(el.calls)}
     return raw
 
@@ -250,6 +251,22 @@ class ImportResolver:
         self.file_nodes: Dict[str, List[str]] = {}
         for node_id, node in raw.items():
             self.file_nodes.setdefault(node["file"], []).append(node_id)
+        # C# class hierarchy by simple name (bases are written as simple names), and extension methods,
+        # which make a call on an outside type land in the project
+        self.cs_children: Dict[str, Set[str]] = {}
+        self.cs_parents: Dict[str, Set[str]] = {}
+        self.cs_by_name: Dict[str, List[str]] = {}
+        self.cs_extensions: Set[str] = set()
+        for node_id, node in raw.items():
+            if not node["file"].endswith(".cs"):
+                continue
+            if node["type"] == "class":
+                self.cs_by_name.setdefault(node["simple_name"], []).append(node_id)
+                for base in node.get("bases", ()):
+                    self.cs_parents.setdefault(node["simple_name"], set()).add(base)
+                    self.cs_children.setdefault(base, set()).add(node["simple_name"])
+            elif "(this " in node.get("signature", ""):
+                self.cs_extensions.add(node["simple_name"])
 
     def _cs_namespace(self, file: str) -> str:
         return self.imports.get(file, {}).get("__namespace__", ("cs:", None))[0][3:]
@@ -268,6 +285,50 @@ class ImportResolver:
             return self.cs_types.get((binding[0][3:], binding[1]), [])
         return [t for ns in self._cs_visible(file) for t in self.cs_types.get((ns, name), [])]
 
+    def _cs_walk(self, names: Set[str], edges: Dict[str, Set[str]]) -> List[str]:
+        """Type names reachable along `edges` (parents or children), nearest first."""
+        order, seen, frontier = [], set(names), list(names)
+        while frontier:
+            nxt = []
+            for name in frontier:
+                for other in sorted(edges.get(name, ())):
+                    if other not in seen:
+                        seen.add(other)
+                        order.append(other)
+                        nxt.append(other)
+            frontier = nxt
+        return order
+
+    def _cs_method_targets(self, type_ids: List[str], call: str) -> Set[str]:
+        """What `x.Call()` can run when x is declared as one of type_ids: the type's own Call and every
+        override or implementation in its descendants; when the type doesn't define Call, the nearest
+        ancestor's (an inherited method). An interface method isn't a target of a call through a class."""
+        names = {self.raw[t]["simple_name"] for t in type_ids}
+        own = {f"{t}.{call}" for t in type_ids if f"{t}.{call}" in self.raw}
+        below = {f"{t}.{call}" for n in self._cs_walk(names, self.cs_children) for t in self.cs_by_name.get(n, ())
+                 if f"{t}.{call}" in self.raw}
+        if own:
+            return own | below
+        for ancestor in self._cs_walk(names, self.cs_parents):
+            inherited = {f"{t}.{call}" for t in self.cs_by_name.get(ancestor, ()) if f"{t}.{call}" in self.raw}
+            if inherited:
+                return inherited | below
+        return below
+
+    def _resolve_cs_receiver(self, node: dict, receiver: str, call: str) -> Optional[Set[str]]:
+        """`inventory.Find()` where `inventory` is declared `IInventoryStore`: that interface's Find and the
+        Find of every type in its hierarchy. A declared type outside the project links nothing, unless the
+        project has an extension method of that name. Anything uncertain is left to the name-based rules."""
+        type_name = node.get("receiver_types", {}).get(receiver)
+        if not type_name:
+            return None
+        types = self._cs_types(node["file"], type_name)
+        if not types:
+            if type_name in self.cs_type_names or call in self.cs_extensions:
+                return None  # a project type this file doesn't see by its usings, or an extension method
+            return set()  # ILogger.LogInformation, List.Add: not the project's code
+        return self._cs_method_targets(types, call) or None
+
     def _resolve_cs(self, node: dict, qualifier: str, call: str) -> Optional[Set[str]]:
         """A type name the file can see: `new Foo()` -> Foo, `Foo.Bar()` -> Foo.Bar (any partial). Anything
         else (a variable, an inherited method, a type it can't see) is left to the name-based rules."""
@@ -281,6 +342,10 @@ class ImportResolver:
             return set(types) or None
         if qualifier in ("?", "self"):
             return None
+        if qualifier.startswith("self."):  # this._orders.Find()
+            return self._resolve_cs_receiver(node, qualifier[5:], call)
+        if qualifier in node.get("receiver_types", {}):  # a parameter, local, field or property
+            return self._resolve_cs_receiver(node, qualifier, call)
         hits = {f"{t}.{call}" for t in self._cs_types(node["file"], qualifier) if f"{t}.{call}" in self.raw}
         return hits or None
 
@@ -494,7 +559,7 @@ def convention_tests(project_root: Path, files: List[str]) -> List[str]:
 
 
 def nodes_in_file(graph: CallGraph, rel_path: str) -> List[str]:
-    rel_path = str(Path(rel_path))
+    rel_path = Path(rel_path.replace("\\", "/")).as_posix()  # node files are forward-slash paths on every OS
     return sorted(n for n, node in graph.nodes.items() if node.file == rel_path)
 
 

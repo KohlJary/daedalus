@@ -9,6 +9,7 @@ JSON, no model calls. Each finding has a stable name so hooks and CI can key on 
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -372,6 +373,69 @@ def check_undigested_sessions(project_dir: Path) -> list[Finding]:
     )]
 
 
+def _installed_from() -> tuple[Optional[str], Optional[Path], bool]:
+    """(installed version, local source directory it was installed from, editable) for daedalus-cli.
+    The source is known when pip recorded a file:// direct_url (pip install <dir>, pip install -e <dir>)."""
+    from importlib import metadata
+    from urllib.parse import unquote, urlparse
+    from urllib.request import url2pathname
+
+    try:
+        dist = metadata.distribution("daedalus-cli")
+    except metadata.PackageNotFoundError:
+        return None, None, False
+    try:
+        info = json.loads(dist.read_text("direct_url.json") or "{}")
+    except (OSError, ValueError):
+        info = {}
+    url = info.get("url", "")
+    if url.startswith("file:"):
+        source = Path(url2pathname(unquote(urlparse(url).path)))
+        return dist.version, source, bool(info.get("dir_info", {}).get("editable"))
+    # An older editable install records no direct_url: the code runs straight from a checkout
+    import daedalus
+    checkout = Path(daedalus.__file__).resolve().parents[2]  # <checkout>/src/daedalus/__init__.py
+    try:
+        is_checkout = 'name = "daedalus-cli"' in (checkout / "pyproject.toml").read_text(encoding="utf-8")
+    except OSError:
+        is_checkout = False
+    return dist.version, (checkout if is_checkout else None), is_checkout
+
+
+def _source_version(source: Path) -> Optional[str]:
+    import re as _re
+    try:
+        m = _re.search(r'^version\s*=\s*"([^"]+)"', (source / "pyproject.toml").read_text(encoding="utf-8"), _re.M)
+    except OSError:
+        return None
+    return m.group(1) if m else None
+
+
+def check_install(installed_from=_installed_from) -> list[Finding]:
+    """The installed daedalus-cli is out of step with the local checkout it was installed from (a later
+    `git pull` doesn't reinstall), or its palace grammars are missing."""
+    import importlib.util
+
+    findings: list[Finding] = []
+    version, source, editable = installed_from()
+    if version and source is not None:
+        current = _source_version(source)
+        if current and current != version:
+            how = "pip install -e" if editable else "pip install"
+            findings.append(Finding(
+                "install-stale",
+                f"daedalus-cli {version} is installed from {source}, which is now at {current}. "
+                f"Reinstall to pick up its code and dependencies: {how} \"{source}\"",
+            ))
+    if version and importlib.util.find_spec("tree_sitter") is None:
+        findings.append(Finding(
+            "palace-grammars-missing",
+            "tree-sitter isn't installed, so the palace only reads Python. It's a dependency of daedalus-cli: "
+            "reinstall it.",
+        ))
+    return findings
+
+
 def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Finding], list[str]]:
     """(findings, hints). Hints are informational and never fail the run."""
     from . import workstreams as ws
@@ -418,6 +482,8 @@ def run_checks(project_dir: Path, today: Optional[date] = None) -> tuple[list[Fi
 
     findings += check_board_ask_rule(project_dir)
     findings += check_undigested_sessions(project_dir)
+    if not os.environ.get("DAEDALUS_DOCTOR_SKIP_INSTALL"):  # the install, not the project (tests turn it off)
+        findings += check_install()
     findings += check_project_map(project_dir)
     findings += check_empty_templates_read(project_dir, settings["stale_task_days"], today=today)
     return findings, hints

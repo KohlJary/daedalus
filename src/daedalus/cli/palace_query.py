@@ -41,6 +41,41 @@ def _one(graph, symbol: str) -> str:
     return ids[0]
 
 
+def _run_lines(root: Path, files: List[str]) -> List[str]:
+    """How to run these test files, with each language's runner (the same plan Ariadne's verifier uses)."""
+    from ..ariadne.test_runners import plan_runs
+
+    runs, problems = plan_runs(root, files, ["python", "-m", "pytest"])
+    lines = []
+    for run in runs:
+        prefix = "" if run.cwd in ("", ".") else f"(cd {run.cwd} && "
+        suffix = "" if not prefix else ")"
+        lines.append(f"Run: {prefix}{' '.join(_quote(a) for a in run.command)}{suffix}")
+    lines += [f"Note: {p}" for p in problems]
+    return lines
+
+
+def _quote(arg: str) -> str:
+    return f'"{arg}"' if any(c in arg for c in " |;&") else arg
+
+
+FULL_SUITE = {"Python": "python -m pytest", "Go": "go test ./...", "Rust": "cargo test", "JavaScript": "npm test",
+              "TypeScript": "npm test", "TSX": "npm test", "C#": "dotnet test", "Razor": "dotnet test",
+              "Java": "mvn test (or gradle test)", "Kotlin": "gradle test", "Ruby": "bundle exec rspec (or rake test)"}
+
+
+def _full_suite_commands(graph) -> List[str]:
+    """The full-suite command for each language the project has code in."""
+    from ..labyrinth.query import _language
+    seen: List[str] = []
+    for node in graph.nodes.values():
+        language = _language(node.file)
+        cmd = FULL_SUITE.get(language.name if language else "Python")
+        if cmd and cmd not in seen:
+            seen.append(cmd)
+    return seen or ["python -m pytest"]
+
+
 def _emit(data, as_json: bool, lines: List[str]):
     click.echo(json.dumps(data, indent=2) if as_json else "\n".join(lines))
 
@@ -76,7 +111,7 @@ def neighbors(cwd: Path, symbol: str, direction: str, as_json: bool):
 def impact(cwd: Path, symbol: str, depth: int, tests: bool, as_json: bool):
     from ..labyrinth.query import reach, tests_reaching
 
-    _, q = _load(cwd)
+    root, q = _load(cwd)
     graph = q.graph
     nid = _one(graph, symbol)
     up = reach(graph, [nid], "backward", depth)
@@ -91,9 +126,10 @@ def impact(cwd: Path, symbol: str, depth: int, tests: bool, as_json: bool):
         files = sorted({graph.nodes[t].file for t in hits})
         data.update(tests=hits, test_files=files, full_suite_recommended=not files)
         lines.append(f"Tests that may reach it ({len(hits)} in {len(files)} files):")
-        lines += [f"  {f}" for f in files] or ["  (none found: run the full suite)"]
+        lines += [f"  {f}" for f in files] or ["  (none found: run the full suite: "
+                                               + "; ".join(_full_suite_commands(graph)) + ")"]
         if files:
-            lines.append(f"Run: python -m pytest {' '.join(files)}")
+            lines += _run_lines(root, files)
         lines.append(f"Note: {STATIC_NOTE}.")
     _emit(data, as_json, lines)
 
@@ -130,9 +166,9 @@ def tests_for(cwd: Path, target: str, diff: bool, base: str, depth: int, as_json
         if not target:
             click.echo("Give a file path, or --diff for the working tree's changes.", err=True)
             sys.exit(1)
-        p = (Path(cwd) / target).resolve()
+        p = (Path(cwd) / target.replace("\\", "/")).resolve()
         try:
-            rel = str(p.relative_to(root.resolve()))
+            rel = p.relative_to(root.resolve()).as_posix()  # the palace stores forward-slash paths, on Windows too
         except ValueError:
             click.echo(f"{target} is outside the project ({root}).", err=True)
             sys.exit(1)
@@ -146,9 +182,10 @@ def tests_for(cwd: Path, target: str, diff: bool, base: str, depth: int, as_json
     lines = [f"Changed: {len(symbols)} symbols in {len(touched)} files" if diff else f"{target}: {len(symbols)} symbols"]
     if files:
         lines += [f"Tests to run ({len(files)} files):"] + [f"  {f}" for f in files]
-        lines.append(f"Run: python -m pytest {' '.join(files)}")
+        lines += _run_lines(root, files)
     else:
-        lines.append("No tests found statically. Run the full suite: python -m pytest")
+        lines.append("No tests found statically. Run the full suite:")
+        lines += [f"  {cmd}" for cmd in _full_suite_commands(graph)]
     lines.append(f"Note: {STATIC_NOTE}.")
     _emit({"files": sorted(touched), "symbols": symbols, "tests": hits, "test_files": files,
            "full_suite_recommended": not files}, as_json, lines)

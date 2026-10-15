@@ -59,6 +59,7 @@ class Grammar:
     imports: Optional[str] = None          # import syntax we resolve: "js", "go", "java", "cs" (others: name-based)
     skip_kinds: Tuple[str, ...] = ()       # definition kinds that aren't code units (C# namespaces)
     top_level_node: bool = False           # give top-level statements a node (C#'s Program.cs)
+    typed_receivers: bool = False          # read declared types of fields/parameters/locals (C#)
     implicit_self: bool = True             # False: a plain `name()` can't reach a method (needs obj./this./self.)
 
 
@@ -86,7 +87,7 @@ GRAMMARS: List[Grammar] = [
             test_candidates=("{testdir}/{stem}Test.java", "{testdir}/{stem}Tests.java", "{dir}/{stem}Test.java")),
     Grammar("C#", [".cs"], wheel="tree_sitter_c_sharp", pack="csharp", constructor_is_class_name=True,
             vendored_tags="c_sharp-tags.scm", supplement="c_sharp-supplement.scm", imports="cs",
-            skip_kinds=("module",), top_level_node=True,
+            skip_kinds=("module",), top_level_node=True, typed_receivers=True,
             test_marker=r"\[\s*(Test|TestMethod|TestCase|TestCaseSource|Fact|Theory|UnityTest)\b",
             test_file=r"(^|/)[^/]*Tests?/|Tests?\.cs$"),
     Grammar("C", [".c", ".h"], wheel="tree_sitter_c", pack="c", test_file=r"(^|/)tests?/|_test\.c$|^test_"),
@@ -379,11 +380,16 @@ def extract_elements(support: TreeSitterSupport, source: bytes, rel: str, tree=N
                          class_name=class_name if element_type == "method" else None, simple_name=d.name)
         el.end_line = d.node.end_point[0] + 1
         el.is_test = _is_test(support, d, is_test_file) if callable_ else False
+        if not callable_:
+            el.bases = _bases(d.node)
+        if support.grammar.typed_receivers:
+            el.receiver_types = _cs_receiver_types(d.node, container.node if container else None, callable_)
         elements.append(el)
         spans.append((d.node.start_byte, d.node.end_byte, el))
 
-    # Each call belongs to every element whose span contains it (a class collects its methods' calls,
-    # as Python's ast.walk over a class body does).
+    # Each call belongs to the innermost function or method containing it; a call outside any (a field
+    # initializer, a static block) belongs to the innermost class. Enclosing classes don't collect their
+    # methods' calls, so `callers` names the method that makes the call, not every class around it.
     top_level: Set[str] = set()
     top_level_member: Set[str] = set()
     top_level_sites: Set[Tuple[str, str]] = set()
@@ -391,7 +397,10 @@ def extract_elements(support: TreeSitterSupport, source: bytes, rel: str, tree=N
         callee = name_node.text.decode("utf-8", "replace")
         through_object = kind in ("call", "send") and _through_object(ref, name_node)
         site = (_qualifier(ref, name_node) if through_object else "", callee)
-        owners = [el for (a, b, el) in spans if a <= ref.start_byte < b]
+        containing = [(b - a, el) for (a, b, el) in spans if a <= ref.start_byte < b]
+        callables = [(size, el) for size, el in containing if el.element_type != "class"]
+        pool = callables or containing
+        owners = [min(pool, key=lambda t: t[0])[1]] if pool else []
         for el in owners:
             if callee not in el.calls:
                 el.calls.append(callee)
@@ -441,6 +450,16 @@ def _qualifier(ref, name_node) -> str:
     while parent is not None and parent.type == "parenthesized_expression":
         parent = parent.parent
     holder = ref if parent == ref or parent is None else parent
+    # this._orders.Find(): the call goes through the field `_orders`, recorded as "self._orders"
+    for f in ("expression", "object"):
+        inner = holder.child_by_field_name(f)
+        if inner is not None and inner != name_node and inner.type in ("member_access_expression", "member_expression",
+                                                                         "field_access"):
+            target = inner.child_by_field_name("expression") or inner.child_by_field_name("object")
+            field_name = inner.child_by_field_name("name") or inner.child_by_field_name("property") \
+                or inner.child_by_field_name("field")
+            if target is not None and field_name is not None and _text(target) in SELF_WORDS:
+                return "self." + _text(field_name)
     obj = None
     for f in ("object", "operand", "path", "expression", "value", "receiver", "scope", "argument"):
         obj = holder.child_by_field_name(f)
@@ -574,6 +593,99 @@ def _cs_imports(root, rel: str) -> Dict[str, Tuple[str, Optional[str]]]:
                 visit(body if body is not None else child, full)
     visit(root, "")
     return out
+
+
+BASE_CLAUSES = ("base_list", "superclass", "super_interfaces", "class_heritage", "extends_clause",
+                "implements_clause", "extends_type_clause", "superclass_list", "superclasses")
+
+
+def _simple_type(node) -> Optional[str]:
+    """`IStore`, `ILogger<T>`, `IStore?`, `A.B.IStore`, `IStore[]` -> the type's simple name; None for
+    `var`, built-in types and anything else."""
+    if node is None:
+        return None
+    t = node.type
+    if t in ("identifier", "type_identifier"):
+        return _text(node)
+    if t == "generic_name":
+        ident = next((c for c in node.named_children if c.type == "identifier"), None)
+        return _text(ident) if ident is not None else None
+    if t in ("nullable_type", "array_type", "pointer_type", "ref_type", "scoped_type"):
+        inner = node.child_by_field_name("type") or (node.named_children[0] if node.named_children else None)
+        return _simple_type(inner)
+    if t in ("qualified_name", "alias_qualified_name"):
+        last = node.child_by_field_name("name") or (node.named_children[-1] if node.named_children else None)
+        return _simple_type(last)
+    return None
+
+
+def _bases(class_node) -> List[str]:
+    """Simple names of the classes and interfaces a class declaration extends or implements."""
+    out: List[str] = []
+    for child in class_node.named_children:
+        if child.type in BASE_CLAUSES:
+            for item in child.named_children:
+                name = _simple_type(item) or (_simple_type(item.named_children[0]) if item.named_children else None)
+                if name and name not in out:
+                    out.append(name)
+    return out
+
+
+def _declare(types: Dict[str, Optional[str]], name: str, type_name: Optional[str]) -> None:
+    """Record name -> type; a name declared with two different types is ambiguous (None)."""
+    if not name or not type_name:
+        return
+    types[name] = type_name if types.get(name, type_name) == type_name else None
+
+
+def _cs_declarations(node, types: Dict[str, Optional[str]], skip_nested=None) -> None:
+    """Parameters, locals and `var x = new T()` declared anywhere under `node` (not in nested members)."""
+    for n in _walk(node):
+        if skip_nested is not None and n is not node and n.type in skip_nested:
+            continue
+        if n.type == "parameter":
+            _declare(types, _text(n.child_by_field_name("name")), _simple_type(n.child_by_field_name("type")))
+        elif n.type == "variable_declaration":
+            type_node = n.child_by_field_name("type")
+            declared = _simple_type(type_node)
+            for decl in (c for c in n.named_children if c.type == "variable_declarator"):
+                name = _text(decl.child_by_field_name("name") or next(
+                    (c for c in decl.named_children if c.type == "identifier"), None))
+                value = next((c for c in decl.named_children if c.type == "object_creation_expression"), None)
+                created = _simple_type(value.child_by_field_name("type")) if value is not None else None
+                _declare(types, name, declared or created)
+
+
+def _cs_member_types(class_node) -> Dict[str, Optional[str]]:
+    """A C# class's fields, properties and primary-constructor parameters."""
+    types: Dict[str, Optional[str]] = {}
+    for child in class_node.named_children:
+        if child.type == "parameter_list":  # primary constructor: class Restocker(IInventoryStore inventory)
+            for param in (c for c in child.named_children if c.type == "parameter"):
+                _declare(types, _text(param.child_by_field_name("name")), _simple_type(param.child_by_field_name("type")))
+        if child.type == "declaration_list":
+            for member in child.named_children:
+                if member.type in ("field_declaration", "event_field_declaration"):
+                    _cs_declarations(member, types)
+                elif member.type == "property_declaration":
+                    _declare(types, _text(member.child_by_field_name("name")),
+                             _simple_type(member.child_by_field_name("type")))
+    return types
+
+
+def _cs_receiver_types(def_node, container_node, callable_: bool) -> Dict[str, str]:
+    """Declared types a C# definition can call through: its own parameters and locals over its class's
+    fields, properties and primary-constructor parameters. Ambiguous names are left out."""
+    types: Dict[str, Optional[str]] = {}
+    if callable_:
+        if container_node is not None:
+            types.update(_cs_member_types(container_node))
+        local: Dict[str, Optional[str]] = {}
+        _cs_declarations(def_node, local)
+        types.update(local)  # a parameter or local shadows a field of the same name
+    else:
+        types.update(_cs_member_types(def_node))
+    return {k: v for k, v in types.items() if v}
 
 
 def _receiver(node) -> Optional[str]:

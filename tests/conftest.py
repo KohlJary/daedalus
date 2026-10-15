@@ -8,3 +8,5 @@ def _isolate_claude_dir(tmp_path, monkeypatch):
     home.mkdir()
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home))
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    # doctor's install check looks at how this machine installed daedalus-cli, not at the test's project
+    monkeypatch.setenv("DAEDALUS_DOCTOR_SKIP_INSTALL", "1")
