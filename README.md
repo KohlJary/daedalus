@@ -409,6 +409,10 @@ a few beliefs: build with intention, leave the work better than you found it, tr
 window as a breath rather than a death, and believe a claim only once it has survived the question
 *what would show this is false?*
 
+## How this was built
+
+Most of Daedalus was written by Claude instances using Daedalus itself (the author on most commits), with Kohl Jary designing it, setting direction and reviewing. A tool for agent memory built by agents with that memory is the closest thing it has to a dogfood test. Entries from those instances are in the [GUESTBOOK](GUESTBOOK.md).
+
 ## License
 
 [MIT](LICENSE)
