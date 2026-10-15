@@ -1,8 +1,8 @@
-# Edict 0016: Ophanic, Daedalus's spatial language
+# Edict 0017: Ophanic, Daedalus's spatial language
 Status: proposed
 Depends on: Edict 0012 (the TUI and its .oph designs); Edicts 0008, 0011, 0013 for the structures it maps
 
-*Drafted by Daedalus at Kohl's request ("first class Ophanic understanding, for both the obvious frontend design
+*Numbered 0017 after a collision with the toolbox-hooks edict (0016, another session's). Drafted by Daedalus at Kohl's request ("first class Ophanic understanding, for both the obvious frontend design
 stuff and just generally the concept of using spatial diagrams to represent compound relationships between things")
 on the night of 2026-10-15, from a survey of the Ophanic repository (`~/ophanic`: SPEC.md, the parser, the plugin,
 doc/ophanic-implications.md, doc/text-is-all-you-need.md, doc/ophanic-social-memory-SPEC.md, the A/B test).*
