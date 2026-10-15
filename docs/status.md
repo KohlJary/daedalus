@@ -5,7 +5,7 @@ committed gameplan, `.daedalus/roadmap/gameplan.json`: run `daedalus gameplan sh
 and `daedalus doctor`. This file carries what the gameplan can't say. See
 `docs/edicts/README.md`.*
 
-**Last updated:** 2026-10-14, by the reflection session (edict 0010); the TUI-design, Ariadne/experiment and memory-side sessions' notes follow
+**Last updated:** 2026-10-15, by the night shift (edict 0011); earlier: the reflection session (edict 0010); the TUI-design, Ariadne/experiment and memory-side sessions' notes follow
 
 ## Reflection session (2026-10-14)
 - **Edict 0010 written with Kohl** (in chat and with Claude in chat), amended twice: user/self
@@ -22,6 +22,16 @@ and `daedalus doctor`. This file carries what the gameplan can't say. See
   whether reflection works is still to be designed (Kohl: separately from the edict). The
   shipped identity text calls Kohl "he"; a fix awaits Kohl's go-ahead.
 - Digests of this repo's sessions are backfilled in the main checkout's .daedalus/reflection/.
+
+## Night shift (2026-10-14/15): what happened
+- **Edict 0011 built: PR #52, open, not merged.** Read its "judgment calls" before merging. Momus reviewed the
+  build and verified the fixes (trial `.daedalus/momus/trials/2026-10-15-edict-0011-build.md`, local).
+- **Neither source has run live.** Both say `unverified` in `daedalus source status`. ADO is yours on the work
+  machine: start with `daedalus source sync ado --dry-run`. GitHub: try it here with `--dry-run` first.
+- **New core dependency:** `keyring`. Reinstall after merging (`pip install -e .`).
+- **This repo's roadmap index becomes committable** with #52; the local program-map item isn't committed yet.
+- **The dream** is `docs/dreams/2026-10-15.md` on branch `docs/dream-2026-10-15` (pushed, no PR).
+- Found: Ariadne's Tracker writes `roadmap/index.json` as a bare list (tolerated, not fixed).
 
 ## Night shift brief (2026-10-14/15): edict 0011, then a dream
 - **Work:** workstream `sources`, phase p9-sources, tasks T-s1 to T-s8. Run

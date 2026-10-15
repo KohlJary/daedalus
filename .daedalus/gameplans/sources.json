@@ -74,17 +74,19 @@
       {
         "id": "T-s7",
         "title": "Momus review + PR",
-        "status": "pending",
+        "status": "done",
         "details": "Momus against 0011's criteria; fix what he finds with tests; PR 'Implements edict 0011' from the branch; CI green. Do not merge.",
         "updated": "2026-10-14",
-        "edict": "0011"
+        "edict": "0011",
+        "resolution": "Momus build review (4 medium, lows, 7 test gaps) fixed in 264eaee; verification pass found a cross-repo parent bug, fixed in 9823109. PR #52 open, not merged. Trial: .daedalus/momus/trials/2026-10-15-edict-0011-build.md (Kohl's machine)."
       },
       {
         "id": "T-s8",
         "title": "Dream",
-        "status": "pending",
+        "status": "done",
         "details": "After the PR: open-ended speculation on where Daedalus could go, for Kohl. docs/dreams/2026-10-15.md, labelled speculative. No feasibility filter while writing, no Momus on it; quantity and range over polish; mark the few you'd most want to build. See the status note for the brief.",
-        "updated": "2026-10-14"
+        "updated": "2026-10-14",
+        "resolution": "docs/dreams/2026-10-15.md on branch docs/dream-2026-10-15 (a9ff0d9, pushed, no PR): 39 ideas unjudged, then 5 picked (edicts with tests attached; the TUI speaking Ophanic to Claude as an A/B; a 'self' source; a published state-of-the-project page; epitaphs for dropped intake). Speculative; not in the plan."
       }
     ],
     "deferred": [],
