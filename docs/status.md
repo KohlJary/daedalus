@@ -30,8 +30,13 @@ Everything merged tonight went through Momus and green CI first. Audit trail:
   reviewed twice, fixed). Edict 0013 and 0011 are `done`.
 - **Edict 0014 (time and usage)** is on main as `proposed`, not accepted: Momus found 4 blockers; Kohl asked to
   formalise it later. `autoContinueAtUsageLimit` is on in Kohl's user settings (backup: ~/.claude/settings.json.bak-2026-10-15).
-- **Edict 0012 (the TUI)** is built on `feat/0012-tui` (core by Daedalus, screens by four parallel agents, merged and
-  integrated), in Momus review at time of writing; see the gameplan and the PR.
+- **Edict 0012 (the TUI): merged as #61** and `done`. Core by Daedalus, screens by four parallel agents in separate
+  worktrees, integrated; Momus reviewed (4 blockers: Textual's inherited ctrl+q/ctrl+c/ctrl+p reaching past the
+  Claude pane and the palette's screenshot writing a file; two plugin protocols; Rich markup in project text crashing
+  it; branch behind main) and verified the fixes. Not yet run against a real Claude Code session; needs the fresh
+  install below to run here. Momus's open lows: cramped narrow layouts on some screens, no Dream screen, modified
+  Enter is only a newline on terminals that report it.
+- **Hermes → the Chorus** (#59, another session's PR, renamed at Kohl's call); "Chorus portents" is on the roadmap.
 - **Dream-log ideas, as PRs for review, not merged:** #56 edicts with tests attached (pick 38); #57 `daedalus page`
   (pick 33).
 - **A test leaked into real data:** one TUI test run wrote 4 test entries into `~/.config/daedalus/models/` (the

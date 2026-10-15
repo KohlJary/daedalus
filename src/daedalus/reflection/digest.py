@@ -2,7 +2,7 @@
 Session digests (edict 0010): one JSON summary per Claude Code session, with no model calls.
 
 A digest keeps what reflection needs after Claude Code's cleanup deletes the transcript: token
-totals, tool calls and failures, retries, re-reads, permission denials and rejections,
+totals (by model, by turn, with their estimated spend), compactions, tool calls and failures, retries, re-reads, permission denials and rejections,
 interruptions, subagents, and the event UUIDs behind each count, so findings can cite them.
 
 The transcript format is undocumented and changes between versions. The parser skips what it
@@ -18,12 +18,13 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, Iterable, Iterator, Optional
 
 from .fsutil import read_json, write_json
+from .spend import units_by_model
 from .paths import norm_path, owner_project, projects_dir, sessions_dir
 
-SCHEMA_VERSION = 2  # 2: event_days; AskUserQuestion answers are not prompt approvals
+SCHEMA_VERSION = 3  # 2: event_days; AskUserQuestion answers are not prompt approvals. 3: spend (turns, by model)
 RETRY_WINDOW = 5  # default; reflection.retry_window in config
 
 KNOWN_TYPES = {
@@ -140,6 +141,10 @@ def _call_key(call: dict) -> str:
 class Stream:
     """What one transcript file says. Sessions and subagents are parsed the same way."""
     messages: dict = field(default_factory=dict)       # message.id -> usage
+    message_model: dict = field(default_factory=dict)  # message.id -> model
+    message_at: dict = field(default_factory=dict)     # message.id -> index of its first event
+    prompt_text: dict = field(default_factory=dict)    # prompt uuid -> the text the user typed
+    compactions: list = field(default_factory=list)
     calls: list = field(default_factory=list)          # tool calls in order
     results: dict = field(default_factory=dict)        # tool_use_id -> result
     prompts: list = field(default_factory=list)        # (index, uuid) of prompts the user typed
@@ -186,11 +191,18 @@ def parse_stream(events: Iterator[dict], keep_sidechain: bool = False) -> Stream
             task = NOTICE_TASK.search(str(att.get("prompt") or ""))
             key = task.group(1) if task else str(ev.get("uuid"))
             s.reported_agent_tokens[key] = max(s.reported_agent_tokens.get(key, 0), int(att["usage"]["totalTokens"]))
+        if etype == "system" and ev.get("subtype") == "compact_boundary":
+            meta = ev.get("compactMetadata") if isinstance(ev.get("compactMetadata"), dict) else {}
+            s.compactions.append({"uuid": ev.get("uuid"), "at": ev.get("timestamp"), "trigger": meta.get("trigger"),
+                                  "pre_tokens": int(meta.get("preTokens") or 0)})
         if etype == "assistant":
             s.assistant_at.append(index)
             if msg.get("model"):
                 s.models.add(str(msg["model"]))
             mid = msg.get("id") or ev.get("uuid")
+            s.message_at.setdefault(mid, index)
+            if msg.get("model"):
+                s.message_model[mid] = str(msg["model"])
             usage = msg.get("usage")
             if isinstance(usage, dict):
                 s.messages[mid] = usage  # one message is split over several events; count it once
@@ -235,17 +247,63 @@ def parse_stream(events: Iterator[dict], keep_sidechain: bool = False) -> Stream
             elif text and not ev.get("isMeta") and not ev.get("isCompactSummary") \
                     and not text.startswith(INJECTED_PREFIXES):
                 s.prompts.append((index, ev.get("uuid")))
+                s.prompt_text[ev.get("uuid")] = text
     return s
 
 
 def _tokens(messages: dict) -> dict:
-    total = {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "messages": len(messages)}
+    total = {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0,
+             "cache_creation_5m": 0, "cache_creation_1h": 0, "messages": len(messages)}
     for usage in messages.values():
         total["input"] += int(usage.get("input_tokens") or 0)
         total["output"] += int(usage.get("output_tokens") or 0)
         total["cache_read"] += int(usage.get("cache_read_input_tokens") or 0)
         total["cache_creation"] += int(usage.get("cache_creation_input_tokens") or 0)
+        split = usage.get("cache_creation") if isinstance(usage.get("cache_creation"), dict) else {}
+        total["cache_creation_5m"] += int(split.get("ephemeral_5m_input_tokens") or 0)
+        total["cache_creation_1h"] += int(split.get("ephemeral_1h_input_tokens") or 0)
     return total
+
+
+def _tokens_by_model(s: Stream, mids: Optional[Iterable] = None) -> dict:
+    """Token totals per model, for the given messages (default: all of the stream's)."""
+    groups: dict[str, dict] = {}
+    for mid in s.messages if mids is None else mids:
+        groups.setdefault(s.message_model.get(mid, "unknown"), {})[mid] = s.messages[mid]
+    return {model: _tokens(msgs) for model, msgs in sorted(groups.items())}
+
+
+def build_turns(s: Stream) -> list[dict]:
+    """
+    One entry per prompt the user typed: the tokens of every message until the next prompt (replies
+    to background-agent notifications included), by model, with their estimated spend. Messages
+    before the first prompt make a turn with no uuid.
+    """
+    from bisect import bisect_right
+
+    starts = [index for index, _ in s.prompts]
+    owners: list[Optional[str]] = [uuid for _, uuid in s.prompts]
+    buckets: dict[int, list] = {}
+    for mid in s.messages:
+        buckets.setdefault(bisect_right(starts, s.message_at.get(mid, 0)) - 1, []).append(mid)
+    calls: dict[int, int] = {}
+    for c in s.calls:
+        slot = bisect_right(starts, c["index"]) - 1
+        calls[slot] = calls.get(slot, 0) + 1
+    turns = []
+    for slot in sorted(set(buckets) | set(calls)):
+        by_model = _tokens_by_model(s, buckets.get(slot, []))
+        uuid = owners[slot] if slot >= 0 else None
+        text = s.prompt_text.get(uuid, "") if uuid else ""
+        usage = {m: t for m, t in by_model.items() if m != "<synthetic>"}
+        turns.append({
+            "uuid": uuid, "at": s.stamp_of.get(uuid) if uuid else None,
+            "model": max(usage, key=lambda m: usage[m]["messages"]) if usage else None,
+            "units": units_by_model(by_model), "tool_calls": calls.get(slot, 0),
+            "chars": len(text), "text": redact(text)[:SUMMARY_CHARS],
+            "tokens_by_model": by_model,
+        })
+    return turns
 
 
 def _hit_rate(tokens: dict) -> Optional[float]:
@@ -327,10 +385,14 @@ def build_digest(session_file: Path, arms: Optional[dict] = None, previous: Opti
     for f, sub in streams:
         meta = read_json(f.with_suffix(".meta.json"), {}) if f else {}
         sub_counted = count_stream(sub, retry_window)
+        sub_by_model = _tokens_by_model(sub)
         subagents.append({
             "file": f.name if f else "(inline sidechain)",
             "agent_type": meta.get("agentType") if isinstance(meta, dict) else None,
+            "start": min(sub.timestamps) if sub.timestamps else None,
             "tokens": _tokens(sub.messages),
+            "tokens_by_model": sub_by_model,
+            "units": units_by_model(sub_by_model),
             "tool_calls": len(sub.calls),
             "failures": len(sub_counted["events"]["failures"]),
             "models": sorted(sub.models),
@@ -339,6 +401,8 @@ def build_digest(session_file: Path, arms: Optional[dict] = None, previous: Opti
             unknown[k] = unknown.get(k, 0) + v
         missing_usage += sub.missing_usage
     tokens = _tokens(main.messages)
+    by_model = _tokens_by_model(main)
+    turns = build_turns(main)
     stamps = sorted(main.timestamps)
     events = counted["events"]
     session_id = session_file.stem
@@ -356,7 +420,13 @@ def build_digest(session_file: Path, arms: Optional[dict] = None, previous: Opti
         "models": sorted(main.models),
         "branches": sorted(main.branches),
         "tokens": tokens,
+        "tokens_by_model": by_model,
         "cache_hit_rate": _hit_rate(tokens),
+        # Estimated spend (reflection/spend.py): one unit is one fresh input token on Haiku
+        "units": round(units_by_model(by_model) + sum(s["units"] for s in subagents), 1),
+        "main_units": units_by_model(by_model),
+        "turns": turns,
+        "compactions": main.compactions,
         "tool_calls": len(main.calls),
         "prompts": len(main.prompts),
         "tools": counted["tools"],
@@ -368,7 +438,8 @@ def build_digest(session_file: Path, arms: Optional[dict] = None, previous: Opti
         # The local day of every counted event, so a daily or weekly reflection cites only its period's events
         "event_days": event_days(main.stamp_of, {u for v in events.values() for u in v}
                                  | {c["uuid"] for c in main.calls}
-                                 | {(main.results.get(c["id"]) or {}).get("uuid") for c in main.calls}),
+                                 | {(main.results.get(c["id"]) or {}).get("uuid") for c in main.calls}
+                                 | {t["uuid"] for t in turns} | {c["uuid"] for c in main.compactions}),
         # Per event: the tool, what was called (command or path), and the start of the error.
         # Local only, like the whole digest. Non-zero exits from probing commands count as failures.
         "details": counted["details"],
@@ -376,6 +447,7 @@ def build_digest(session_file: Path, arms: Optional[dict] = None, previous: Opti
         "subagents": {
             "count": len(subagents),
             "tokens": {k: sum(s["tokens"][k] for s in subagents) for k in tokens},
+            "units": round(sum(s["units"] for s in subagents), 1),
             "tool_calls": sum(s["tool_calls"] for s in subagents),
             # What background agents reported on completion: the real totals
             "reported_tokens": sum(main.reported_agent_tokens.values()),

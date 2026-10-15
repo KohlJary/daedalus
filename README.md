@@ -25,6 +25,7 @@ claude        # the session opens with a brief: your active phase, next task, an
 
 - [Quick start](#quick-start)
 - [How a session works](#how-a-session-works)
+- [The TUI](#the-tui)
 - [Memory that stays current](#memory-that-stays-current): gameplan, doctor, reconstruction, reflection
 - [Working with others](#working-with-others): workstreams, the agent board, edicts, sources
 - [Ariadne: parallel workers (experimental)](#ariadne-parallel-workers-experimental)
@@ -75,6 +76,26 @@ Then, in a session:
 
 Context compaction is treated as a breath, not a death: the work is in commits and the gameplan, so
 the next context picks up where this one left off.
+
+## The TUI
+
+`daedalus tui` opens everything on one screen next to a live Claude Code session: what's waiting on you
+(PRs, proposed edicts, dissents, board posts, pending proposals), the plan, `doctor`'s health, and the
+latest session note. It's meant for someone who wasn't there when the project was built: `?` on any panel
+explains what it is, where it lives, and the command that shows it, so the TUI is a way into the CLI, not
+a replacement for it.
+
+- `1`-`5` open a panel, `e` edicts, `b` the board, `,` config, `R` reflection, `S` sources, `m` plugins.
+- `c` focuses Claude: then every key goes to Claude except `ctrl+]` (`tui.escape`), which comes back.
+- `s` sends the selection to Claude: it pastes an editable prompt and never presses enter for you.
+- The only things it writes: applying or dropping a pending proposal, a config setting, following a board
+  thread, `hydrate`/`init` when doctor names them (after you confirm), and your own reflection data. Merging,
+  accepting an edict and posting stay where they live.
+- The Claude session runs in tmux (its own socket, no prefix key or status bar) so it survives quitting
+  the TUI: `tmux -L daedalus attach -t daedalus-<project>-<hash>` (`tmux -L daedalus ls` lists them) reaches it
+  from any terminal. Its prefix key is off so no key is stolen from Claude; detach from another terminal with
+  `tmux -L daedalus detach-client`. Without tmux it
+  runs as a plain child process and the pane says it will end with the TUI.
 
 ## Memory that stays current
 
@@ -360,6 +381,7 @@ The pieces are named after the Labyrinth myth; here is what each does.
 | `daedalus palace init \| status \| callers \| callees \| impact \| path \| tests-for` | Mind Palace and its call-graph queries |
 | `daedalus palace dispatch` | The dispatch rules in effect: built-in (MediatR, MassTransit, NServiceBus, Hangfire, Celery) and this project's `palace.dispatch` |
 | `daedalus palace languages` | Which languages the palace analyzes here: Python, JS/TS, Go, Rust, Java, C#, Razor, C/C++, Ruby built in; Kotlin, PHP, Scala, Lua with `pip install "daedalus-cli[palace-all]"` |
+| `daedalus tui` | The TUI: needs-you, plan, health, story, edicts, board, config, sources, reflection, and a Claude pane |
 | `daedalus config [key [value]] [--project] [--schema [prefix]]` | Settings, checked against the schema registry |
 | `ariadne init \| status \| process \| daemon \| review … \| plans …` | Ariadne |
 

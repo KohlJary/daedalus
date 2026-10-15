@@ -114,6 +114,8 @@ def _event_uuids(digest: dict) -> set[str]:
     uuids = {u for us in (digest.get("events") or {}).values() for u in us if u}
     for c in digest.get("calls") or []:
         uuids.update(u for u in (c.get("uuid"), c.get("result")) if u)
+    # A turn is cited by its prompt's uuid; a compaction by its boundary event's
+    uuids.update(t["uuid"] for t in (digest.get("turns") or []) + (digest.get("compactions") or []) if t.get("uuid"))
     return uuids
 
 

@@ -42,7 +42,7 @@ note: groups → keys → detail. The letter after a value says which layer set 
 │ Save to:  [project]  user                              │
 │                                                        │
 ├────────────────────────────────────────────────────────┤
-│ ←/→ layer · enter save · x reset to inherited          │
+│ ←/→ layer (tab in a text field) · enter save · x unset │
 └────────────────────────────────────────────────────────┘
 note: choices come from the setting's schema. Every key carries a description
 (it is its Explain card), a type, and a default.
@@ -56,8 +56,13 @@ note: choices come from the setting's schema. Every key carries a description
 │                                                        │
 │ Stored in: system keyring  ✓ set                       │
 │                                                        │
-│ r replace · d delete                                   │
+│ replace or delete: daedalus source login ado           │
 │                                                        │
 ├────────────────────────────────────────────────────────┤
 │ never shown, never written to a config file            │
 └────────────────────────────────────────────────────────┘
+note: the TUI never writes a token, so the secret view has no replace or delete
+key (credential writes aren't among edict 0012's v1 writes, and a token typed
+into the TUI would pass through it). `x unset` clears a setting that takes
+unset; the CLI has no other way to drop a value from a layer, so neither does
+the TUI.
