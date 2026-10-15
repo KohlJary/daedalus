@@ -174,3 +174,42 @@ def test_a_logged_run_is_corrected_by_a_later_record(tmp_path, monkeypatch):
     assert run["models"]["momus"] == "claude-sonnet-5-5"
     bad = CliRunner().invoke(main, ["reflect", "log", "correct", "daily", "2026-10-15", "tokens", "5"])
     assert bad.exit_code == 1 and "No daily run" in bad.output
+
+
+# ---------- Momus's review of these fixes ----------
+
+def test_a_correction_applies_to_the_run_before_it_not_a_later_rerun(tmp_path):
+    project = make_project(tmp_path / "p")
+    base = {"record": "run", "level": "daily", "period": "2026-10-14", "runner": "inhale", "models": {},
+            "sessions": 1, "session_ids": [], "findings": {}, "proposals": [], "check_iterations": 1,
+            "report": "daily-2026-10-14.json"}
+    explog.append(project, {**base, "tokens": 100})
+    explog.record_correction(project, "daily", "2026-10-14", "tokens", 999)
+    explog.append(project, {**base, "tokens": 50})
+    runs = [r for r in explog.corrected(explog.load(project)) if r["record"] == "run"]
+    assert [r["tokens"] for r in runs] == [999, 50]
+
+
+def test_corrected_models_show_in_the_summary(tmp_path):
+    project = make_project(tmp_path / "p")
+    explog.append(project, {"record": "run", "level": "daily", "period": "2026-10-14", "runner": "inhale",
+                            "models": {"momus": "claude-opus-5-5"}, "sessions": 1, "session_ids": [],
+                            "findings": {}, "proposals": [], "check_iterations": 1, "tokens": 1,
+                            "report": "daily-2026-10-14.json"})
+    explog.record_correction(project, "daily", "2026-10-14", "models.momus", "claude-sonnet-5-5")
+    text = "\n".join(explog.summary(explog.load(project)))
+    assert "momus claude-sonnet-5-5" in text and "opus" not in text
+
+
+def test_unknown_scopes_fail_closed(tmp_path):
+    root = tmp_path / "models"
+    add(root, observation="Hand-edited secret", scope="Personal")
+    add(root, observation="Typo scope", scope="global")
+    add(root, observation="Shared fact", scope="anywhere")
+    work = m.summary("work", SETTINGS, root, date(2026, 10, 1))
+    assert "Hand-edited" not in work and "Typo" not in work and "Shared fact" in work
+
+
+def test_dates_editions_models_exit_codes_and_commas_are_not_bare_numbers():
+    text = "On 13 Oct and Oct 13, edict 0010 under Opus 4 kept exiting 1, across 1,234 calls"
+    assert [w for _, _, w in bare_numbers(text)] == ["1234"]

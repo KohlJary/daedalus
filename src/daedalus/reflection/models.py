@@ -71,7 +71,8 @@ def canon_scope(scope: Optional[str], default: str = "anywhere") -> str:
     """A scope under its current name (personal -> private, any -> anywhere)."""
     if not scope:
         return default
-    return SCOPE_ALIASES.get(str(scope), str(scope))
+    s = str(scope).strip().lower()
+    return SCOPE_ALIASES.get(s, s)
 
 
 def same_observation(data: dict, observation: str, exclude_id: Optional[str] = None) -> Optional[dict]:
@@ -418,16 +419,15 @@ def summary(project_scope: str, settings: dict, root: Optional[Path] = None,
     today = today or date.today()
     cap_chars = int(settings.get("summary_tokens", 400)) * 4
     project_scope = canon_scope(project_scope, "work")
-    if project_scope == "work":
-        excluded = set() if settings.get("share_private") else {"private"}
-    else:
-        excluded = {"work"}
+    # Fail closed: a scope this code doesn't know (a typo, a hand edit) is kept out, not shown
+    allowed = {"work", "anywhere"} | ({"private"} if settings.get("share_private") else set()) \
+        if project_scope == "work" else {"private", "anywhere"}
     rows = []
     for model in MODELS:
         data = load(model, root)
         hl = half_life(model, settings)
         for e in active_entries(data):
-            if e.get("label") == "unknown" or canon_scope(e.get("scope")) in excluded:
+            if e.get("label") == "unknown" or canon_scope(e.get("scope")) not in allowed:
                 continue
             rows.append((effective_confidence(e, today, hl), model, e))
     rows.sort(key=lambda r: -r[0])

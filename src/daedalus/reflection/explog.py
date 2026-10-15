@@ -173,6 +173,10 @@ def record_correction(project_dir: Path, level: str, period: str, field: str, va
         raise LogError(f"No {level} run for {period} in the log")
     if field in ("tokens", "check_iterations"):
         value = int(value)
+        if not 0 <= value < 10 ** 9:
+            raise LogError(f"{field} must be between 0 and 10^9")
+    elif not str(value).strip():
+        raise LogError("a model ID can't be empty")
     return append(project_dir, {"record": "correction", "level": level, "period": period, "field": field,
                                 "value": value})
 
@@ -182,9 +186,15 @@ def corrected(records: list[dict]) -> list[dict]:
     import copy
 
     out = copy.deepcopy(records)
-    runs = {(r.get("level"), r.get("period")): r for r in out if r.get("record") == "run"}
-    for c in [r for r in out if r.get("record") == "correction"]:
-        run = runs.get((c.get("level"), c.get("period")))
+    latest: dict = {}  # (level, period) -> the newest run *before* this point in the file
+    for rec in out:
+        key = (rec.get("level"), rec.get("period"))
+        if rec.get("record") == "run":
+            latest[key] = rec
+            continue
+        if rec.get("record") != "correction":
+            continue
+        c, run = rec, latest.get(key)
         if run is None:
             continue
         if c["field"].startswith("models."):
@@ -206,6 +216,9 @@ def summary(records: list[dict]) -> list[str]:
     spent = [r["tokens"] for r in runs if isinstance(r.get("tokens"), int)]
     if spent:
         lines.append(f"Tokens per run: mean {sum(spent) // len(spent)}, total {sum(spent)} ({len(spent)} runs reported)")
+    models = Counter(f"{k} {v}" for r in runs for k, v in sorted((r.get("models") or {}).items()) if v)
+    if models:
+        lines.append("Models: " + ", ".join(f"{k} ({n})" for k, n in sorted(models.items())))
     proposed = [p for r in runs for p in r.get("proposals", [])]
     verdicts = Counter(p.get("verdict") for p in proposed)
     if proposed:

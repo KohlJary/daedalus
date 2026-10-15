@@ -68,6 +68,11 @@ def bare_numbers(text: str) -> list[tuple[float, bool, str]]:
     text = CITATION.sub(" ", text or "")
     text = re.sub(r"\b\d{4}-\d{2}-\d{2}(?:[T ][\d:.+Z-]+)?\b", " ", text)
     text = re.sub(r"`[^`]*`", " ", text)
+    text = re.sub(r"\b\d{1,2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*|"
+                  r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w* \d{1,2}\b", " ", text)
+    text = re.sub(r"\b(?:edicts?|PR|issue|phase|exit(?:ing|ed|s)?(?: code)?|Opus|Sonnet|Haiku|Fable|Claude)"
+                  r"\s+\d+(?:\.\d+)*", " ", text, flags=re.I)
+    text = re.sub(r"(?<=\d),(?=\d{3}\b)", "", text)  # 1,234 is one number
     out = [(float(n), pct == "%", n + pct) for n, pct in NUMBER.findall(text)]
     out += [(float(SPELLED[w.lower()]), False, w) for w in SPELLED_RE.findall(text)]
     return out
