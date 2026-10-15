@@ -294,6 +294,13 @@
         "details": "hooks.py wanted_hooks/ALL_HOOKS are {event: command}, so only one Daedalus hook per event fits (board already holds UserPromptSubmit). Restructure to [(event, command, config key)], register/remove per command, hydrate --dry-run lists each. Blocks 0014's clock hook (Momus 0014 readiness F5).",
         "updated": "2026-10-15",
         "resolution": "PR #53 (merged 28ad709): HOOKS is a list of (event, command, hooks.* key); Momus: merge."
+      },
+      {
+        "id": "T-e29",
+        "title": "Overnight review PRs: 0017 Ophanic build, perception experiment, Dream screen, send form",
+        "status": "pending",
+        "details": "All Momus-reviewed, awaiting Kohl: #70 (0017 build, edict proposed), #69 (experiment, pilots 1-3, A1-A13 proposed), #68 (Dream screen), #71 (send form, stacked on #70). No code merged to main from these.",
+        "updated": "2026-10-15"
       }
     ],
     "deferred": []
