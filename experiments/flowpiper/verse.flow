@@ -1,0 +1,24 @@
+# MC Throughput, verse 3: "Landfill". Aimed at the bugs, never at people.
+# <bar>.<step>  <rhythm>  |  <words>
+# rhythm, one char per sixteenth: X accented syllable, x syllable, - hold. Syllables fill X/x in order.
+# Bars 0-1 are the intro; beats fall on steps 0, 4, 8, 12.
+
+2.1   xXxXx-            | You ain't a backlog
+2.8   xxXxxxXx--        | you a landfill with a login
+3.2   XxX-Xx            | sixty dead tickets
+3.9   xxXX-XxX---       | and the stink keeps rolling in
+4.5   XxX-              | flaky test
+4.9   xX-               | two faced
+4.13  XxxxxX---         | green while I'm in the room
+5.5   XxxXx-            | red when I leave it
+5.11  xX-XxX---         | I just sealed your tomb
+6.5   XxxX-             | memory leak
+6.10  xXxXx-xXxxXx-     | you bleeding slow and you don't even feel it
+7.9   xXxXXxxXxx-       | I read your stack trace like a eulogy
+8.6   xxXx-             | and I mean it
+8.12  xXX-              | I don't patch
+9.0   xX-xXXxxX---      | I prune your whole family tree
+9.12  XxX-xXxX          | every branch you ever had
+10.4  X--               | gone
+10.8  xXxxX---          | you answer to me
+11.0  X-xX----          | hit em up

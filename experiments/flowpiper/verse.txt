@@ -1,0 +1,8 @@
+Your backlog's a graveyard, every ticket in the dirt
+Forty stale stories still pretending that they work
+I read the code once and I cleared it in a cluster
+You opened it eleven times, that's all that you could muster
+Flaky test, you liar, you were green on a Tuesday
+I caught the race condition and I fixed it the same day
+Null in the payload, I named you with receipts
+Every gate is standing and the backlog's in the streets

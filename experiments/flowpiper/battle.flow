@@ -1,0 +1,41 @@
+# Battle: HOTFIX (ship it now) vs COVERAGE (prove it first). Fictional MCs, positions not people.
+# @ <voice.onnx> <speaker> <pan -1..1> <pitch shift semitones>   switches the voice for the lines below
+# <bar>.<step>  <rhythm>  |  <words>      X accented syllable, x syllable, - hold; one char per sixteenth
+
+@ voices/en-us-libritts-high.onnx 174 -0.25 0
+# HOTFIX
+2.1   xXxxXx-           | I push on a Friday
+2.8   xxX-XxXx-         | and I sleep like a baby
+3.0   xXxX-xxX-         | you write a test for the test
+3.9   xxXxXXx-          | that's a cry for help maybe
+4.1   xXxxX--           | your pipeline's so long
+4.8   xxXxxxxXx-        | that it qualifies for a pension
+5.2   xxXxxxXX-         | by the time you get a green check
+5.11  xXxXxXx-          | the users lost attention
+6.3   XxXxXXxx          | ninety nine percent coverage
+6.11  XxxXXx-           | zero percent users
+7.1   xXxXxXx-          | you grading empty classrooms
+7.9   xxXXxxXx-         | with a red pen and a ruler
+8.1   xxX-xX--          | I'm the fire in prod
+8.9   xxXxXXx-          | I'm the two AM legend
+9.1   xxXXX--           | you a sign off form
+9.8   XXxxxXx---        | still waiting on a second
+
+@ voices/en-us-libritts-high.onnx 90 0.25 0
+# COVERAGE
+10.2  xXXxXx-           | you sleep like a baby
+10.10 XxxXx-            | yeah I believe it
+11.0  xXxXX-Xx          | up every two hours screaming
+11.8  xXxxXXxXx-        | and somebody else gotta clean it
+12.2  xXxX--            | my pipeline's long
+12.9  XxXxxX---         | 'cause it's guarding the door
+13.1  XxxXxx-           | yours a revolving one
+13.9  XXXxX---          | same bug back for more
+14.1  XxXXx-            | two AM legend
+14.8  XxxXxxxXx-        | nah that's a hostage situation
+15.2  XXxxXX-           | whole team on the bridge call
+15.9  XxxxxxXx-         | begging for negotiation
+16.1  xxX-xX-           | you the fire in prod
+16.9  xxXxxX--          | I'm the reason it's out
+17.1  xXxXxX-           | I wrote the ending first
+17.9  xxXxxxX----       | so I never had a doubt

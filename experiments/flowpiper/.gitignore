@@ -1,0 +1,7 @@
+voices/
+MCFlow/
+*.wav
+*.png
+*_transcript.md
+!demos/*_transcript.md
+__pycache__/
