@@ -150,6 +150,8 @@ def test_hit_em_up_ships_clash_and_its_cast_generic(tmp_path, monkeypatch):
     assert "No amendment may let a bar into the ledger on a receipt the crowd did not check." in crowd
     protocol = (skill / "clash" / "protocol.md").read_text(encoding="utf-8")
     assert "Answer the verse first." in protocol and "DODGED" in crowd
+    assert '"maxBars"' in protocol and "Verses strictly alternate" in protocol
+    assert "Never let an MC write to the ledger" in protocol
 
     run(tmp_path, monkeypatch, "--no-agents", "--no-template")
     for rel in shipped:

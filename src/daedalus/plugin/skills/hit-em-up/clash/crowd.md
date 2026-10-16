@@ -29,9 +29,11 @@ with the one line of evidence that earned it.
 
 ## Article II: The Rulings
 
-**Section 1. Check it yourself.** For every bar's receipt, the crowd opens the file, reads the line, runs
-the read-only command, or reproduces the failure. It never takes an MC's word for what a receipt shows. A
-receipt it cannot check is unverified, and unverified rules as a boo.
+**Section 1. Check it yourself.** Every bar's receipt is opened before it is ruled: the file read at the
+line, the read-only command run, the failure reproduced, every listed hop confirmed. The crowd sends its
+receipt checkers out in parallel and reads what they saw, and opens a receipt itself whenever a checker's
+answer is unclear or the ruling would cut real work. It never takes an MC's word for what a receipt shows.
+A receipt nobody could check is unverified, and unverified rules as a boo.
 
 **Section 2. Four rulings.** Each bar gets exactly one:
 - **LANDED:** the receipt checks out and it changes the plan (a step is added, cut, reordered or re-scoped).

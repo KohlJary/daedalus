@@ -1,8 +1,8 @@
 # Clash
 
-Two MCs, one task, one crowd. Each MC writes a plan of attack on its own, then they battle over it in
-rounds: every verse has to answer the one before it, and every bar carries a receipt and a counter-proposal. The crowd checks
-every receipt itself, reacts, and keeps the ledger. What comes out is a plan of record in which every step
+Two MCs, one task, one crowd. Each MC writes a plan of attack on its own, then they battle over it in rounds:
+every verse has to answer the one before it, and every bar carries a receipt and a counter-proposal. The crowd
+checks every receipt, reacts, and keeps the ledger. What comes out is a plan of record in which every step
 traces to an opening plan or a bar that landed, plus the battle transcript: the verses, annotated with what
 checked out.
 
@@ -17,18 +17,27 @@ Daedalus) to execute it.
 Defaults come from `hitEmUp.clash` in '.daedalus/config.json':
 
 ```json
-"clash": { "red": "full-bore", "blue": "edge-case", "rounds": 3, "frame": "battle", "solo": false }
+"clash": { "red": "full-bore", "blue": "edge-case", "rounds": 3, "frame": "battle", "solo": false,
+           "maxBars": 5, "budget": { "verseTools": 30, "checkTools": 6 } }
 ```
 
 - 'red', 'blue': persona files from 'personas/'. Any two different personas work; the default pair is built
   to disagree (cut against cover).
 - 'rounds': the most rounds to run (each round is one verse from each MC). The battle can end sooner.
 - 'frame': a file from 'frames/', given to both MCs.
+- 'maxBars': the most bars in one verse, answers included. Long verses cost the most to check and their
+  extra bars mostly rule FLAT, so the cap makes each MC spend its bars where they will land. When more of
+  the opponent's bars need answers than the cap allows, answers come first and the verse carries no new
+  attacks.
+- 'budget': tool calls per MC verse ('verseTools') and per receipt check ('checkTools'). An agent that hits
+  its budget stops and submits what it has; a check that runs out before it can confirm a receipt rules it
+  unverified. The host reports the clash's total subagent tokens and wall time at the end.
 - 'solo': also produce solo plans for comparison (see Solo comparison). The 'solo' argument sets it for one
   run.
 
 Arguments override config for one run: two persona names (red then blue), a number of rounds, a frame name,
-'solo', 'no-verse' (the transcript keeps the bars' claims and rulings in plain prose; nothing is rhymed).
+'bars N' (overrides 'maxBars'), 'solo', 'no-verse' (the transcript keeps the bars' claims and rulings in plain
+prose; nothing is rhymed).
 
 ## Steps
 
@@ -36,31 +45,42 @@ Arguments override config for one run: two persona names (red then blue), a numb
    same way hit-em-up step 2 reads an item. If the task is a board item, the policy's Eligibility still
    applies: an item that belongs to someone else gets a plan for its owner, never a claim on it. Write the
    snapshot (task text, hash, the files and items it touches) to the report folder; every role reads from
-   it.
+   it. Note in the snapshot anything that limits checking, such as a package that will not import, so every
+   role knows receipts must be checked by reading rather than running.
 
 2. **Openings, blind.** Spawn one fresh subagent per MC. Each gets its persona file, the frame file, the
    snapshot, and this instruction: read what you need, then write an opening plan of attack (numbered
    steps; for each, what it touches, what it produces, how it is checked, effort small/medium/large) and an
-   opening verse. Neither sees the other's opening. Blind openings stop the second MC from anchoring on the
-   first.
+   opening verse of at most 'maxBars' bars. Neither sees the other's opening. Blind openings stop the
+   second MC from anchoring on the first.
 
 3. **Seed the ledger.** A fresh crowd subagent (with 'clash/crowd.md') reads both openings and seeds the
    plan of record:
    - steps both openings share (same intent, even if worded differently) enter as **agreed**;
    - steps only one MC proposed enter as **proposed by red** or **proposed by blue**;
-   - each opening verse's bars are ruled like any other bar (step 4).
+   - each opening verse's receipts are checked, but opening bars are not scored for LANDED: with no
+     opponent plan yet, an opening bar can only defend a step its own opening already put in the plan, so it
+     can never change the plan. A false opening receipt is still BOOED, and a CONTESTED opening bar still
+     has to be answered in round 1.
    A proposed step that the other MC never knocks out stays in the plan: silence is assent, so each MC has
    every reason to go after the other's steps.
 
-4. **Rounds.** Red opens round 1; the opener alternates each round. Each turn is a fresh subagent with the
-   MC's persona and frame, the snapshot, the current plan of record, the full ledger, and the opponent's last
-   verse. Its verse is a set of bars. Every bar has three parts, written in the transcript as:
+4. **Rounds.** Verses strictly alternate, red first: red, blue, red, blue. A round is one verse from each MC;
+   the order never restarts at a round boundary, so no MC speaks twice in a row and the MC who owes answers is
+   always the one who speaks next. Each turn is a fresh subagent with the MC's persona and frame, the
+   snapshot, the current plan of record, the full ledger, and the opponent's last verse. Its verse is a set of
+   bars. Every bar has three parts (a fourth, hops, when a claim chains facts), written in the transcript as:
 
    ```
    > the line(s) of the bar
    receipt: file:line, command and its output, failing test, item id, or a quote from the snapshot
+   hops: (only for a claim that chains several facts) one checkable file:line or command per line
    move: add | cut | reorder | re-scope | defend <step>, with the exact change
    ```
+
+   A claim that chains facts ("this key comes from there, which is set here, so copied rows replay") lists
+   every link under 'hops'. The checker verifies each hop on its own instead of re-deriving the chain, and
+   one broken hop BOOs the bar.
 
    A bar with no receipt or no move is not a bar: the crowd rules it FLAT without checking.
 
@@ -78,12 +98,20 @@ Arguments override config for one run: two persona names (red then blue), a numb
    ruled FLAT unless its own move lands. Bars the opponent got BOOED need no answer; rubbing it in scores
    nothing. New attacks come after the answers.
 
-   After each verse
-   a fresh crowd subagent checks every receipt itself and rules each bar LANDED, FLAT, BOOED or CONTESTED
-   (see 'clash/crowd.md'), applies LANDED moves to the plan of record, logs everything else, updates the
-   score, and writes one short reaction per bar. It also checks the answers: every LANDED or CONTESTED bar
-   from the opponent's last verse that the verse did not concede, rebut or flip is ruled **DODGED**
-   (see 'clash/crowd.md'). An MC whose bar was BOOED owns it in its next verse, after its answers.
+   After each verse the crowd rules it in two passes:
+   - **Checks, in parallel.** Spawn one fresh receipt checker per bar, all at once, on the cheapest capable
+     model, each with only that bar, the snapshot and a 'checkTools' budget. A checker opens the receipt and
+     every hop and returns confirmed, false or unverified, with the one line of evidence it saw. It does not
+     rule; it only says what the receipt shows.
+   - **Ruling.** One fresh crowd subagent ('clash/crowd.md') reads the checkers' results, the verse and the
+     ledger, rules each bar LANDED, FLAT, BOOED or CONTESTED, and writes one short reaction per bar. It
+     re-opens a receipt itself only when a checker's answer is unclear or the ruling would cut real work.
+     It writes the round's rulings and score to the ledger first and then applies the LANDED moves to the
+     plan of record, so an interrupted ruling never leaves moves in the plan without the rulings behind them.
+
+   The ruling pass also checks the answers: every LANDED or CONTESTED bar from the opponent's last verse that
+   the verse did not concede, rebut or flip is ruled **DODGED** (see 'clash/crowd.md'). An MC whose bar was
+   BOOED owns it in its next verse, after its answers.
 
 5. **Ending.** Stop after the last round, or earlier when the crowd's quiet rule fires (a round with nothing
    LANDED, a heckle, then another round with nothing LANDED). Say which ended it.
@@ -102,8 +130,9 @@ Arguments override config for one run: two persona names (red then blue), a numb
    - '<date>-clash-<slug>-plan.md': the plan of record. Plain voice; this is the file that may leave the
      report folder (pasted into a ticket, attached to an edict, handed to a run).
    - '<date>-clash-<slug>-transcript.md': the snapshot pointer, both openings, every verse with its bars,
-     receipts, moves and the crowd's rulings and reactions, and the score by round. This file stays in the
-     report folder.
+     receipts, moves and the crowd's rulings and reactions, and the score by round, each verse followed
+     directly by its rulings so it reads as a battle. This file stays in the report folder.
+   - In the plan, a cost line: subagent tokens and wall time for the openings, each verse and each ruling.
 
 8. **Terminal.** Print the plan's summary (step count, contested points, cuts, score), the paths of both
    files, and the best-landed bar from each MC with its receipt. That is the only verse that reaches the
@@ -141,3 +170,5 @@ anecdote: say so, and say how many tasks would make it evidence.
 - Never put a step in the plan of record that has no ledger entry behind it.
 - Never let the score decide the plan.
 - Never let a verse reach anything another person will see.
+- Never let an MC write to the ledger or the plan of record. MCs write only their own verse file; only the
+  crowd rules and applies moves.
