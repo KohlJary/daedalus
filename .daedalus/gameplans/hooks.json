@@ -20,24 +20,26 @@
       {
         "id": "T-h1",
         "title": "Hook kit: daedalus_hookkit, dispatchers, registration, state, budget, fail-soft",
-        "status": "in_progress",
+        "status": "done",
         "details": "Top-level stdlib package + daedalus-hook script; <=40 ms median subprocess on the no-feature event; HOOKS gains a matcher; board and capture move onto it; Stop/PreCompact never print. | PR #74 ready: Momus 4 rounds (trials 2026-10-15-hook-kit.md), CI green. Includes the shell reader (shell.parse).",
-        "updated": "2026-10-15",
-        "edict": "0016"
+        "updated": "2026-10-16",
+        "edict": "0016",
+        "resolution": "PR #74, merged to main at 6c60565 (head 9527cac): daedalus_hookkit (dispatchers, state with lock, noise budget, heartbeat, quote-aware shell.parse). Momus: 4 review rounds plus confirmation (trial 2026-10-15-hook-kit.md)."
       },
       {
         "id": "T-h2",
         "title": "Efficacy logging, hookstate.load, digest counts",
-        "status": "in_progress",
+        "status": "done",
         "details": "Events log shape agreed with the TUI session (daedalus-3b); followed within hooks.efficacy_window; per-agent/per-skill counts in digests. | PR #74 ready (efficacy, hookstate, digest schema 4).",
-        "updated": "2026-10-15",
-        "edict": "0016"
+        "updated": "2026-10-16",
+        "edict": "0016",
+        "resolution": "PR #74 (6c60565): efficacy (nudges age only on observable events), daedalus.hookstate, digest schema 4 (agent_calls, skill_calls, hooks)."
       },
       {
         "id": "T-c1",
         "title": "Context measuring: offset reader, index, exact attribution, base, subagent reports",
         "status": "in_progress",
-        "details": "Reuse digest.py; output_tokens to their own line; totals reset at compact_boundary; cold start in slices. | PR #75 ready, stacked on #74 (trial 2026-10-15-context-measure.md).",
+        "details": "Reuse digest.py; output_tokens to their own line; totals reset at compact_boundary; cold start in slices. | PR #75 ready, stacked on #74 (trial 2026-10-15-context-measure.md). | #75/#76 merged into the stacked base branch, not main; PR #80 brings them to main (awaiting Kohl).",
         "updated": "2026-10-15",
         "edict": "0015"
       },
@@ -45,7 +47,7 @@
         "id": "T-c2",
         "title": "Context views, library functions (measure/plan/pin), CLI",
         "status": "in_progress",
-        "details": "By subject and by task, quiet share, stable keys; JSON shape agreed with the TUI session. | PR #75 ready.",
+        "details": "By subject and by task, quiet share, stable keys; JSON shape agreed with the TUI session. | PR #75 ready. | #75/#76 merged into the stacked base branch, not main; PR #80 brings them to main (awaiting Kohl).",
         "updated": "2026-10-15",
         "edict": "0015"
       },
@@ -53,7 +55,7 @@
         "id": "T-h3",
         "title": "Momus gate at merge, Covers line in momus.md, PR recording at gh pr create",
         "status": "in_progress",
-        "details": "Default gate, opt-out; skips logged; gh pr view fallback with 5 s timeout; trials under CLAUDE_PROJECT_DIR. | PR #76 ready, stacked on #74 (trial 2026-10-15-momus-gate.md). Out of scope by design: gh api merges, git push to main.",
+        "details": "Default gate, opt-out; skips logged; gh pr view fallback with 5 s timeout; trials under CLAUDE_PROJECT_DIR. | PR #76 ready, stacked on #74 (trial 2026-10-15-momus-gate.md). Out of scope by design: gh api merges, git push to main. | #75/#76 merged into the stacked base branch, not main; PR #80 brings them to main (awaiting Kohl).",
         "updated": "2026-10-15",
         "edict": "0016"
       },
