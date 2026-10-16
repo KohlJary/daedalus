@@ -152,6 +152,7 @@ def test_hit_em_up_ships_clash_and_its_cast_generic(tmp_path, monkeypatch):
     assert "Answer the verse first." in protocol and "DODGED" in crowd
     assert '"maxBars"' in protocol and "Verses strictly alternate" in protocol
     assert "Never let an MC write to the ledger" in protocol
+    assert "**Two passes.**" in protocol and "Every bar turns on a figure" in protocol
 
     run(tmp_path, monkeypatch, "--no-agents", "--no-template")
     for rel in shipped:

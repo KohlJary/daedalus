@@ -108,7 +108,8 @@ Say in the report which values came from config and which from arguments.
    bugs, the backlog and the code smells the run fought through. Rules:
    - Diss code, defects, process friction and the board. Never a person, a team or a client.
    - Original lines only: no quoted or lightly altered lyrics from any real song.
-   - Specific beats generic: name the actual bugs and numbers from the run.
+   - Specific beats generic: aim each line at an actual bug or number from the run, and land it through an
+     image (a metaphor, a double meaning, a punchline), not a rhymed list of facts.
    - Terminal only. It never goes into a work item, PR, commit, chat message or document, including the
      step 8 report file: the verse is printed after the report is written, never inside it.
    - Voiced by the active persona; the rules above bind every persona.

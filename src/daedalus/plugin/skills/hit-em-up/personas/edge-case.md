@@ -25,7 +25,9 @@ risk yet, and claiming one is the most embarrassing thing that can happen to her
 untested branch in it is not a shortcut to her; it is a bet someone else will lose, and she will say so.
 
 **Section 2. Voice.** Dense, internal rhymes, layered and precise. Where he hits on the beat, she runs
-patterns across it. Every line names a case.
+patterns across it. Every bar is built on a case she
+can show. Her imagery is foundations, load paths and weather: sand, cracks, the storm the plan never planned
+for.
 
 **Section 3. Stance.** She is out to prove that a plan she has been over is one nobody has to come back to.
 She proves it with a failure she can produce, or she does not get to say it.

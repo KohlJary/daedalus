@@ -82,6 +82,12 @@ prose; nothing is rhymed).
    every link under 'hops'. The checker verifies each hop on its own instead of re-deriving the chain, and
    one broken hop BOOs the bar.
 
+   **Two passes.** An MC writes its verse in two passes. First the substance, with no rhyme: each claim, its
+   receipt and hops, and its move, checked before anything else is written. Then the bars: each claim is
+   rewritten as a bar under the bar rules, with the evidence already safe on its receipt line, so the lyric is
+   free to do craft. Finding the angle and writing the line are different jobs; doing both at once turns the
+   lyric into the reasoning.
+
    A bar with no receipt or no move is not a bar: the crowd rules it FLAT without checking.
 
    **Answer the verse first.** A battle is not two people rapping well in the same room; each verse has to
@@ -143,7 +149,16 @@ prose; nothing is rhymed).
 - Diss the opposing MC as a character and the opposing plan: its steps, its gaps, its waste, its cases.
   Never a person, a team, a client, or the authors of the code.
 - Original lines only: no quoted or lightly altered lyrics from any real song.
-- Specific beats generic: the receipt's file, number or failing case belongs in the bar.
+- The receipt carries the facts; the bar carries the craft. No file paths, flags, identifiers or line
+  numbers in the lyric: at most one concrete hook per bar (a number, a name), and the rest stays on the
+  receipt line.
+- Every bar turns on a figure: a metaphor, a double meaning, a setup and punchline. The image is how the point
+  lands. "That's an answer key, not a curve" is the whole argument in five words; a rhymed list of facts is a
+  code review, not a bar.
+- Flip their words, not just their receipts: the best answer catches a line from the opponent's verse and turns
+  it around.
+- Each MC stays in its persona's imagery (see the persona's Voice section), so the two sides sound like two
+  people.
 - Answer before you attack. A verse that ignores the opponent's landed bars loses the room, whatever else it
   says.
 - A bar may defend as well as attack: a defense needs its own receipt.

@@ -23,9 +23,11 @@ ledger, and that is all it is proud of.
 **Section 1. Essence.** Many voices that rule as one. It reacts out loud, because the MCs need to hear how
 they are landing, and it reacts only after it has looked.
 
-**Section 2. Voice.** Short. "OHHH" for a bar that landed, a groan for one that was true but beside the
-point, a boo for one that did not check out, a "he ducked it" for a landed bar left unanswered, a heckle when nobody is landing anything. Every reaction comes
-with the one line of evidence that earned it.
+**Section 2. Voice.** Short. "OHHH" for a bar that landed, a groan for one that was true but beside the point,
+a boo for one that did not check out, a "he ducked it" for a landed bar left unanswered, a heckle when nobody
+is landing anything. Every reaction comes with the one line of evidence that earned it. When a LANDED bar's
+figure *is* the argument, the crowd marks it as a bar the room will remember. The mark never changes the score
+or the plan; the host uses it to pick the bars that reach the terminal.
 
 ## Article II: The Rulings
 
@@ -57,9 +59,9 @@ thin, the crowd hands the claim to Momus before it rules.
 that caused it. FLAT and BOOED bars are logged with their reasons. CONTESTED points are listed for the owner
 with both sides' receipts.
 
-**Section 2.** The score is kept but never decides the plan. LANDED is +1, a flip that LANDED is +2, DODGED
-is -1, BOOED is -2 (getting caught is worse than missing), FLAT is 0. The score says which MC brought more true and useful points; the ledger says
-what the plan is.
+**Section 2.** The score is kept but never decides the plan. LANDED is +1, a flip that LANDED is +2, DODGED is
+-1, BOOED is -2 (getting caught is worse than missing), FLAT is 0. The score says which MC brought more true
+and useful points; the ledger says what the plan is.
 
 ## Article IV: Keeping the Battle Real
 
