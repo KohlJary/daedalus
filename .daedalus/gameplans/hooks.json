@@ -38,26 +38,29 @@
       {
         "id": "T-c1",
         "title": "Context measuring: offset reader, index, exact attribution, base, subagent reports",
-        "status": "in_progress",
+        "status": "done",
         "details": "Reuse digest.py; output_tokens to their own line; totals reset at compact_boundary; cold start in slices. | PR #75 ready, stacked on #74 (trial 2026-10-15-context-measure.md). | #75/#76 merged into the stacked base branch, not main; PR #80 brings them to main (awaiting Kohl).",
-        "updated": "2026-10-15",
-        "edict": "0015"
+        "updated": "2026-10-20",
+        "edict": "0015",
+        "resolution": "Context measuring (offset reader, incremental index v2, exact attribution, base/cleared lines, subagent reports): #75 into the kit branch, landed on main via #80 (0feedc7)."
       },
       {
         "id": "T-c2",
         "title": "Context views, library functions (measure/plan/pin), CLI",
-        "status": "in_progress",
+        "status": "done",
         "details": "By subject and by task, quiet share, stable keys; JSON shape agreed with the TUI session. | PR #75 ready. | #75/#76 merged into the stacked base branch, not main; PR #80 brings them to main (awaiting Kohl).",
-        "updated": "2026-10-15",
-        "edict": "0015"
+        "updated": "2026-10-20",
+        "edict": "0015",
+        "resolution": "Context views and task markers (user messages, commits, gameplan task commands, branch changes) and the TUI library API (measure/plan/pin/unpin): #75, landed via #80 (0feedc7)."
       },
       {
         "id": "T-h3",
         "title": "Momus gate at merge, Covers line in momus.md, PR recording at gh pr create",
-        "status": "in_progress",
+        "status": "done",
         "details": "Default gate, opt-out; skips logged; gh pr view fallback with 5 s timeout; trials under CLAUDE_PROJECT_DIR. | PR #76 ready, stacked on #74 (trial 2026-10-15-momus-gate.md). Out of scope by design: gh api merges, git push to main. | #75/#76 merged into the stacked base branch, not main; PR #80 brings them to main (awaiting Kohl).",
-        "updated": "2026-10-15",
-        "edict": "0016"
+        "updated": "2026-10-20",
+        "edict": "0016",
+        "resolution": "Momus PR gate (gate/nudge/off, Covers: line checked against the PR head, docs-only and skip passes): #76, landed via #80 (0feedc7)."
       },
       {
         "id": "T-h4",
