@@ -84,3 +84,15 @@ rhythm strings.
    chopper, horrorcore and drill styles would need hand-seeded templates.
 4. **Pitch and attitude**: a vocoder emphasis pass, and eventually fine-tuning on recorded rap delivery
    from a consenting voice.
+5. **A flow that plays with the beat.** The flow and the beat don't interact yet: `battle.py` picks MCFlow bars
+   by our lyrics' syllables and stress, then lays them on a generic grid. The beat is ours, so every onset is
+   already known from `grid.py` (no audio analysis needed). Ideas:
+   - **Beat-aware bar choice:** add an alignment term to the MCFlow lookup. Reward stressed syllables on or just
+     ahead of the snare and rhymes on accents. Reward phrase breaks where the kit fills or the bass drops out.
+     Penalize crowding the lead's phrases.
+   - **Pocket against the kick:** reward syllables in the gaps between kicks, not doubling them; stresses with the snare.
+   - **Sections drive the shape:** mark intro, drop and breakdown in the beat. The flow answers: sparse on the
+     intro, double-time where the hats roll, a held vowel or a rest on the drop.
+   - **Pitch from the bass:** pull each bar's WORLD pitch contour toward the bass root and key, so the voice sits
+     in the track.
+   - **Call and response:** leave holes for the lead to answer; ad-libs on the beat's signature hits.
