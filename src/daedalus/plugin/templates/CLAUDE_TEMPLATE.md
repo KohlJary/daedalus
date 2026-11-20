@@ -122,6 +122,8 @@ Bundled agents:
 - `ariadne` - Parallel worker orchestration (planning, dispatch, verification)
 - `mnemosyne` - Memory reconstruction: proposes gameplan entries for a period nobody recorded, from git evidence (used by `/reconstruct`)
 - `momus` - Critic: tests claims and results before they're believed, published, or built on (read-and-run, writes only to `.daedalus/momus/`)
+- `chorus` - The audience, rehearsed: reads a piece of writing as each named audience would, before it goes out (writes only to `.daedalus/chorus/`)
+- `thersites` - The average redditor: uses a front door (onboarding, landing page, setup) through Playwright as a diet-tuned ordinary user at a set mood, and reports where they bail (writes only to `.daedalus/thersites/`)
 
 When you find yourself repeatedly exploring the same domain, consider defining a custom subagent.
 
