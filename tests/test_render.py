@@ -175,7 +175,8 @@ def test_config_project_set_and_show(tmp_path, monkeypatch):
         "edicts": {"enabled": False},
         "doctor": {"stale_commits": 10, "stale_task_days": 14},
         "hooks": {"session_start": True, "capture": False, "board": True,
-                  "budget_per_hour": 6, "efficacy_window": 20, "momus_gate": "gate"},
+                  "budget_per_hour": 6, "efficacy_window": 20, "momus_gate": "gate",
+                  "babelr_dm": True},
     }
     assert runner.invoke(main, ["config", "--project", "doctor.stale_commits", "25"]).exit_code == 0
     assert json.loads(runner.invoke(main, ["config", "--project"]).output)["doctor"]["stale_commits"] == 25

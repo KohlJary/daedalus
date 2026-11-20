@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Babelr DM bridge**: a hook-kit feature (`hooks.babelr_dm`) that prints new DMs to the agent's
+  Babelr account on each prompt, framed as data from the sender. Configured from the global config
+  (`babelr.url`, `.token_file`, `.key_file`, `.timeout`) or `DAEDALUS_BABELR_*`, never from a
+  project; silent when unconfigured or unreachable. Needs the `babelr-agent` client.
+
+### Changed
+- The roadmap and Ariadne agents say "the user" where they named one person.
+
 ## 0.2.0 (2026-10-14)
 
 The first release since 0.1.2 (May 2026). Daedalus now plans with you, remembers across sessions,

@@ -220,7 +220,7 @@ HOOKS: list[tuple[str, str, str]] = [
 KIT_COMMAND = "daedalus-hook"
 KIT_HOOKS: list[tuple[str, str, tuple, Optional[str]]] = [
     ("SessionStart", f"{KIT_COMMAND} SessionStart", ("session_start",), None),
-    ("UserPromptSubmit", f"{KIT_COMMAND} UserPromptSubmit", ("board",), None),
+    ("UserPromptSubmit", f"{KIT_COMMAND} UserPromptSubmit", ("board", "babelr_dm"), None),
     ("SessionEnd", f"{KIT_COMMAND} SessionEnd", ("capture",), None),
     ("PreCompact", f"{KIT_COMMAND} PreCompact", ("capture",), None),
     ("PreToolUse", f"{KIT_COMMAND} PreToolUse", ("momus_gate",), "Bash"),

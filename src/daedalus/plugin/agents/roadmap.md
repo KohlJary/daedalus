@@ -56,10 +56,10 @@ When working on roadmap items, follow this status flow:
 
 1. **backlog** → **ready**: Item is prioritized and ready for pickup
 2. **ready** → **in_progress**: Use `/pick` endpoint when starting work
-3. **in_progress** → **review**: Work complete, sent to Kohl for testing
-4. **review** → **done**: Kohl has verified and approved the work
+3. **in_progress** → **review**: Work complete, sent to the user for testing
+4. **review** → **done**: the user has verified and approved the work
 
-Always move items to `ready` when queuing them for processing, `in_progress` when actively working, and `review` once implementation is complete and ready for Kohl's testing.
+Always move items to `ready` when queuing them for processing, `in_progress` when actively working, and `review` once implementation is complete and ready for the user's testing.
 
 ## Common Queries
 

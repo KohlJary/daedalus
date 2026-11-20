@@ -88,6 +88,21 @@ class HooksConfig:
     budget_per_hour: int = 6    # edict 0016: at most this many nudge lines per session-hour
     efficacy_window: int = 20   # a nudge counts as followed if its tool is used within this many events
     momus_gate: str = "gate"    # edict 0016: gate | nudge | off for Daedalus's own `gh pr merge`
+    babelr_dm: bool = True      # UserPromptSubmit: print new Babelr DMs (silent until babelr.url is set)
+
+
+@dataclass
+class BabelrConfig:
+    """The Babelr DM bridge: new DMs to this agent's Babelr account are printed on each prompt.
+
+    Global config only (or the DAEDALUS_BABELR_* environment variables), never a project's
+    .daedalus/config.json: a repository must not be able to send your token to a server it names.
+    Empty token_file / key_file mean babelr.token / babelr-key.pem in Daedalus's config directory.
+    """
+    url: str = ""           # e.g. http://localhost:3000; empty turns the bridge off
+    token_file: str = ""    # the agent account's API token, one line
+    key_file: str = ""      # the agent's P-256 private key (mode 600), already published to Babelr
+    timeout: int = 3        # seconds per request; the hook runs before every prompt
 
 
 @dataclass
@@ -205,6 +220,7 @@ class DaedalusConfig:
     hooks: HooksConfig = field(default_factory=HooksConfig)
     reconstruct: ReconstructConfig = field(default_factory=ReconstructConfig)
     board: BoardConfig = field(default_factory=BoardConfig)
+    babelr: BabelrConfig = field(default_factory=BabelrConfig)
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
     machine: MachineConfig = field(default_factory=MachineConfig)
     tui: TuiConfig = field(default_factory=TuiConfig)
@@ -291,6 +307,7 @@ def load_config() -> DaedalusConfig:
             hooks=HooksConfig(**data.get("hooks", {})),
             reconstruct=ReconstructConfig(**data.get("reconstruct", {})),
             board=BoardConfig(**data.get("board", {})),
+            babelr=BabelrConfig(**data.get("babelr", {})),
             reflection=ReflectionConfig(**data.get("reflection", {})),
             machine=MachineConfig(**data.get("machine", {})),
             tui=TuiConfig(**data.get("tui", {})),
@@ -319,6 +336,7 @@ def save_config(config: DaedalusConfig) -> None:
         "hooks": asdict(config.hooks),
         "reconstruct": asdict(config.reconstruct),
         "board": asdict(config.board),
+        "babelr": asdict(config.babelr),
         "reflection": asdict(config.reflection),
         "machine": asdict(config.machine),
         "tui": asdict(config.tui),

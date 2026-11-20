@@ -20,6 +20,7 @@ DEFAULTS: dict[str, dict[str, object]] = {
         "budget_per_hour": 6,
         "efficacy_window": 20,
         "momus_gate": "gate",
+        "babelr_dm": True,
     },
 }
 PROJECT_GROUPS = {"hooks"}
@@ -37,6 +38,11 @@ class Settings:
     def __init__(self, project_dir: Path):
         self._global = _read(paths.config_dir() / "config.json")
         self._project = _read(Path(project_dir) / ".daedalus" / "config.json")
+
+    def global_group(self, group: str) -> dict:
+        """A group from the global config only, for settings a project must never set (babelr)."""
+        g = self._global.get(group)
+        return g if isinstance(g, dict) else {}
 
     def raw(self, group: str, key: str) -> object:
         """The value as written (project over global over default), without the type check."""

@@ -1,13 +1,14 @@
 """Every kit feature, in the order its lines are printed within an event."""
 
 from ..core import Feature
-from . import board, brief, capture, efficacy, momus_gate
+from . import babelr_dm, board, brief, capture, efficacy, momus_gate
 
 FEATURES: list = [
     # first, so a nudge printed by this call isn't judged against the call that prompted it
     Feature("efficacy", frozenset({"PostToolUse", "UserPromptSubmit"}), "", efficacy.run),
     Feature("brief", frozenset({"SessionStart"}), "session_start", brief.run),
     Feature("board", frozenset({"UserPromptSubmit"}), "board", board.run),
+    Feature("babelr dm", frozenset({"UserPromptSubmit"}), "babelr_dm", babelr_dm.run),
     Feature("capture", frozenset({"SessionEnd", "PreCompact"}), "capture", capture.run),
     Feature("momus gate", frozenset({"PreToolUse"}), "momus_gate", momus_gate.run_pre, gate=True),
     Feature("momus gate (PR record)", frozenset({"PostToolUse"}), "momus_gate", momus_gate.run_post),

@@ -68,8 +68,8 @@ for wp in plan.work_packages:
 from daedalus.ariadne import Dispatcher
 
 # Approval makes the plan's packages approved intent (edict 0001). Never approve a plan you wrote
-# yourself: show it to Kohl or the main Claude Code session, and record who approved it.
-# planner.approve_plan(plan, approved_by="kohl")   # or "main-session"
+# yourself: show it to the user or the main Claude Code session, and record who approved it.
+# planner.approve_plan(plan, approved_by="<user>")   # or "main-session"
 
 # Dispatch to workers:
 dispatcher = Dispatcher(icarus_bus)

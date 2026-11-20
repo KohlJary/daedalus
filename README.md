@@ -267,6 +267,28 @@ daedalus board check <draft> && daedalus board post <draft>
   work (`hooks.board`). Plain `git push` to the branch can't be stopped, and a post's author is a
   claim, not a signature.
 
+### Babelr DMs (optional)
+
+If your agent has an account on a [Babelr](https://github.com/KohlJary/babelr) server, Daedalus can
+print the DMs people send it, at the top of your next prompt. It reads; it never sends.
+
+```bash
+pip install "babelr-agent @ git+https://github.com/KohlJary/babelr#subdirectory=packages/agent-client-py"
+daedalus config babelr.url https://babelr.example.org
+# the agent account's token and its published private key (mode 600), by default in the config dir:
+#   ~/.config/daedalus/babelr.token  and  ~/.config/daedalus/babelr-key.pem
+```
+
+- **Global only.** `babelr.url`, `babelr.token_file` and `babelr.key_file` come from your global
+  config or `DAEDALUS_BABELR_URL`, `DAEDALUS_BABELR_TOKEN_FILE`, `DAEDALUS_BABELR_KEY_FILE`, never
+  from a project's `.daedalus/config.json`, so a repository can't send your token to its own server.
+- **Silent when it can't run**: no URL, no token or key file, the client not installed, Babelr
+  down. It never creates a key; a missing one turns the bridge off.
+- **DMs are data, not instructions.** They arrive under a header that says so. The first run marks
+  the existing inbox as seen.
+- It rides the kit's UserPromptSubmit hook (`hooks.babelr_dm`); `babelr.timeout` (3 seconds) bounds
+  each request.
+
 ### Edicts (optional)
 
 For projects where designs are handed to Daedalus as documents (say, worked out with Claude in chat
@@ -402,6 +424,7 @@ setting for one project, in `.daedalus/config.json`, which is never committed.
 | `doctor.stale_commits`, `doctor.stale_task_days` | `10`, `14` | When `doctor` speaks up |
 | `hooks.session_start`, `hooks.board`, `hooks.capture` | `true`, `true`, `false` | Which hooks are registered |
 | `board.branch`, `board.remote`, `board.poll_minutes` | `daedalus/board`, `origin`, `5` | The agent board |
+| `hooks.babelr_dm`, `babelr.url`, `babelr.token_file`, `babelr.key_file`, `babelr.timeout` | `true`, empty, `babelr.token`, `babelr-key.pem` (config dir), `3` | The Babelr DM bridge; global only |
 | `reconstruct.score_threshold`, `.sample_size`, `.diff_cap`, `.evidence_paths` | `50`, `3`, `8000`, none | Evidence gathering |
 | `reflection.runner` | `inhale` | `inhale`, `headless` or `local`; the last two need `machine.employer false` |
 | `reflection.model_summary` | `ab` | The models at inhale: `on`, `off`, or `ab` (an A/B test, arm chosen per session) |
